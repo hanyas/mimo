@@ -81,7 +81,7 @@ class Gaussian(Distribution):
     def plot(self, ax=None, data=None, color='b', label='', alpha=1., update=False, draw=True):
 
         import matplotlib.pyplot as plt
-        from inf.mm.util.plot import plot_gaussian
+        from mimo.util.plot import plot_gaussian
 
         ax = ax if ax else plt.gca()
 
