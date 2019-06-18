@@ -163,7 +163,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         # Normal-Inverse Wishart conjugate
         self.prior = prior
 
-        # Normal-Inverse Wishart posterior
+        # Normal-Inverse Gamma posterior
         self.posterior = copy.deepcopy(prior)
 
         if mu is None or sigmas is None:
