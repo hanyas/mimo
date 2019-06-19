@@ -275,7 +275,7 @@ class MatrixNormalInverseWishart(Distribution):
 
     def log_partition(self):
         return 0.5 * self.invwishart.nu * self.dout * np.log(2) +\
-               multigammaln(self.nu / 2., self.dout) +\
+               multigammaln(self.invwishart.nu / 2., self.dout) +\
                0.5 * self.dout * np.log(2. * np.pi) -\
                self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) -\
                self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
