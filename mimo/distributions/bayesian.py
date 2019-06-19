@@ -568,8 +568,8 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
         a, b, c, d = self.prior.nat_param - self.posterior.nat_param
 
-        aux = - 0.5 * np.trace(a.dot(E_Sigmainv)) + np.trace(b.T.dot(E_Sigmainv_A)) -\
-              0.5 * np.trace(c.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
+        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A)) -\
+              0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
 
         logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
 
