@@ -69,7 +69,7 @@ class NormalInverseWishart(Distribution):
     @property
     def nat_param(self):
         return self._standard_to_nat(self.gaussian.mu, self.kappa,
-                                         self.invwishart.psi, self.invwishart.nu)
+                                     self.invwishart.psi, self.invwishart.nu)
 
     @nat_param.setter
     def nat_param(self, natparam):
