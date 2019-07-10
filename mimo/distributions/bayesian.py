@@ -375,10 +375,10 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
     def __init__(self, prior, K=None, probs=None):
         super(BayesianCategoricalWithStickBreaking, self).__init__(K=K, probs=probs)
 
-        # Dirichlet prior
+        # stick-breaking prior
         self.prior = prior
 
-        # Dirichlet posterior
+        # stick-breaking posterior
         self.posterior = copy.deepcopy(prior)
 
         if K is None or probs is None:
@@ -465,10 +465,10 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         self.A = A
         self.sigma = sigma
 
-        # Dirichlet prior
+        # Matrix-Normal-Inv-Wishart prior
         self.prior = prior
 
-        # Dirichlet posterior
+        # Matrix-Normal-Inv-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
         if A is None or sigma is None:
