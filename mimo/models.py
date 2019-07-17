@@ -99,7 +99,7 @@ class Labels:
     # Mean Field
     def meanfieldupdate(self, importance=None):
         # get responsibilities
-        self.r = self.get_responsibility(importance)
+        self.r = self.get_responsibility(importance=importance)
         # for plotting
         self.z = self.r.argmax(1)
 
@@ -210,7 +210,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
 
     # Gibbs sampling
     def resample_model(self, importance=[]):
-        self.resample_components(importance)
+        self.resample_components(importance=importance)
         self.resample_gating()
         self.resample_labels()
 
@@ -241,7 +241,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         assert all(isinstance(c, MeanField) for c in self.components), 'Components must implement MeanField'
         assert len(self.labels_list) > 0, 'Must have data to run MeanField'
 
-        self._meanfield_update_sweep(importance)
+        self._meanfield_update_sweep(importance=importance)
         return self._vlb()
 
     def _meanfield_update_sweep(self, importance=[]):
@@ -250,7 +250,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         # ignored and the model will essentially stay where it was the last time
         # mean field updates were run
         # TODO fix that, seed with sample from variational distribution
-        self.meanfield_update_labels(importance)
+        self.meanfield_update_labels(importance=importance)
         self.meanfield_update_parameters()
 
     def meanfield_update_labels(self, importance=[]):
