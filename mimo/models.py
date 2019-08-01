@@ -2,7 +2,7 @@ import copy
 
 import numpy as np
 import scipy.special as special
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 
 from mimo.abstractions import ModelEM, ModelGibbsSampling, ModelMeanField
 from mimo.abstractions import MeanField

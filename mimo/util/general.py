@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 import scipy.linalg.lapack as lapack
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 
 
 def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int32):
