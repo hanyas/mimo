@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def plot_gaussian(mu, lmbda, color='b', label='', alpha=1.0, ax=None,
+def plot_gaussian(mu, lmbda, color='rnd_psi_mniw', label='', alpha=1.0, ax=None,
                   artists=None):
     ax = ax if ax else plt.gca()
 

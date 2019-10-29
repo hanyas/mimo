@@ -14,7 +14,7 @@ from mimo.abstractions import GibbsSampling, MeanField, MeanFieldSVI
 
 from mimo.distributions.gaussian import Gaussian, DiagonalGaussian
 from mimo.distributions.categorical import Categorical
-from mimo.distributions import LinearGaussian
+from mimo.distributions import LinearGaussian, LinearGaussianWithNoisyInputs
 
 from scipy.special import digamma, gammaln, betaln
 from numpy.core.umath_tests import inner1d
@@ -375,10 +375,10 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
     def __init__(self, prior, K=None, probs=None):
         super(BayesianCategoricalWithStickBreaking, self).__init__(K=K, probs=probs)
 
-        # stick-breaking prior
+        # Dirichlet prior
         self.prior = prior
 
-        # stick-breaking posterior
+        # Dirichlet posterior
         self.posterior = copy.deepcopy(prior)
 
         if K is None or probs is None:
@@ -461,14 +461,15 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
 
     def __init__(self, prior, A=None, sigma=None):
         super(BayesianLinearGaussian, self).__init__(A=A, sigma=sigma, affine=prior.affine)
+        # super(BayesianLinearGaussian, self).__init__(A=A, sigma=sigma)
 
         self.A = A
         self.sigma = sigma
 
-        # Matrix-Normal-Inv-Wishart prior
+        # Dirichlet prior
         self.prior = prior
 
-        # Matrix-Normal-Inv-Wishart posterior
+        # Dirichlet posterior
         self.posterior = copy.deepcopy(prior)
 
         if A is None or sigma is None:
@@ -605,3 +606,282 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
             out -= 1. / 2 * E_bT_Sigmainv_b
 
         return out
+
+class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLikelihood,
+                             GibbsSampling, MeanField, MeanFieldSVI):
+    """
+    Multivariate Gaussian distribution with a linear mean function.
+    Uses a conjugate Matrix-Normal/Inverse-Wishart prior.
+    Parameters are linear transf. and covariance matrix:
+        A, sigma
+    """
+
+    def __init__(self, prior, mu=None, sigma_niw=None, A=None, sigma=None):
+        # super(BayesianLinearGaussianWithNoisyInputs, self).__init__(mu=mu, sigma_niw=sigma_niw, A=A, sigma_mniw=sigma_mniw, affine=prior.affine)
+        super(BayesianLinearGaussianWithNoisyInputs, self).__init__(sigma=sigma, A=A, affine=prior.affine)
+        # super(BayesianLinearGaussianWithNoisyInputs, self).__init__(sigma=sigma, A=A)
+
+        self.mu = mu
+        self.sigma_niw = sigma_niw
+
+        self.A = A
+        self.sigma = sigma
+
+        # NormalInverseWishartMatrixNormalInverseWishart prior
+        self.prior = prior
+
+        # NormalInverseWishartMatrixNormalInverseWishart posterior
+        self.posterior = copy.deepcopy(prior)
+
+        if A is None or sigma is None:
+            self.mu, self.sigma_niw, self.A, self.sigma = self.prior.rvs()
+
+    # def __init__(self, prior, mu=None, sigma=None):
+    #     super(BayesianGaussian, self).__init__(mu=mu, sigma=sigma)
+    #     # Normal-Inverse Wishart conjugate
+    #     self.prior = prior
+    #
+    #     # Normal-Inverse Wishart posterior
+    #     self.posterior = copy.deepcopy(prior)
+    #
+    #     if mu is None or sigma is None:
+    #         self.mu, self.sigma = self.prior.rvs()
+
+    def empirical_bayes(self, data):
+        raise NotImplementedError
+
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+
+        # (yxT, xxT, yyT, n)
+        x_niw, n_niw, xxT_niw, n_niw, yxT_mniw, xxT_mniw, yyT_mniw, n_mniw = stats
+
+        # this SVD is necessary to check if the max likelihood solution is
+        # degenerate, which can happen in the EM algorithm
+        if n_niw < self.dim or np.sum(np.linalg.svd(xxT_niw, compute_uv=False) > 1e-6) < self.dim:
+            self.mu = 99999999 * np.ones(self.dim)
+            self.sigma_niw = np.eye(self.dim)
+        else:
+            self.mu = x_niw / n_niw
+            self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
+
+        self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
+        self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
+
+        def symmetrize(A):
+            return (A + A.T) / 2.
+
+        # numerical stabilization
+        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+
+        assert np.allclose(self.sigma, self.sigma.T)
+        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
+
+        return self
+
+    # # Max likelihood
+    # def max_likelihood(self, data, weights=None):
+    #     if weights is None:
+    #         stats = self.posterior.get_statistics(data)
+    #     else:
+    #         stats = self.posterior.get_weighted_statistics(data, weights)
+    #
+    #     x, n, xxT, n = stats
+    #     # this SVD is necessary to check if the max likelihood solution is
+    #     # degenerate, which can happen in the EM algorithm
+    #     if n < self.dim or np.sum(np.linalg.svd(xxT, compute_uv=False) > 1e-6) < self.dim:
+    #         self.mu = 99999999 * np.ones(self.dim)
+    #         self.sigma = np.eye(self.dim)
+    #     else:
+    #         self.mu = x / n
+    #         self.sigma = xxT / n - np.outer(self.mu, self.mu)
+    #     return self
+
+    # Max a posteriori
+    def MAP(self, data, weights=None):
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+        stats += self.prior.nat_param
+
+        # (yxT, xxT, yyT, n)
+        x_niw, n_niw, xxT_niw, n_niw, yxT_mniw, xxT_mniw, yyT_mniw, n_mniw = stats
+
+        self.mu = x_niw / n_niw
+        self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
+
+        self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
+        self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
+
+        def symmetrize(A):
+            return (A + A.T) / 2.
+
+        # numerical stabilization
+        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+
+        assert np.allclose(self.sigma, self.sigma.T)
+        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
+
+        return self
+
+    # # Max a posteriori
+    # def MAP(self, data, weights=None):
+    #     if weights is None:
+    #         stats = self.posterior.get_statistics(data)
+    #     else:
+    #         stats = self.posterior.get_weighted_statistics(data, weights)
+    #     stats += self.prior.nat_param
+    #
+    #     x, n, xxT, n = stats
+    #     self.mu = x / n
+    #     self.sigma = xxT / n - np.outer(self.mu, self.mu)
+    #     return self
+
+    # Gibbs sampling
+    def resample(self, data=[], importance=[]):
+        # importance imply importance of samples, i.e. exponentiated likelihood
+        if not importance:
+            self.posterior.nat_param = self.prior.nat_param +\
+                                       self.posterior.get_statistics(data)
+        else:
+            self.posterior.nat_param = self.prior.nat_param +\
+                                       self.posterior.get_weighted_statistics(data, weights=importance)
+
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def copy_sample(self):
+        new = copy.copy(self)
+        new.mu = self.mu.copy()
+        new.sigma_niw = self.sigma_niw.copy()
+        new.A = self.A.copy()
+        new.sigma = self.sigma.copy()
+        return new
+
+    # Mean field
+    def meanfieldupdate(self, data, weights=None):
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param +\
+                                   stepsize * (self.prior.nat_param +
+                                               1. / prob * self.posterior.get_weighted_statistics(data, weights))
+
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def _loglmbdatilde(self):
+        # see Eq. 10.65 in Bishop
+        return np.sum(digamma((self.posterior.invwishart_niw.nu - np.arange(self.dim)) / 2.)) \
+               + self.dim * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart_niw.psi_chol)))
+
+    def get_vlb(self):
+        trash1, trash2, trash3, trash4, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
+        trash5, trash6, trash7, trash8, a, b, c, d = self.prior.nat_param - self.posterior.nat_param
+
+        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A)) -\
+              0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
+
+        logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
+
+
+        loglmbdatilde = self._loglmbdatilde()
+
+        # see Eq. 10.77 in Bishop
+        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.)) -
+                            self.posterior.invwishart_niw.entropy())
+
+        # see Eq. 10.74 in Bishop, we aren't summing over K
+        p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
+                           - self.dim * self.prior.kappa / self.posterior.kappa - self.prior.kappa * self.posterior.invwishart_niw.nu
+                           * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
+                                    np.linalg.solve(self.posterior.invwishart_niw.psi,
+                                                    self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
+                    - self.prior.invwishart_niw.log_partition() \
+                    + (
+                            self.prior.invwishart_niw.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart_niw.nu \
+                    * np.linalg.solve(self.posterior.invwishart_niw.psi, self.prior.invwishart_niw.psi).trace()
+
+        return aux - logpart_diff + q_entropy + p_avgengy
+
+    def expected_log_likelihood(self, xy=None, stats=None):
+        assert isinstance(xy, (tuple, np.ndarray)) ^ isinstance(stats, tuple)
+
+        dout = self.dout
+        trash1, trash2, trash3, trash4, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
+
+        if self.affine:
+            E_Sigmainv_A, E_Sigmainv_b = E_Sigmainv_A[:, :-1], E_Sigmainv_A[:, -1]
+            E_AT_Sigmainv_A, E_AT_Sigmainv_b, E_bT_Sigmainv_b = E_AT_Sigmainv_A[:-1, :-1], E_AT_Sigmainv_A[:-1, -1], E_AT_Sigmainv_A[-1, -1]
+
+        x, y = (xy[:, :-dout], xy[:, -dout:]) if isinstance(xy, np.ndarray) else xy
+
+        parammat = -1. / 2 * blockarray([[E_AT_Sigmainv_A, -E_Sigmainv_A.T], [-E_Sigmainv_A, E_Sigmainv]])
+
+        contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
+        if isinstance(xy, np.ndarray):
+            out = np.einsum('ni,ni->n', xy.dot(parammat), xy)
+        else:
+            out = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
+            out += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
+            out += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
+
+        out += - dout / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
+
+        if self.affine:
+            out += y.dot(E_Sigmainv_b)
+            out -= x.dot(E_AT_Sigmainv_b)
+            out -= 1. / 2 * E_bT_Sigmainv_b
+
+        x = np.reshape(x, (-1, self.dim)) - self.posterior.gaussian.mu
+        xs = np.linalg.solve(self.posterior.invwishart_niw.psi_chol, x.T)
+
+        # see Eqs. 10.64, 10.67, and 10.71 in Bishop
+        # sneaky gaussian/quadratic identity hidden here
+        out2 = 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa) - \
+               self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
+
+        return out + out2
+
+
+    # def get_vlb(self):
+    #     loglmbdatilde = self._loglmbdatilde()
+    #
+    #     # see Eq. 10.77 in Bishop
+    #     q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.)) -
+    #                         self.posterior.invwishart.entropy())
+    #
+    #     # see Eq. 10.74 in Bishop, we aren't summing over K
+    #     p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
+    #                        - self.dim * self.prior.kappa / self.posterior.kappa - self.prior.kappa * self.posterior.invwishart.nu
+    #                        * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
+    #                                 np.linalg.solve(self.posterior.invwishart.psi,
+    #                                                 self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
+    #                 - self.prior.invwishart.log_partition() \
+    #                 + (
+    #                             self.prior.invwishart.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart.nu \
+    #                 * np.linalg.solve(self.posterior.invwishart.psi, self.prior.invwishart.psi).trace()
+    #
+    #     return p_avgengy + q_entropy
+    #
+    # def expected_log_likelihood(self, x):
+    #     x = np.reshape(x, (-1, self.dim)) - self.posterior.gaussian.mu
+    #     xs = np.linalg.solve(self.posterior.invwishart.psi_chol, x.T)
+    #
+    #     # see Eqs. 10.64, 10.67, and 10.71 in Bishop
+    #     # sneaky gaussian/quadratic identity hidden here
+    #     return 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa) - \
+    #            self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
