@@ -19,8 +19,8 @@ dist2 = distributions.LinearGaussian(A=_A, sigma=2.5e-1 * np.eye(out_dim), affin
 
 data = dist2.rvs(size=nb_samples, x=x)
 
-affine = True
-if affine:
+affine_model = False
+if affine_model:
     in_dim_mniw = in_dim + 1
 else:
     in_dim_mniw = in_dim
@@ -31,7 +31,7 @@ hypparams = dict(mu=np.zeros((in_dim,)),
                  nu_niw=2 * in_dim + 1,
                  M=np.zeros((out_dim, in_dim_mniw)),
                  V=1. * np.eye(in_dim_mniw),
-                 affine=affine,
+                 affine=affine_model,
                  psi_mniw=np.eye(out_dim),
                  nu_mniw=2 * out_dim + 1)
 
