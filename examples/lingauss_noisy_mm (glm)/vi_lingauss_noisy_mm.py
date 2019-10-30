@@ -12,7 +12,7 @@ import operator
 import random
 import timeit
 
-# set random seed
+# set random seeed
 np.random.seed(seed=26)
 random.seed(26)
 
