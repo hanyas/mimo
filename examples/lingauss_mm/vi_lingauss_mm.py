@@ -62,7 +62,7 @@ gmm.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(5):
+for superitr in range(1):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
     for _ in progprint_xrange(50):

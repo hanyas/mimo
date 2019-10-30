@@ -13,8 +13,8 @@ import random
 import timeit
 
 # set random seed
-np.random.seed(seed=25)
-random.seed(25)
+np.random.seed(seed=26)
+random.seed(26)
 
 # start timer
 start = timeit.default_timer()
@@ -132,7 +132,7 @@ gmm.add_data(data)
 # inference
 allscores = []
 allmodels = []
-for superitr in range(50):
+for superitr in range(5):
 
     # # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')

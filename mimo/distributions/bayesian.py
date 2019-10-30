@@ -375,10 +375,10 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
     def __init__(self, prior, K=None, probs=None):
         super(BayesianCategoricalWithStickBreaking, self).__init__(K=K, probs=probs)
 
-        # Dirichlet prior
+        # stick-breaking prior
         self.prior = prior
 
-        # Dirichlet posterior
+        # stick-breaking posterior
         self.posterior = copy.deepcopy(prior)
 
         if K is None or probs is None:
@@ -461,15 +461,14 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
 
     def __init__(self, prior, A=None, sigma=None):
         super(BayesianLinearGaussian, self).__init__(A=A, sigma=sigma, affine=prior.affine)
-        # super(BayesianLinearGaussian, self).__init__(A=A, sigma=sigma)
 
         self.A = A
         self.sigma = sigma
 
-        # Dirichlet prior
+        # Matrix-Normal-Inv-Wishart prior
         self.prior = prior
 
-        # Dirichlet posterior
+        # Matrix-Normal-Inv-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
         if A is None or sigma is None:
@@ -617,9 +616,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
     """
 
     def __init__(self, prior, mu=None, sigma_niw=None, A=None, sigma=None):
-        # super(BayesianLinearGaussianWithNoisyInputs, self).__init__(mu=mu, sigma_niw=sigma_niw, A=A, sigma_mniw=sigma_mniw, affine=prior.affine)
-        super(BayesianLinearGaussianWithNoisyInputs, self).__init__(sigma=sigma, A=A, affine=prior.affine)
-        # super(BayesianLinearGaussianWithNoisyInputs, self).__init__(sigma=sigma, A=A)
+        super(BayesianLinearGaussianWithNoisyInputs, self).__init__(mu=mu, sigma_niw=sigma_niw, A=A, sigma=sigma, affine=prior.affine)
 
         self.mu = mu
         self.sigma_niw = sigma_niw
@@ -627,10 +624,10 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         self.A = A
         self.sigma = sigma
 
-        # NormalInverseWishartMatrixNormalInverseWishart prior
+        # Normal-Inverse-Wishart-Matrix-Normal-Inverse-Wishart prior
         self.prior = prior
 
-        # NormalInverseWishartMatrixNormalInverseWishart posterior
+        # Normal-Inverse-Wishart-Matrix-Normal-Inverse-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
         if A is None or sigma is None:
@@ -652,7 +649,6 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
     # Max likelihood
     def max_likelihood(self, data, weights=None):
-
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -797,7 +793,6 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
         logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
 
-
         loglmbdatilde = self._loglmbdatilde()
 
         # see Eq. 10.77 in Bishop
@@ -816,6 +811,26 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
                     * np.linalg.solve(self.posterior.invwishart_niw.psi, self.prior.invwishart_niw.psi).trace()
 
         return aux - logpart_diff + q_entropy + p_avgengy
+
+    # def get_vlb(self):
+    #     loglmbdatilde = self._loglmbdatilde()
+    #
+    #     # see Eq. 10.77 in Bishop
+    #     q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.)) -
+    #                         self.posterior.invwishart.entropy())
+    #
+    #     # see Eq. 10.74 in Bishop, we aren't summing over K
+    #     p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
+    #                        - self.dim * self.prior.kappa / self.posterior.kappa - self.prior.kappa * self.posterior.invwishart.nu
+    #                        * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
+    #                                 np.linalg.solve(self.posterior.invwishart.psi,
+    #                                                 self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
+    #                 - self.prior.invwishart.log_partition() \
+    #                 + (
+    #                             self.prior.invwishart.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart.nu \
+    #                 * np.linalg.solve(self.posterior.invwishart.psi, self.prior.invwishart.psi).trace()
+    #
+    #     return p_avgengy + q_entropy
 
     def expected_log_likelihood(self, xy=None, stats=None):
         assert isinstance(xy, (tuple, np.ndarray)) ^ isinstance(stats, tuple)
@@ -855,27 +870,6 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
                self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
 
         return out + out2
-
-
-    # def get_vlb(self):
-    #     loglmbdatilde = self._loglmbdatilde()
-    #
-    #     # see Eq. 10.77 in Bishop
-    #     q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.)) -
-    #                         self.posterior.invwishart.entropy())
-    #
-    #     # see Eq. 10.74 in Bishop, we aren't summing over K
-    #     p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
-    #                        - self.dim * self.prior.kappa / self.posterior.kappa - self.prior.kappa * self.posterior.invwishart.nu
-    #                        * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
-    #                                 np.linalg.solve(self.posterior.invwishart.psi,
-    #                                                 self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
-    #                 - self.prior.invwishart.log_partition() \
-    #                 + (
-    #                             self.prior.invwishart.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart.nu \
-    #                 * np.linalg.solve(self.posterior.invwishart.psi, self.prior.invwishart.psi).trace()
-    #
-    #     return p_avgengy + q_entropy
     #
     # def expected_log_likelihood(self, x):
     #     x = np.reshape(x, (-1, self.dim)) - self.posterior.gaussian.mu
