@@ -1,0 +1,37 @@
+# import imageio
+#
+# images = []
+# for filename in filenames:
+#     images.append(imageio.imread(filename))
+# imageio.mimsave('/path/to/movie.gif', images)
+
+import os
+
+# import imageio
+#
+# png_dir = 'C:/Users/pistl/Dropbox/MA/PycharmProjects/dpglm/plots/draws'
+# images = []
+# for file_name in os.listdir(png_dir):
+#     if file_name.endswith('.png'):
+#         file_path = os.path.join(png_dir, file_name)
+#         images.append(imageio.imread(file_path))
+# imageio.mimsave('C:/Users/pistl/Dropbox/MA/PycharmProjects/dpglm/plots/movie.gif', images, duration = 0.5)
+
+
+import cv2
+
+
+image_folder = 'C:/Users/pistl/Dropbox/MA/PycharmProjects/dpglm/plots/draws'
+video_name = 'movie.avi'
+
+images = [img for img in os.listdir(image_folder) if img.endswith(".png")]
+frame = cv2.imread(os.path.join(image_folder, images[0]))
+height, width, layers = frame.shape
+
+video = cv2.VideoWriter(video_name, 0, 2, (width,height))
+
+for image in images:
+    video.write(cv2.imread(os.path.join(image_folder, image)))
+
+cv2.destroyAllWindows()
+video.release()
