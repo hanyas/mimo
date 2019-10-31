@@ -40,10 +40,10 @@ def generate_SIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
 def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None):
     # transform degree to rad
     scale_noise = scale_noise * 2 * np.pi / 360
-    scale_noise = scale_noise * 2 * np.pi / 360
+    loc_noise = loc_noise * 2 * np.pi / 360
 
     # joint angles
-    q = npr.uniform(low=np.zeros(num_joints),high=np.ones(num_joints),size=(n_train,num_joints)) * 2 * np.pi + npr.normal(loc_noise,scale_noise)
+    q = npr.uniform(low=np.zeros(num_joints),high=np.ones(num_joints),size=(n_train,num_joints)) * 2 * np.pi #+ npr.normal(loc_noise,scale_noise)
     q = q % 2*np.pi
     q1 = q[:,0]
 

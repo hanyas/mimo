@@ -9,7 +9,7 @@
 #                  nu_niw=2 * in_dim_niw + 1,
 #                  M=np.zeros((out_dim, in_dim_mniw)),
 #                  # V=10. * np.eye(in_dim_mniw),
-#                  V= np.asarray([[1, 0],[0, 30]]),    
+#                  V= np.asarray([[1, 0],[0, 30]]),
 #                  affine=affine,
 #                  psi_mniw=np.eye(out_dim) * 0.01,
 #                  nu_mniw=2 * out_dim + 1)
