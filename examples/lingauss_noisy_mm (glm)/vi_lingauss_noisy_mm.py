@@ -26,29 +26,29 @@ random.seed(seed)
 
 # settings
 affine = True
-nb_models = 25
-superitr = 1
+nb_models = 30
+superitr = 5
 
 # set inference methods
 gibbs = True
-gibbs_iter = 250
+gibbs_iter = 150
 
-mf = True       #mf with fixed iterations
-mf_conv = False  #mf with convergence criterion
+mf = False    #mf with fixed iterations
+mf_conv = True  #mf with convergence criterion
 mf_sgd = False
 
 # generate data
 in_dim_niw = 1
-out_dim = 1
-n_train = 2000
+out_dim = 2
+n_train = 1000
 
 # data needs to be of shape in_dim_niw = 1, out_dim = 1
-data = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
+# data = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
 # data = generate_heaviside2(n_train,scaling=1)
 # data = generate_CMB(n_train, seed)
 
 # data needs to be of shape in_dim_niw = 1, 2 or 3 and out_dim = 1 or 2
-# data = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1)
+data = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1)
 
 # data can be of arbitrary dimensions
 # data = generate_gaussian(n_train, out_dim, in_dim_niw)
@@ -56,7 +56,7 @@ data = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=se
 
 
 # define gating
-gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, ))*1)
+gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, ))*10)
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
 # define components
@@ -188,7 +188,7 @@ for i in range(data.shape[0]):
     pred_y[i] = gmm.components[idx].predict(x)
     err = err + ((y - pred_y[i])**2)
     # print(err)
-# err = err[0] + err[1]
+np.sum(err)
 mse = np.mean(err)
 print(mse)
 
@@ -203,6 +203,13 @@ if plotting:
     plt.title('best model')
     plt.show()
 
+# plot of prediction for endeffector positions vs. data
+plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=1, zorder=2)
+plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=1, zorder=2)
+plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
+plt.title('best model')
+# fig.savefig('myfig.pdf', format='pdf')
+plt.show()
 
 # timer
 stop = timeit.default_timer()
