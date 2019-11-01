@@ -9,54 +9,60 @@ import matplotlib.animation as animation
 
 from mimo import distributions, models
 from mimo.util.text import progprint_xrange
-from mimo.util.data import generate_CMB, generate_SIN, generate_kinematics, generate_heaviside1, generate_heaviside2, generate_gaussian
+from mimo.util.data import generate_CMB, generate_SIN, generate_kinematics, generate_heaviside1, generate_heaviside2, generate_gaussian, generate_Sarcos, generate_Barret
 
 import operator
 import random
 import timeit
 
-# start timer
+# misc
+# timer
 start = timeit.default_timer()
-
 # set random seed
 seed = None
 np.random.seed(seed=seed)
 random.seed(seed)
+# set booleans
+plot_kinematics = False
+plot_dynamics = False
 
 
 # settings
 affine = True
-nb_models = 30
-superitr = 5
+nb_models = 15
+superitr = 1
 
 # set inference methods
 gibbs = True
 gibbs_iter = 150
 
 mf = False    #mf with fixed iterations
-mf_conv = True  #mf with convergence criterion
+mf_conv = True #mf with convergence criterion
 mf_sgd = False
 
 # generate data
-in_dim_niw = 1
-out_dim = 2
-n_train = 1000
+in_dim_niw = 21
+out_dim = 7
+n_train = 13922
 
 # data needs to be of shape in_dim_niw = 1, out_dim = 1
 # data = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
 # data = generate_heaviside2(n_train,scaling=1)
 # data = generate_CMB(n_train, seed)
 
-# data needs to be of shape in_dim_niw = 1, 2 or 3 and out_dim = 1 or 2
-data = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1)
-
 # data can be of arbitrary dimensions
 # data = generate_gaussian(n_train, out_dim, in_dim_niw)
 
+# kinematics - data shape in_dim_niw = 1, 2 or 3 and out_dim = 2
+# data, plot_kinematics = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1), True
+
+# inverse dynamics - data shape in_dim_niw = 3 and out_dim = 1
+data, plot_dynamics = generate_Sarcos(n_train, None, in_dim_niw, out_dim, seed, all=True), True
+# data, plot_dynamics = generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True), True
 
 
 # define gating
-gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, ))*10)
+gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, ))*1)
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
 # define components
@@ -179,18 +185,40 @@ print('models_and_scores[0][1]',models_and_scores[0][1])
 print('used label',gmm.used_labels)
 print('# used labels',len(gmm.used_labels))
 
+# MSE and NRMSE
 pred_y = np.zeros((data.shape[0], out_dim))
+err_squared = 0
 err = 0
 for i in range(data.shape[0]):
     idx = gmm.labels_list[0].z[i]
     x = data[i,:-out_dim]
     y = data[i,in_dim_niw:]
     pred_y[i] = gmm.components[idx].predict(x)
-    err = err + ((y - pred_y[i])**2)
-    # print(err)
+    err = err + np.absolute((y - pred_y[i]))
+    err_squared = err_squared + ((y - pred_y[i]) ** 2)
+    # print(err_squared)
 np.sum(err)
-mse = np.mean(err)
-print(mse)
+np.sum(err_squared)
+me = 1 / n_train * err
+mse = 1 / n_train * err_squared
+var = np.var(pred_y, axis=0)
+nme = me / var
+nmse = mse / var
+# nmse = mse /
+# mse = np.mean(err_squared)
+# print('data',data)
+# print('pred_y',pred_y)
+print('me',me)
+print('mse',mse)
+print('var',var)
+print('nme',nme)
+print('nmse',nmse)
+
+
+
+
+
+
 
 # 2-dim plot of prediction
 if in_dim_niw + out_dim == 2:
@@ -204,12 +232,36 @@ if plotting:
     plt.show()
 
 # plot of prediction for endeffector positions vs. data
-plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=1, zorder=2)
-plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=1, zorder=2)
-plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
-plt.title('best model')
-# fig.savefig('myfig.pdf', format='pdf')
-plt.show()
+if plot_kinematics == True:
+    plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=1, zorder=2)
+    plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=1, zorder=2)
+    plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
+    plt.title('best model')
+    # fig.savefig('myfig.pdf', format='pdf')
+    plt.show()
+
+# # plot of inverse dynamics of first joint: q,q_dot,q_dot_dot, motor torque and predicted motor torque
+# if plot_dynamics == True:
+#     f, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1)
+#
+#     ax1.plot(np.arange(1,n_train+1), data[:,0])
+#     ax2.plot(np.arange(1,n_train+1), data[:,1])
+#     ax3.plot(np.arange(1,n_train+1), data[:,2])
+#     ax4.plot(np.arange(1,n_train+1), data[:,in_dim_niw])
+#     ax5.plot(np.arange(1,n_train+1), pred_y[:,0])
+#
+#     plt.show()
+
+# plot of inverse dynamics of first joint: motor torque and predicted motor torque
+if plot_dynamics == True:
+    plt.figure(figsize=(40, 10))
+    plt.plot(np.arange(1,n_train+1), data[:,in_dim_niw],color="blue", label='data')
+    plt.plot(np.arange(1,n_train+1), pred_y[:,0],color="red",label='prediction')
+    plt.title("Prediction for the torque of the first joint of Barret WAM (inverse dynamics data)")
+    plt.xlabel("Time / Data Index")
+    plt.ylabel("Torque")
+    plt.savefig('inverse_dynamics.png')
+    plt.show()
 
 # timer
 stop = timeit.default_timer()

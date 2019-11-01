@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
 # gating_hypparams = dict(K=nb_models, gammas=np.ones((nb_models, )), deltas=np.ones((nb_models, ))*1)
 # gating_prior = distributions.StickBreaking(**gating_hypparams)
 
@@ -44,3 +47,13 @@
 #     #     pred_y[i] = np.matmul(componentA[idx,:-1], data[i,:-out_dim].T) + componentA[idx,in_dim_niw:] * 1
 #     # else:
 #     #     pred_y[i] = np.matmul(componentA[idx,:], data[i,:-out_dim].T)
+
+# f, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1)
+#
+# ax1.plot(range(10),2*np.arange(10))
+# ax2.plot(range(10),range(10))
+# ax3.plot(range(10),range(10))
+# ax4.plot(range(10),range(10))
+# # ax3.plot(range(5),np.arange(5)*1000)
+#
+# plt.show()

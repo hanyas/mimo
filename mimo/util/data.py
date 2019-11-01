@@ -11,7 +11,7 @@ def generate_CMB(n_train, seed=None):
     np.random.seed(seed=seed)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
-    data = np.genfromtxt("cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
+    data = np.genfromtxt("datasets/cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
     np.random.shuffle(data)
 
     # generate subset of training_data points
@@ -124,6 +124,76 @@ def generate_gaussian(n_train, out_dim, in_dim_niw):
     dist = distributions.LinearGaussian(A=_A, sigma=2.5e-1 * np.eye(out_dim), affine=False)
     data = dist.rvs(size=n_train)
     return data
+
+def generate_Sarcos(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False):
+    # set seed
+    np.random.seed(seed=seed)
+
+    # load Sarcos data from https://www.ias.informatik.tu-darmstadt.de/Miscellaneous/Miscellaneous
+    if all == False:
+        X = np.genfromtxt("datasets/sarcos/X_train.csv", dtype=None, encoding=None, usecols=(0, 1, 2), delimiter=",")
+        y = np.genfromtxt("datasets/sarcos/Y_train.csv", dtype=None, encoding=None, usecols=(0), delimiter=",")
+        y = y[..., np.newaxis]
+
+        # create data array
+        data = np.zeros((X.shape[0],X.shape[1]+out_dim))
+        data[:,:-1] = X
+        data[:,in_dim_niw:] = y
+
+    elif all == True:
+        X = np.genfromtxt("datasets/sarcos/X_train.csv", dtype=None, encoding=None, delimiter=",")
+        y = np.genfromtxt("datasets/sarcos/Y_train.csv", dtype=None, encoding=None, delimiter=",")
+        # y = y[..., np.newaxis]
+
+        # create data array
+        data = np.zeros((X.shape[0],X.shape[1]+out_dim))
+        data[:,:-7] = X
+        data[:,in_dim_niw:] = y
+
+    # shuffle data randomly
+    # np.random.shuffle(data)
+
+    # generate subset of training_data points
+    training_data = data[:n_train, :]
+    test_data = data[n_train:, :]
+    # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
+
+    return training_data
+
+def generate_Barret(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False):
+    # set seed
+    np.random.seed(seed=seed)
+
+    # load Sarcos data from https://www.ias.informatik.tu-darmstadt.de/Miscellaneous/Miscellaneous
+    if all == False:
+        X = np.genfromtxt("datasets/Barrett/X_train.csv", dtype=None, encoding=None, usecols=(0, 1, 2), delimiter=",")
+        y = np.genfromtxt("datasets/Barrett/Y_train.csv", dtype=None, encoding=None, usecols=(0), delimiter=",")
+        y = y[..., np.newaxis]
+
+        # create data array
+        data = np.zeros((X.shape[0],X.shape[1]+out_dim))
+        data[:,:-1] = X
+        data[:,in_dim_niw:] = y
+
+    elif all == True:
+        X = np.genfromtxt("datasets/Barrett/X_train.csv", dtype=None, encoding=None, delimiter=",")
+        y = np.genfromtxt("datasets/Barrett/Y_train.csv", dtype=None, encoding=None, delimiter=",")
+        # y = y[..., np.newaxis]
+
+        # create data array
+        data = np.zeros((X.shape[0],X.shape[1]+out_dim))
+        data[:,:-7] = X
+        data[:,in_dim_niw:] = y
+
+    # shuffle data randomly
+    # np.random.shuffle(data)
+
+    # generate subset of training_data points
+    training_data = data[:n_train, :]
+    test_data = data[n_train:, :]
+    # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
+
+    return training_data
 
 def normalize_data(data, scaling):
     # Normalize data to 0 mean, 1 std_deviation, optionally scale data
