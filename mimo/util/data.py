@@ -75,6 +75,48 @@ def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None
 
     return data
 
+def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None):
+    # transform degree to rad
+    scale_noise = scale_noise * 2 * np.pi / 360
+    loc_noise = loc_noise * 2 * np.pi / 360
+
+    # joint angles
+    q = npr.uniform(low=np.zeros(num_joints),high=np.ones(num_joints),size=(n_train,num_joints)) * 2 * np.pi #+ npr.normal(loc_noise,scale_noise)
+    q = q % 2*np.pi
+    q1 = np.cos(q[:,0])
+
+    def cos_to_sin(cos):
+        sin = np.sqrt(1-cos**2)
+        return -sin
+
+    # position of end effector
+    if out_dim == 1:
+        print('error')
+    elif out_dim == 2:
+        pos_x = l1*q1
+        pos_y = l1*cos_to_sin(q1)
+        # if num_joints >= 2:
+        #     q2 = q[:,1]
+        #     pos_x = pos_x + l2*np.cos(q1+q2)
+        #     pos_y = pos_y + l2*np.sin(q1+q2)
+        #     if num_joints == 3:
+        #         q3 = q[:,2]
+        #         pos_x = pos_x + l3*np.cos(q1+q2+q3)
+        #         pos_y = pos_y + l3*np.sin(q1+q2+q3)
+
+    # concatenate data
+    data = np.zeros((n_train,num_joints + out_dim))
+    for i in range(n_train):
+        for j in range(num_joints + 2):
+            if j < num_joints:
+                data[i,j] = q[i,j]
+            elif j == num_joints:
+                data[i,j] = pos_x[i]
+            elif j == num_joints + 1:
+                data[i,j] = pos_y[i]
+
+    return data
+
 def generate_heaviside1(n_train):
     # create training_data from heaviside function
     def f(x):
