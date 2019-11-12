@@ -54,18 +54,34 @@ def plot_absolute_error(all_err):
     plt.show()
 
 def plot_prediction_2d(data, pred_y):
-    plt.scatter(data[:, 0], data[:, 1], s=1, zorder=1)
+    plt.scatter(data[:, 0], data[:, 1],c='black', s=1, zorder=1)
     plt.scatter(data[:, 0], pred_y, c='red', s=1, zorder=2)
+    # axes = plt.gca()
+    # axes.set_xlim([xmin, xmax])
+    # axes.set_ylim([-5, 5])
     plt.title('best model')
+    plt.savefig('results/_training.pdf')
     plt.show()
 
-def endeffector_pos(data, in_dim_niw, pred_y):
+def plot_prediction_2d_mean(data, mean_function, plus_2std_function, minus_2std_function):
+    plt.scatter(data[:, 0], data[:, 1], c='black', s=1, zorder=1)
+    plt.scatter(data[:, 0], mean_function, c='red', s=1, zorder=2)
+    plt.scatter(data[:, 0], plus_2std_function, c='darksalmon', s=0.5, zorder=2)
+    plt.scatter(data[:, 0], minus_2std_function, c='darksalmon', s=0.5, zorder=2)
+    # axes = plt.gca()
+    # axes.set_xlim([xmin, xmax])
+    # axes.set_ylim([-5, 5])
+    plt.title('best model')
+    plt.savefig('results/_testing.pdf')
+    plt.show()
+
+def endeffector_pos(data, in_dim_niw, pred_y, string):
     # plot of prediction for endeffector positions vs. data
     plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=1, zorder=2)
     plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=1, zorder=2)
     plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
     plt.title('best model')
-    plt.savefig('kinematics.svg')
+    plt.savefig(string)
     plt.show()
 
 # # plot of inverse dynamics of first joint: q,q_dot,q_dot_dot, motor torque and predicted motor torque

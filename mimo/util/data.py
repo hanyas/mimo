@@ -5,6 +5,20 @@ from mimo import distributions
 
 import random
 
+def generate_LIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
+    # set seed
+    np.random.seed(seed=seed)
+
+    # create sin data
+    data = np.zeros((n_train, in_dim_niw + out_dim))
+    step = 1 / n_train
+    for i in range(data.shape[0]):
+        x = i * step
+        data[i, 0] = (x + npr.normal(0, 0.1))
+        data[i, 1] = x + 0.5
+    if shuffle:
+        np.random.shuffle(data)
+    return data
 
 def generate_CMB(n_train, seed=None):
     # set seed

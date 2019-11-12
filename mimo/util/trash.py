@@ -57,3 +57,9 @@ import numpy as np
 # # ax3.plot(range(5),np.arange(5)*1000)
 #
 # plt.show()
+
+# # term = term + mat_T * marg[idx] / marg.sum() * alphas[idx] / alpha_hat# *len(dpglm.used_labels)#marg.sum() #  FIXME version 1: der theorie entsprechend mit alphas, problem: nb_models nicht in theorie und kleine modelle verursachen probleme
+# term = term + mat_T * marg[idx] / marg.sum()
+# # fixme version 2: ohne alphas und nb_models. besser, aber nicht theorie entsprechend (alphas weg)
+# # term = term + mat_T * (marg[idx] / marg.sum() + alphas[idx] / alpha_hat) / 2
+# # alternative 3
