@@ -36,4 +36,4 @@ def calc_error_metrics(data, n, in_dim_niw, err, err_squared):
     # print('nRMSE', nRMSE)
     # print('..............................................................')
 
-    return nMSE
+    return nMSE, nMAE

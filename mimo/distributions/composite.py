@@ -69,6 +69,12 @@ class NormalInverseWishart(Distribution):
         # return -1 * (self.invwishart.nu * np.log(chol.diagonal()).sum() - (self.invwishart.nu * D / 2 * np.log(2) + D * (D - 1) / 4 * np.log(np.pi) \
         #                                                    + gammaln((self.invwishart.nu - np.arange(D)) / 2).sum()))
 
+        # # In Bishop B.79 notation, this is -log B(W, nu), where W = sigma^{-1}
+        # D = sigma.shape[0]
+        # chol = np.linalg.cholesky(sigma) if chol is None else chol
+        # return -1 * (nu * np.log(chol.diagonal()).sum() - (nu * D / 2 * np.log(2) + D * (D - 1) / 4 * np.log(np.pi) \
+        #                                                    + special.gammaln((nu - np.arange(D)) / 2).sum()))
+
     def entropy(self):
         raise NotImplementedError
 
@@ -285,6 +291,9 @@ class MatrixNormalInverseWishart(Distribution):
                0.5 * self.dout * np.log(2. * np.pi) -\
                self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) -\
                self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
+        # n = self.dout
+        # return n * self.invwishart.nu / 2 * np.log(2) + multigammaln(self.invwishart.nu / 2., n) \
+        #        - self.invwishart.nu / 2 * np.linalg.slogdet(self.invwishart.psi)[1] - n / 2 * np.linalg.slogdet(self.matnorm.V)[1]
 
         # D = self.invwishart.psi.shape[0]
         # chol = self.invwishart.psi_chol
@@ -490,6 +499,14 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
                    0.5 * self.dout * np.log(2. * np.pi) - \
                    self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) - \
                    self.invwishart_mniw.nu * np.sum(np.log(np.diag(self.invwishart_mniw.psi_chol)))
+            # n = self.dout
+            # return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2) + \
+            #        multigammaln(self.invwishart_niw.nu / 2., self.dim) + \
+            #        0.5 * self.dim * np.log(2. * np.pi / self.kappa) - \
+            #        self.invwishart_niw.nu * np.sum(np.log(np.diag(self.invwishart_niw.psi_chol))) + \
+            #        n * self.invwishart_mniw.nu / 2 * np.log(2) + multigammaln(self.invwishart_mniw.nu / 2., n) \
+            #        - self.invwishart_mniw.nu / 2 * np.linalg.slogdet(self.invwishart_mniw.psi)[1] - n / 2 * np.linalg.slogdet(self.matnorm.V)[1]
+
 
         # def log_partition(self):
         #     return 0.5 * self.invwishart.nu * self.dim * np.log(2) + \
