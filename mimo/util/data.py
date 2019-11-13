@@ -51,7 +51,9 @@ def generate_SIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
         np.random.shuffle(data)
     return data
 
-def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None):
+def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None,l4=None, seed=None):
+    # set seed
+    np.random.seed(seed=seed)
     # transform degree to rad
     scale_noise = scale_noise * 2 * np.pi / 360
     loc_noise = loc_noise * 2 * np.pi / 360
@@ -63,7 +65,7 @@ def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None
 
     # position of end effector
     if out_dim == 1:
-        print('error')
+        return None
     elif out_dim == 2:
         pos_x = l1*np.cos(q1)
         pos_y = l1*np.sin(q1)
@@ -71,10 +73,14 @@ def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None
             q2 = q[:,1]
             pos_x = pos_x + l2*np.cos(q1+q2)
             pos_y = pos_y + l2*np.sin(q1+q2)
-            if num_joints == 3:
+            if num_joints >= 3:
                 q3 = q[:,2]
                 pos_x = pos_x + l3*np.cos(q1+q2+q3)
                 pos_y = pos_y + l3*np.sin(q1+q2+q3)
+                if num_joints >= 4:
+                    q4 = q[:,3]
+                    pos_x = pos_x + l4 * np.cos(q1 + q2 + q3 + q4)
+                    pos_y = pos_y + l4 * np.sin(q1 + q2 + q3 + q4)
 
     # concatenate data
     data = np.zeros((n_train,num_joints + out_dim))
@@ -105,7 +111,7 @@ def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=
 
     # position of end effector
     if out_dim == 1:
-        print('error')
+        return None
     elif out_dim == 2:
         pos_x = l1*q1
         pos_y = l1*cos_to_sin(q1)
@@ -175,7 +181,10 @@ def generate_heaviside2(n_train, scaling=None):
     data = training_data
     return data
 
-def generate_gaussian(n_train, out_dim, in_dim_niw):
+def generate_gaussian(n_train, out_dim, in_dim_niw, seed):
+    # set seed
+    np.random.seed(seed=seed)
+
     _A = 1. * npr.randn(out_dim, in_dim_niw)
     dist = distributions.LinearGaussian(A=_A, sigma=2.5e-1 * np.eye(out_dim), affine=False)
     data = dist.rvs(size=n_train)
