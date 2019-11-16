@@ -1,6 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import tikzplotlib
+from mpl_toolkits.mplot3d import axes3d
+import matplotlib.pyplot as plt
 
 def plot_gaussian(mu, lmbda, color='rnd_psi_mniw', label='', alpha=1.0, ax=None,
                   artists=None):
@@ -128,7 +130,7 @@ def motor_torque(n_train, data, pred_y, in_dim_niw):
     # plt.savefig('inverse_dynamics.svg')
     plt.show()
 
-def violin_plot(data, num_columns=None, tikz_path=None, pdf_path=None):
+def violin_plot(data, num_columns=None, tikz_path=None, pdf_path=None, x_label=None, y_label=None, title=None, x_categories=None):
     def adjacent_values(vals, q1, q3):
         upper_adjacent_value = q3 + (q3 - q1) * 1.5
         upper_adjacent_value = np.clip(upper_adjacent_value, q3, vals[-1])
@@ -143,21 +145,27 @@ def violin_plot(data, num_columns=None, tikz_path=None, pdf_path=None):
         ax.set_xticks(np.arange(1, len(labels) + 1))
         ax.set_xticklabels(labels)
         ax.set_xlim(0.25, len(labels) + 0.75)
-        ax.set_xlabel('Category')
+        ax.set_xlabel(x_label)
 
-    # # create test data
+    # print(data)
+    # print(data.shape)
+
+    # create test data
     # np.random.seed(19680801)
-    # data = [sorted(np.random.normal(0, std, 100)) for std in range(1, 5)]
-    # # data = np.asarray(data).T
+    # data = [sorted(np.random.normal(0, std, 20)) for std in range(1, 5)]
+    # data = np.asarray(data).T
+    # print(data.shape)
+
+    # print(data)
 
     fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9, 4), sharey=True)
 
-    ax1.set_title('nMSE')
-    ax1.set_ylabel('nMSE')
-    ax1.violinplot(data, showmeans=False, showmedians=True, showextrema=True)
+    ax1.set_title(title)
+    ax1.set_ylabel(y_label)
+    ax1.violinplot(data, showmeans=False, showmedians=True, showextrema=False)
 
-    ax2.set_title('nMSE')
-    data = np.ndarray.tolist(data)
+    ax2.set_title(title)
+    # data = np.ndarray.tolist(data)
     parts = ax2.violinplot(
         data, showmeans=False, showmedians=False, showextrema=False)
     for pc in parts['bodies']:
@@ -170,7 +178,7 @@ def violin_plot(data, num_columns=None, tikz_path=None, pdf_path=None):
         whiskers = np.array([
             adjacent_values(sorted_array, q1, q3)
             for sorted_array, q1, q3 in zip(data, quartile1, quartile3)])
-        whiskersMin, whiskersMax = whiskers[:, 0], whiskers[:, 1]
+        whiskersMin, whiskersMax = whiskers[0, :], whiskers[1, :] # switched from whiskers[:,0], whiskers[:, 1]
         inds = np.arange(1, len(medians) + 1)
     else:
         whiskers = np.array([data, quartile1, quartile3])
@@ -180,10 +188,11 @@ def violin_plot(data, num_columns=None, tikz_path=None, pdf_path=None):
 
     ax2.scatter(inds, medians, marker='o', color='white', s=30, zorder=3)
     ax2.vlines(inds, quartile1, quartile3, color='k', linestyle='-', lw=5)
-    ax2.vlines(inds, whiskersMin, whiskersMax, color='k', linestyle='-', lw=1)
+    # ax2.vlines(inds, whiskersMin, whiskersMax, color='k', linestyle='-', lw=1)
 
     # set style for the axes
-    labels = ['A']#, 'B', 'C', 'D']
+    labels = x_categories
+
     for ax in [ax1, ax2]:
         set_axis_style(ax, labels)
 

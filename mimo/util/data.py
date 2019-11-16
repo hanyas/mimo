@@ -20,9 +20,9 @@ def generate_LIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
         np.random.shuffle(data)
     return data
 
-def generate_CMB(n_train, seed=None):
+def generate_CMB(n_train,n_test, seed=None):
     # set seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed=2)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
     data = np.genfromtxt("datasets/cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
@@ -30,11 +30,11 @@ def generate_CMB(n_train, seed=None):
 
     # generate subset of training_data points
     training_data = data[:n_train, :]
-    test_data = data[n_train:, :]
-    data = training_data
+    test_data = data[n_train:n_train+n_test, :]
+    # data = training_data
     # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
 
-    return data
+    return training_data, test_data
 
 def generate_SIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
     # set seed
