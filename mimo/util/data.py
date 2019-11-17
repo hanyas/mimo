@@ -2,8 +2,31 @@ import numpy as np
 import numpy.random as npr
 from matplotlib import pyplot as plt
 from mimo import distributions
+import csv
+import os
 
 import random
+
+
+
+def load_data(n_train,n_test, keyword, dir):
+    # set seed
+    np.random.seed(seed=7)
+
+    path = os.path.join(dir + '\\datasets')
+
+    os.chdir(path)
+    data = np.genfromtxt(keyword, dtype=None, encoding=None, delimiter=",")
+
+    np.random.shuffle(data)
+
+    # generate subset of training_data points
+    training_data = data[:n_train, :]
+    test_data = data[n_train:n_train+n_test, :]
+    # data = training_data
+    # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
+
+    return training_data, test_data
 
 def generate_LIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
     # set seed
@@ -22,7 +45,7 @@ def generate_LIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
 
 def generate_CMB(n_train,n_test, seed=None):
     # set seed
-    np.random.seed(seed=2)
+    np.random.seed(seed=7)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
     data = np.genfromtxt("datasets/cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
@@ -36,6 +59,21 @@ def generate_CMB(n_train,n_test, seed=None):
 
     return training_data, test_data
 
+def generate_CMB_to_csv(n):
+    # set seed
+    np.random.seed(seed=7)
+
+    # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
+    data = np.genfromtxt("C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\datasets\\cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
+    # np.random.shuffle(data)
+
+    with open('cmb.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
+    return data
+
 def generate_SIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
     # set seed
     np.random.seed(seed=seed)
@@ -44,11 +82,32 @@ def generate_SIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
     data = np.zeros((n_train, in_dim_niw + out_dim))
     step = freq * np.pi / n_train
     for i in range(data.shape[0]):
-        x = i * step - 6.
+        x = i * step
         data[i, 0] = (x + npr.normal(0, 0.1))
         data[i, 1] = (3. * (np.sin(x) + npr.normal(0, .1)))
     if shuffle:
         np.random.shuffle(data)
+    return data
+
+def generate_SIN_to_csv(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
+    # set seed
+    np.random.seed(seed=seed)
+
+    # create sin data
+    data = np.zeros((n_train, in_dim_niw + out_dim))
+    step = freq * np.pi / n_train
+    for i in range(data.shape[0]):
+        x = i * step
+        data[i, 0] = (x + npr.normal(0, 0.1))
+        data[i, 1] = (3. * (np.sin(x) + npr.normal(0, .1)))
+    # if shuffle:
+    #     np.random.shuffle(data)
+
+    with open('SIN.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
     return data
 
 def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None,l4=None, seed=None):
@@ -95,7 +154,9 @@ def generate_kinematics(n_train=None,out_dim=None,num_joints=None,loc_noise=None
 
     return data
 
-def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None):
+def generate_kinematics_to_csv(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None,l4=None, seed=None, name=None):
+    # set seed
+    np.random.seed(seed=seed)
     # transform degree to rad
     scale_noise = scale_noise * 2 * np.pi / 360
     loc_noise = loc_noise * 2 * np.pi / 360
@@ -103,26 +164,26 @@ def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=
     # joint angles
     q = npr.uniform(low=np.zeros(num_joints),high=np.ones(num_joints),size=(n_train,num_joints)) * 2 * np.pi #+ npr.normal(loc_noise,scale_noise)
     q = q % 2*np.pi
-    q1 = np.cos(q[:,0])
-
-    def cos_to_sin(cos):
-        sin = np.sqrt(1-cos**2)
-        return -sin
+    q1 = q[:,0]
 
     # position of end effector
     if out_dim == 1:
         return None
     elif out_dim == 2:
-        pos_x = l1*q1
-        pos_y = l1*cos_to_sin(q1)
-        # if num_joints >= 2:
-        #     q2 = q[:,1]
-        #     pos_x = pos_x + l2*np.cos(q1+q2)
-        #     pos_y = pos_y + l2*np.sin(q1+q2)
-        #     if num_joints == 3:
-        #         q3 = q[:,2]
-        #         pos_x = pos_x + l3*np.cos(q1+q2+q3)
-        #         pos_y = pos_y + l3*np.sin(q1+q2+q3)
+        pos_x = l1*np.cos(q1)
+        pos_y = l1*np.sin(q1)
+        if num_joints >= 2:
+            q2 = q[:,1]
+            pos_x = pos_x + l2*np.cos(q1+q2)
+            pos_y = pos_y + l2*np.sin(q1+q2)
+            if num_joints >= 3:
+                q3 = q[:,2]
+                pos_x = pos_x + l3*np.cos(q1+q2+q3)
+                pos_y = pos_y + l3*np.sin(q1+q2+q3)
+                if num_joints >= 4:
+                    q4 = q[:,3]
+                    pos_x = pos_x + l4 * np.cos(q1 + q2 + q3 + q4)
+                    pos_y = pos_y + l4 * np.sin(q1 + q2 + q3 + q4)
 
     # concatenate data
     data = np.zeros((n_train,num_joints + out_dim))
@@ -135,7 +196,54 @@ def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=
             elif j == num_joints + 1:
                 data[i,j] = pos_y[i]
 
+    with open(name, 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
     return data
+
+# def generate_kinematics_cos(n_train=None,out_dim=None,num_joints=None,loc_noise=None,scale_noise=None,l1=None,l2=None,l3=None):
+#     # transform degree to rad
+#     scale_noise = scale_noise * 2 * np.pi / 360
+#     loc_noise = loc_noise * 2 * np.pi / 360
+#
+#     # joint angles
+#     q = npr.uniform(low=np.zeros(num_joints),high=np.ones(num_joints),size=(n_train,num_joints)) * 2 * np.pi #+ npr.normal(loc_noise,scale_noise)
+#     q = q % 2*np.pi
+#     q1 = np.cos(q[:,0])
+#
+#     def cos_to_sin(cos):
+#         sin = np.sqrt(1-cos**2)
+#         return -sin
+#
+#     # position of end effector
+#     if out_dim == 1:
+#         return None
+#     elif out_dim == 2:
+#         pos_x = l1*q1
+#         pos_y = l1*cos_to_sin(q1)
+#         # if num_joints >= 2:
+#         #     q2 = q[:,1]
+#         #     pos_x = pos_x + l2*np.cos(q1+q2)
+#         #     pos_y = pos_y + l2*np.sin(q1+q2)
+#         #     if num_joints == 3:
+#         #         q3 = q[:,2]
+#         #         pos_x = pos_x + l3*np.cos(q1+q2+q3)
+#         #         pos_y = pos_y + l3*np.sin(q1+q2+q3)
+#
+#     # concatenate data
+#     data = np.zeros((n_train,num_joints + out_dim))
+#     for i in range(n_train):
+#         for j in range(num_joints + 2):
+#             if j < num_joints:
+#                 data[i,j] = q[i,j]
+#             elif j == num_joints:
+#                 data[i,j] = pos_x[i]
+#             elif j == num_joints + 1:
+#                 data[i,j] = pos_y[i]
+#
+#     return data
 
 def generate_heaviside1(n_train):
     # create training_data from heaviside function
@@ -190,7 +298,7 @@ def generate_gaussian(n_train, out_dim, in_dim_niw, seed):
     data = dist.rvs(size=n_train)
     return data
 
-def generate_Sarcos(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False):
+def generate_Sarcos(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False, flag=False):
     # set seed
     np.random.seed(seed=seed)
 
@@ -220,7 +328,10 @@ def generate_Sarcos(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False):
 
     # generate subset of training_data points
     training_data = data[:n_train, :]
+    if flag:
+        training_data = data[n_train:n_train+n_test, :]
     test_data = data[n_train:, :]
+
     # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
 
     return training_data
@@ -275,3 +386,19 @@ def center_data(data, scaling):
 
 
 
+
+
+
+
+
+# generate_kinematics_to_csv(n_train=20000,out_dim=2,num_joints=1,loc_noise=0,scale_noise=0,l1=1,l2=1,l3=1,l4=1, seed=None, name='kin_1joint.csv')
+#
+# generate_kinematics_to_csv(n_train=20000,out_dim=2,num_joints=2,loc_noise=0,scale_noise=0,l1=1,l2=1,l3=1,l4=1, seed=None, name='kin_2joint.csv')
+#
+# generate_kinematics_to_csv(n_train=20000,out_dim=2,num_joints=3,loc_noise=0,scale_noise=0,l1=1,l2=1,l3=1,l4=1, seed=None, name='kin_3joint.csv')
+
+# generate_SIN_to_csv(10000,1, 1, 14, shuffle=False, seed=None)
+
+
+
+# generate_CMB_to_csv(899)

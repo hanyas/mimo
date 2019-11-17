@@ -1,6 +1,6 @@
 import numpy as np
 import numpy.random as npr
-
+from sklearn.metrics import explained_variance_score
 import pandas
 
 from mimo import distributions, models
@@ -20,145 +20,171 @@ import datetime
 
 # timer
 start = timeit.default_timer()
-
 # set random seed
 seed = None
 np.random.seed(seed=seed)
-random.seed(seed)
 
+# user input
+dir = 'C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\'
+CMB = True
+SIN = False
+kin_1joint = False
+kin_2joint = False
+kin_3joint = False
+sarcos = False         # This data set might be too large
+
+
+if CMB:
+    n_train = 600
+    in_dim_niw = 1
+    out_dim = 1
+    str_dataset = 'CMB' #name of directory within evaluation/
+    data_file = 'cmb.csv' #name of the file within datasets/
+
+if SIN:
+    n_train = 3000
+    in_dim_niw = 1
+    out_dim = 1
+    str_dataset = 'SIN' #name of directory within evaluation/
+    data_file = 'sin.csv' #name of the file within datasets/
+
+if kin_1joint:
+    n_train = 2500
+    in_dim_niw = 1
+    out_dim = 2
+    str_dataset = 'kin_1joint' #name of directory within evaluation/
+    data_file = 'kin_1joint.csv' #name of the file within datasets/
+
+if kin_2joint:
+    n_train = 2500
+    in_dim_niw = 2
+    out_dim = 2
+    str_dataset = 'kin_2joint' #name of directory within evaluation/
+    data_file = 'kin_2joint.csv' #name of the file within datasets/
+
+if kin_3joint:
+    n_train = 2500
+    in_dim_niw = 3
+    out_dim = 2
+    str_dataset = 'kin_3joint' #name of directory within evaluation/
+    data_file = 'kin_3joint.csv' #name of the file within datasets/
+
+if sarcos:
+    n_train = 3000
+    in_dim_niw = 21
+    out_dim = 7
+    str_dataset = 'sarcos' #name of directory within evaluation/
+    data_file = 'sarcos.csv' #name of the file within datasets/
+
+
+
+eval_iter = 3
 metaitr = 100
-eval_iter = 5
 
 # generate and save violin plots
-num_cols = 5
-x_label = 'Inference algorithms'
-x_categories = ['Gibbs', 'MF', 'SGD-MF', 'Gibbs-MF', 'Gibbs-SGD-MF']
-y_label = 'nMSE'
-title = 'Violin plots for CMB dataset'
+num_cols = eval_iter
+x_label = 'Inference Algorithms'
+# x_categories = ['Gibbs', 'MF', 'SGD-MF', 'Gibbs-MF', 'Gibbs-SGD-MF']
+x_categories = ['MF','Gibbs', 'Gibbs-MF']
+y_label = 'Explained Variance Score'
+title = None    #'Violin plots for CMB dataset'
 
-# dont forget to set new file name
 
 for e in range(eval_iter):
 
-    print('eval_iter ',e)
+    print('eval_iter',e)
     if e == 0:
-        gibbs = True
-        gibbs_iter = 250
-        mf_conv = False
-        mf = False
-        mf_iter = 250
-        mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
-        str_eval2 = 'gibbs'
-    elif e == 1:
         gibbs = False
-        gibbs_iter = 250
         mf_conv = True
-        mf = False
-        mf_iter = 250
         mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
         str_eval2 = 'mf'
-    elif e == 2:
-        gibbs = False
-        gibbs_iter = 250
-        mf_conv = False
-        mf = False
-        mf_iter = 250
-        mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
-        str_eval2 = 'mf-sgd'
-    elif e == 3:
+    elif e == 1:
         gibbs = True
-        gibbs_iter = 250
+        mf_conv = False
+        mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
+        str_eval2 = 'gibbs'
+    # elif e == 2:
+    #     gibbs = False
+    #     mf_conv = False
+    #     mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
+    #     str_eval2 = 'mf-sgd'
+    elif e == 2:
+        gibbs = True
         mf_conv = True
-        mf = False
-        mf_iter = 250
         mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
         str_eval2 = 'gibbs-mf'
-    elif e == 4:
-        gibbs = True
-        gibbs_iter = 250
-        mf_conv = False
-        mf = False
-        mf_iter = 250
-        mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
-        str_eval2 = 'gibbs-mf-sgd'
+    # elif e == 4:
+    #     gibbs = True
+    #     mf_conv = False
+    #     mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
+    #     str_eval2 = 'gibbs-mf-sgd'
+    gibbs_iter = 300
 
-    n_train = 600
-    n_test = int(n_train / 5)
-    nb_models = 15
+
+    n_test = int(n_train / 4)
     alpha_gatings = 1
 
+    data, data_test = load_data(n_train, n_test, keyword=data_file, dir=dir)
+
+    # general settings
+    affine = True
+    nb_models = 30
+    # metaitr = 100
+    superitr = 1
+
     # set working directory and file name
-    os.chdir('C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\')
-    str_dataset = 'CMB'
+    os.chdir(dir)
+    # str_dataset = 'CMB'
     str_eval1 = 'inf'
     str_eval2 = str_eval2
-
-    header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
-    header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
 
     csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_raw' + '.csv')
     tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '.tex')
     pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '.pdf')
     stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' + '.csv')
+    visual_tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
+    visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
 
     # write headers
+    header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
+    header2 = "1:expl_var_test 2:expl_var_train 3:VLB 4:used_labels 5:mf_iter 6:inf_time 7:pred_time"
+
     f = open(csv_path, 'a+')
     f.write(header1 + "\n")
     f.write(header2 + "\n")
     f.close()
 
-    # general settings
-    affine = True
-    # nb_models = 10
-    superitr = 1
-
-    # # inference settings
+    # inference settings
     # gibbs = True
-    # gibbs_iter = 250
+    # gibbs_iter = 300
     #
-    # mf_conv = True #mf with convergence criterion and max_iter
-    #
-    # mf = False #mf with fixed iterations
-    # mf_iter = 150
-    #
+    # mf_conv = True  #mf with convergence criterion and max_iter
+
+    mf = False      #mf with fixed iterations
+    mf_iter = 150
+
     # mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
 
     # gating settings
-    alpha_gatings = 1
+    # alpha_gatings = 1
     stick_breaking = False
 
     # generate data
-    in_dim_niw = 1
-    out_dim = 1
+    # in_dim_niw = 1
+    # out_dim = 1
     # n_train = 600
     # n_test = 299
 
     # plotting settings
-    plot_training = False
-    plot_prediction = False
+    legend_upper_right = False
 
-    plot_kinematics = False
-    plot_dynamics = False
+    plot_2d_prediction, save_2d_prediction, = False, False
+
+    plot_kinematics, save_kinematics = False, False
+    plot_dynamics, save_dynamics = False, False
 
     plot_vlb = False
-    plot_metrics = False # only for mf with fixed iterations
-
-
-
-    # data, data_test = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed), generate_SIN(n_test,in_dim_niw, out_dim, freq=freq, shuffle=False, seed=seed)
-    data, data_test = generate_CMB(n_train, n_test, seed)
-    # data, data_test = generate_LIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed),generate_LIN(n_test,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
-    # data, data_test = generate_gaussian(n_train, out_dim, in_dim_niw, seed=seed), generate_gaussian(n_test, out_dim, in_dim_niw, seed=seed)
-    # data, data_test = generate_heaviside2(n_train,scaling=1), generate_heaviside2(n_test,scaling=1)
-
-    # data, data_test = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1,l4=1,seed=seed), generate_kinematics(n_train=n_test,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1,l4=1,seed=seed
-
-    # data, data_test = generate_Sarcos(n_train, None, in_dim_niw, out_dim, seed, all=True),generate_Sarcos(n_test, None, in_dim_niw, out_dim, seed, all=True)
-    # data, data_test = generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True), generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True)
-
-    # data, data_test = normalize_data(data, 1),normalize_data(data_test,1)
-
-
+    # plot_metrics = False # only for mf with fixed iterations
 
     # define gating
     if stick_breaking == False:
@@ -180,17 +206,18 @@ for e in range(eval_iter):
             V = np.eye(in_dim_mniw)
             for i in range(in_dim_mniw):
                 if i < in_dim_mniw - 1:
-                    V[i, i] = npr.uniform(0.1, 10)
+                    V[i, i] = npr.uniform(0, 10)
                 else:
-                    V[i, i] = npr.uniform(1, 1000) # offset
-            rnd_psi_mniw = npr.uniform(0.001, 0.1)
+                    V[i, i] = npr.uniform(0, 1000) # offset
+            rnd_psi_mniw = npr.uniform(0, 0.1)
             nu_mniw = 2 * out_dim + 1
 
             mu_low = np.amin(data[:,:-out_dim])
             mu_high = np.amax(data[:,:-out_dim])
 
-            rnd_psi_niw = npr.uniform(0.1, 10)
-            rnd_kappa = npr.uniform(0.01,0.1)
+            rnd_psi_niw = npr.uniform(0, 10)
+            rnd_kappa = npr.uniform(0,0.1)
+
 
             components_hypparams = dict(mu=npr.uniform(mu_low,mu_high,size=in_dim_niw),
                                         kappa= rnd_kappa,  #0.05
@@ -248,11 +275,11 @@ for e in range(eval_iter):
                 for _ in range(mf_iter):
                     scores.append(dpglm.meanfield_coordinate_descent_step())
 
-                    pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)
-                    var = np.var(data[:, in_dim_niw:], axis=0)
-                    MSE = 1 / n_train * err_squared
-                    nMSE.append(np.sum(MSE[0] / var[0]))
-                    err_.append(np.sum(err))
+            # pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)
+            # var = np.var(data[:, in_dim_niw:], axis=0)
+            # MSE = 1 / n_train * err_squared
+            # nMSE.append(np.sum(MSE[0] / var[0]))
+            # err_.append(np.sum(err))
 
             if mf_conv == True:
                 # mean field to lock onto a mode (with convergence criterion)
@@ -277,8 +304,8 @@ for e in range(eval_iter):
                     scores.append(dpglm._vlb())
                 # allscores.append(dpglm.meanfield_coordinate_descent_step())
 
-            all_err.append(err_)
-            all_nMSE.append(nMSE)
+            # all_err.append(err_)
+            # all_nMSE.append(nMSE)
             allscores.append(scores)
             allmodels.append(copy.deepcopy(dpglm))
 
@@ -289,9 +316,9 @@ for e in range(eval_iter):
         # plot vlb and error metrics over iterations
         if plot_vlb:
             plot_scores(allscores)
-        if mf and plot_metrics:
-            plot_nMSE(all_nMSE)
-            plot_absolute_error(all_err)
+        # if mf and plot_metrics:
+        #     plot_nMSE(all_nMSE)
+        #     plot_absolute_error(all_err)
 
         # Sort models and select best one
         models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
@@ -308,26 +335,27 @@ for e in range(eval_iter):
         # predict on training data
         pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)
 
-        # calculate error metrics on training data (MAE, nMAE, MSE, nMSE, RMSE, nRMSE)
-        nMSE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[0]
-        nMAE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[1]
+        # calculate error metrics on training data
+        # nMSE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[0]
+        # nMAE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[1]
+        explained_var_train = explained_variance_score(data[:, in_dim_niw:], pred_y,multioutput='variance_weighted')
 
-        # plots of prediction for training data
-        if plot_training:
+        # plots of 2d prediction for training data
+        if plot_2d_prediction:
             if in_dim_niw + out_dim == 2:
-                plot_prediction_2d(data, pred_y)
-            if plot_kinematics == True:
-                # plot of prediction for endeffector positions vs. data
-                endeffector_pos_2d(data, in_dim_niw, pred_y, 'results/kin_train.pdf')
-                if in_dim_niw == 1:
-                    # 3d plot of x,y position endeffector and angle
-                    endeffector_pos_3d(data, pred_y, in_dim_niw, 'wasd')
-            if plot_dynamics == True:
-                # plot of inverse dynamics of first joint: motor torque and predicted motor torque
-                motor_torque(n_train, data, pred_y, in_dim_niw)
+                plot_prediction_2d(data, pred_y, 'Training Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
 
+        # plot of prediction for endeffector positions vs. data
+        if plot_kinematics == True:
+            endeffector_pos_2d(data, in_dim_niw, pred_y, 'Training Data', visual_pdf_path, visual_tikz_path, save_kinematics)
+            if in_dim_niw == 1:
+             # 3d plot of x,y position endeffector and angle
+                endeffector_pos_3d(data, pred_y, in_dim_niw, 'Training Data', visual_pdf_path, visual_tikz_path, save_kinematics)
 
-
+        # plot of inverse dynamics of first joint: motor torque and predicted motor torque
+        if plot_dynamics == True:
+            motor_torque(n_train, data, pred_y, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path,
+                         'Training Data')
         start_prediction = timeit.default_timer()
 
         # calculate alpha_hat (sum over alpha_k)
@@ -387,39 +415,42 @@ for e in range(eval_iter):
                     term_plus_std = term_plus_std + (mat_T + 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
                     term_minus_std = term_minus_std + (mat_T - 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
 
-            # if out_dim > 1:
-            #     term_mean = term_mean[:, 0]
+            if out_dim > 1:
+                term_mean = term_mean[:, 0]
             mean_function[i,:] = term_mean
 
-            # if out_dim == 1:
-            plus_std_function[i,:] = term_plus_std
-            minus_std_function[i,:] = term_minus_std
+            if out_dim == 1:
+                plus_std_function[i,:] = term_plus_std
+                minus_std_function[i,:] = term_minus_std
 
-            # error for nMSE
-            err = err + np.absolute((y_hat - mean_function[i]))
-            err_squared = err_squared + ((y_hat - mean_function[i]) ** 2)
+            # # error for nMSE
+            # err = err + np.absolute((y_hat - mean_function[i]))
+            # err_squared = err_squared + ((y_hat - mean_function[i]) ** 2)
 
         stop_prediction = timeit.default_timer()
 
-
-        if plot_prediction:
+        if plot_2d_prediction:
             if in_dim_niw + out_dim == 2:
                 # plot_prediction_2d(data_test, mean_function)
-                plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function)
+                plot_prediction_2d(data_test, mean_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path,
+                                   legend_upper_right)
+                plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
 
-            # plot of kinematics data
-            if plot_kinematics == True:
-                # plot of prediction for endeffector positions vs. data
-                endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'results/kin_test.pdf')
-                if in_dim_niw == 1:
-                    # 3d plot of x,y position endeffector and angle
-                    endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'wasd')
-            if plot_dynamics == True:
-                # plot of inverse dynamics of first joint: motor torque and predicted motor torque
-                motor_torque(n_test, data_test, mean_function, in_dim_niw)
+        # plot of kinematics data
+        if plot_kinematics == True:
+            # plot of prediction for endeffector positions vs. data
+            endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
+            if in_dim_niw == 1:
+                # 3d plot of x,y position endeffector and angle
+                endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
 
-        nMSE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[0]
-        nMAE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[1]
+        # plot of inverse dynamics of first joint: motor torque and predicted motor torque
+        if plot_dynamics == True:
+            motor_torque(n_test, data_test, mean_function, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path, 'Test Data')
+
+        # nMSE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[0]
+        # nMAE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[1]
+        explained_var_test= explained_variance_score(data_test[:, in_dim_niw:], mean_function,multioutput='variance_weighted')
 
         # timer
         stop = timeit.default_timer()
@@ -435,14 +466,11 @@ for e in range(eval_iter):
 
         # write to file
         f = open(csv_path, 'a+')
-        f.write(str(nMSE_train[0]) + " ")
-        f.write(str(nMAE_train[0])+ " ")
+        f.write(str(explained_var_test) + " ")
+        f.write(str(explained_var_train) + " ")
         f.write(str(vlb) + " ")
-        f.write(str(nMSE_test[0]) + " ")
-        f.write(str(nMAE_test[0]) + " ")
         f.write(str(len(dpglm.used_labels)) + " ")
         f.write(str(mf_iter) + " ")
-        f.write(str(gibbs_iter) + " ")
         f.write(str(inf_time) + " ")
         f.write(str(pred_time))
         f.write("\n")
@@ -450,11 +478,9 @@ for e in range(eval_iter):
 
     # load data
 
-    nMSE_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[3], skiprows=2).values
-    # nMAE_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[4], skiprows=2).values
+    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0], skiprows=2).values
 
-
-    data_intermed = nMSE_test #np.column_stack((nMSE_test, nMAE_test))
+    data_intermed = explained_var_test #np.column_stack((nMSE_test, nMAE_test))
 
     # write statistics of data to stats file
     mean = np.mean(data_intermed, axis=0)
@@ -479,10 +505,10 @@ for e in range(eval_iter):
     else:
         data_violin = np.column_stack((data_violin, data_intermed))
 
-print(data_violin)
+# print(data_violin)
 
-violin_plot(data_violin, num_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
-    # remove file
+violin_plot_one(data_violin, num_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
+    ## remove file
     # os.remove(csv_path)
 
 

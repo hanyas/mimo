@@ -26,38 +26,72 @@ seed = None
 np.random.seed(seed=seed)
 random.seed(seed)
 
-eval_iter = 5
 metaitr = 100
+eval_iter = 5
 
 # generate and save violin plots
 num_cols = 5
-x_label = 'Upper limit on number of models'
-x_categories = ['3', '7', '10', '15', '30']
+x_label = 'Inference algorithms'
+x_categories = ['Gibbs', 'MF', 'SGD-MF', 'Gibbs-MF', 'Gibbs-SGD-MF']
 y_label = 'nMSE'
 title = 'Violin plots for CMB dataset'
 
+# dont forget to set new file name
+
 for e in range(eval_iter):
 
-    print('eval_iter ', e)
+    print('eval_iter ',e)
     if e == 0:
-        nb_models = 3
+        gibbs = True
+        gibbs_iter = 400
+        mf_conv = False
+        mf = False
+        mf_iter = 250
+        mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
+        str_eval2 = 'gibbs'
     elif e == 1:
-        nb_models = 7
+        gibbs = False
+        gibbs_iter = 400
+        mf_conv = True
+        mf = False
+        mf_iter = 250
+        mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
+        str_eval2 = 'mf'
     elif e == 2:
-        nb_models = 10
+        gibbs = False
+        gibbs_iter = 400
+        mf_conv = False
+        mf = False
+        mf_iter = 250
+        mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
+        str_eval2 = 'mf-sgd'
     elif e == 3:
-        nb_models = 15
+        gibbs = True
+        gibbs_iter = 400
+        mf_conv = True
+        mf = False
+        mf_iter = 250
+        mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
+        str_eval2 = 'gibbs-mf'
     elif e == 4:
-        nb_models = 30
+        gibbs = True
+        gibbs_iter = 400
+        mf_conv = False
+        mf = False
+        mf_iter = 250
+        mf_sgd, batch_size, epochs, step_size = True, 30, 300, 1e-1
+        str_eval2 = 'gibbs-mf-sgd'
 
     n_train = 600
-    n_test = int(n_train / 5)
+    n_test = int(n_train / 4)
+    nb_models = 50
+    alpha_gatings = 1
 
     # set working directory and file name
     os.chdir('C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\')
     str_dataset = 'CMB'
-    str_eval1 = 'nbmodels'
-    str_eval2 = nb_models
+    str_eval1 = 'inf'
+    str_eval2 = str_eval2
 
     header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
     header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
@@ -78,16 +112,16 @@ for e in range(eval_iter):
     # nb_models = 10
     superitr = 1
 
-    # inference settings
-    gibbs = True
-    gibbs_iter = 250
-
-    mf_conv = True #mf with convergence criterion and max_iter
-
-    mf = False #mf with fixed iterations
-    mf_iter = 150
-
-    mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
+    # # inference settings
+    # gibbs = True
+    # gibbs_iter = 250
+    #
+    # mf_conv = True #mf with convergence criterion and max_iter
+    #
+    # mf = False #mf with fixed iterations
+    # mf_iter = 150
+    #
+    # mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
 
     # gating settings
     alpha_gatings = 1
@@ -353,13 +387,13 @@ for e in range(eval_iter):
                     term_plus_std = term_plus_std + (mat_T + 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
                     term_minus_std = term_minus_std + (mat_T - 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
 
-            # if out_dim > 1:
-            #     term_mean = term_mean[:, 0]
+            if out_dim > 1:
+                term_mean = term_mean[:, 0]
             mean_function[i,:] = term_mean
 
-            # if out_dim == 1:
-            plus_std_function[i,:] = term_plus_std
-            minus_std_function[i,:] = term_minus_std
+            if out_dim == 1:
+                plus_std_function[i,:] = term_plus_std
+                minus_std_function[i,:] = term_minus_std
 
             # error for nMSE
             err = err + np.absolute((y_hat - mean_function[i]))
