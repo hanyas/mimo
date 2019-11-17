@@ -29,19 +29,22 @@ seed = None
 np.random.seed(seed=seed)
 random.seed(seed)
 
-# # set working directory and file name
-# os.chdir('C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\')
-# str_dataset = 'CMB'
-# str_evaluation1 = 'data'
+# set working directory and file name
+os.chdir('C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\')
+str_dataset = 'kin_3joint'
+str_evaluation1 = '' #raw: alphaDir, etc
 # str_evaluation2 = None
-# header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
-# header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
-#
-# csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_evaluation1) + '_raw' + '.csv')
-# tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_evaluation1) + '.tex')
-# pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_evaluation1) + '.pdf')
-# stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_evaluation1) + '_stats' + '.csv')
-#
+header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
+header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
+
+
+csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_evaluation1) + '_raw' + '.csv')
+tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_evaluation1) + '.tex')
+pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_evaluation1) + '.pdf')
+stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_evaluation1) + '_stats' + '.csv')
+visual_tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_evaluation1))
+visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_evaluation1))
+
 # # write headers
 # f = open(csv_path, 'a+')
 # f.write(header1 + "\n")
@@ -50,13 +53,13 @@ random.seed(seed)
 
 # general settings
 affine = True
-nb_models = 20
+nb_models = 50
 metaitr = 1
 superitr = 1
 
 # inference settings
 gibbs = True
-gibbs_iter = 250
+gibbs_iter = 350
 
 mf_conv = True #mf with convergence criterion and max_iter
 
@@ -70,24 +73,23 @@ alpha_gatings = 10
 stick_breaking = False
 
 # generate data
-in_dim_niw = 1
+in_dim_niw = 3
 out_dim = 2
 n_train = 5000
 n_test = int(n_train / 5)
 
 # plotting settings
-plot_training = True
-plot_prediction = True
+plot_prediction, save_prediction = True, True
 
-plot_kinematics = True
+plot_kinematics, save_kinematics = True, True
 plot_dynamics = False
 
-plot_vlb = False
+plot_vlb = True
 plot_metrics = False # only for mf with fixed iterations
 
 
 
-# data, data_test = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed), generate_SIN(n_test,in_dim_niw, out_dim, freq=freq, shuffle=False, seed=seed)
+# data, data_test = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed), generate_SIN(n_test,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
 # data, data_test = generate_CMB(n_train, n_test,seed)
 # data, data_test = generate_LIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed),generate_LIN(n_test,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
 # data, data_test = generate_gaussian(n_train, out_dim, in_dim_niw, seed=seed), generate_gaussian(n_test, out_dim, in_dim_niw, seed=seed)
@@ -98,7 +100,7 @@ data, data_test = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints
 # data, data_test = generate_Sarcos(n_train, None, in_dim_niw, out_dim, seed, all=True),generate_Sarcos(n_test, None, in_dim_niw, out_dim, seed, all=True)
 # data, data_test = generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True), generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True)
 
-data, data_test = normalize_data(data, 1),normalize_data(data_test,1)
+# data, data_test = normalize_data(data, 1),normalize_data(data_test,1)
 
 
 
@@ -252,15 +254,15 @@ for m in range(metaitr):
     nMAE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[1]
 
     # plots of prediction for training data
-    if plot_training:
+    if plot_prediction:
         if in_dim_niw + out_dim == 2:
-            plot_prediction_2d(data, pred_y)
+            plot_prediction_2d(data, pred_y, 'Training_Data', save_prediction, visual_pdf_path, visual_tikz_path)
         if plot_kinematics == True:
             # plot of prediction for endeffector positions vs. data
-            endeffector_pos_2d(data, in_dim_niw, pred_y, 'results/kin_train.pdf')
+            endeffector_pos_2d(data, in_dim_niw, pred_y, 'Training_Data', visual_pdf_path, visual_tikz_path, save_kinematics)
             if in_dim_niw == 1:
                 # 3d plot of x,y position endeffector and angle
-                endeffector_pos_3d(data, pred_y, in_dim_niw, 'wasd')
+                endeffector_pos_3d(data, pred_y, in_dim_niw, 'Training_Data', visual_pdf_path, visual_tikz_path, save_kinematics)
         if plot_dynamics == True:
             # plot of inverse dynamics of first joint: motor torque and predicted motor torque
             motor_torque(n_train, data, pred_y, in_dim_niw)
@@ -344,15 +346,15 @@ for m in range(metaitr):
     if plot_prediction:
         if in_dim_niw + out_dim == 2:
             # plot_prediction_2d(data_test, mean_function)
-            plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function)
+            plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function, 'Test_Data', save_prediction, visual_pdf_path, visual_tikz_path)
 
         # plot of kinematics data
         if plot_kinematics == True:
             # plot of prediction for endeffector positions vs. data
-            endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'results/kin_test.pdf')
+            endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'Test_Data', visual_pdf_path, visual_tikz_path, save_kinematics)
             if in_dim_niw == 1:
                 # 3d plot of x,y position endeffector and angle
-                endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'wasd')
+                endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'Test_Data', visual_pdf_path, visual_tikz_path, save_kinematics)
         if plot_dynamics == True:
             # plot of inverse dynamics of first joint: motor torque and predicted motor torque
             motor_torque(n_test, data_test, mean_function, in_dim_niw)
@@ -433,5 +435,4 @@ for m in range(metaitr):
 # # #remove file
 # # os.remove(csv_path)
 
-
-
+print(data_test)
