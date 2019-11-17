@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 import tikzplotlib
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
+import os
 
 def plot_gaussian(mu, lmbda, color='rnd_psi_mniw', label='', alpha=1.0, ax=None,
                   artists=None):
@@ -54,58 +55,133 @@ def plot_absolute_error(all_err):
     plt.title('model absolute error vs iteration')
     plt.show()
 
-def plot_prediction_2d(data, pred_y):
-    plt.scatter(data[:, 0], data[:, 1],c='black', s=1, zorder=1)
-    plt.scatter(data[:, 0], pred_y, c='red', s=1, zorder=2)
-    # axes = plt.gca()
-    # axes.set_xlim([xmin, xmax])
-    # axes.set_ylim([-5, 5])
-    plt.title('best model')
-    # plt.savefig('results/_training.pdf')
+def plot_prediction_2d(data, pred_y, data_label, save_prediction, visual_pdf_path, visual_tikz_path):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    plt.scatter(data[:, 0], data[:, 1],c='black', s=1, zorder=1, label=data_label)
+    plt.scatter(data[:, 0], pred_y, c='red', s=1, zorder=2, label='Prediction')
+
+    legend = ax.legend(loc='lower left', markerscale=3)
+    ax.add_artist(legend)
+
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    # plt.title('Prediction fo)
+
+    if save_prediction:
+        tikz = os.path.join(visual_tikz_path + '_' + data_label + '.tex')
+        pdf = os.path.join(visual_pdf_path +'_' +  data_label + '.pdf')
+        tikzplotlib.get_tikz_code(figure=fig, filepath=None, figurewidth=None, figureheight=None, textsize=10.0,
+                                  tex_relative_path_to_data=None, externalize_tables=False, override_externals=False,
+                                  strict=False, wrap=True, add_axis_environment=True, extra_axis_parameters=None,
+                                  extra_tikzpicture_parameters=None, dpi=None, show_info=False, include_disclaimer=True,
+                                  standalone=False, float_format='{:.15g}', table_row_sep='\n')
+        tikzplotlib.save(tikz, encoding=None)
+
+        plt.savefig(pdf)
+
     plt.show()
 
-def plot_prediction_2d_mean(data, mean_function, plus_2std_function, minus_2std_function):
-    plt.scatter(data[:, 0], data[:, 1], c='black', s=1, zorder=1)
-    plt.scatter(data[:, 0], mean_function, c='red', s=1, zorder=2)
-    plt.scatter(data[:, 0], plus_2std_function, c='darksalmon', s=0.5, zorder=2)
-    plt.scatter(data[:, 0], minus_2std_function, c='darksalmon', s=0.5, zorder=2)
-    # axes = plt.gca()
-    # axes.set_xlim([xmin, xmax])
-    # axes.set_ylim([-5, 5])
-    plt.title('best model')
-    # plt.savefig('results/_testing.pdf')
+def plot_prediction_2d_mean(data, mean_function, plus_2std_function, minus_2std_function, data_label, save_prediction, visual_pdf_path, visual_tikz_path):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    plt.scatter(data[:, 0], data[:, 1], c='black', s=1, zorder=1, label=data_label)
+    plt.scatter(data[:, 0], mean_function, c='red', s=1, zorder=2, label='Prediction')
+    plt.scatter(data[:, 0], plus_2std_function, c='darksalmon', s=1, zorder=2, label='Confidence Interval')
+    plt.scatter(data[:, 0], minus_2std_function, c='darksalmon', s=1, zorder=2)
+
+    # plt.title('best model')
+
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+
+    legend = ax.legend(loc='lower left', markerscale=3)
+    ax.add_artist(legend)
+
+    if save_prediction:
+        tikz = os.path.join(visual_tikz_path + '_' + data_label + '.tex')
+        pdf = os.path.join(visual_pdf_path +'_' +  data_label + '.pdf')
+        tikzplotlib.get_tikz_code(figure=fig, filepath=None, figurewidth=None, figureheight=None, textsize=10.0,
+                                  tex_relative_path_to_data=None, externalize_tables=False, override_externals=False,
+                                  strict=False, wrap=True, add_axis_environment=True, extra_axis_parameters=None,
+                                  extra_tikzpicture_parameters=None, dpi=None, show_info=False, include_disclaimer=True,
+                                  standalone=False, float_format='{:.15g}', table_row_sep='\n')
+        tikzplotlib.save(tikz, encoding=None)
+
+        plt.savefig(pdf)
+
     plt.show()
 
-def endeffector_pos_2d(data, in_dim_niw, pred_y, string):
+def endeffector_pos_2d(data, in_dim_niw, pred_y, data_label, visual_pdf_path, visual_tikz_path, save_kinematics):
     # plot of prediction for endeffector positions vs. data
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=1, zorder=2, label='data')
-    plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=1, zorder=2, label='prediction')
-    plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
-    plt.title('X-Y-Position of endeffector')
-    ax.set_xlabel('y-pos endeffector')
-    ax.set_ylabel('x-pos endeffector')
-    legend = ax.legend()
+    plt.scatter(data[:, in_dim_niw], data[:, in_dim_niw+1], s=3, zorder=2, label=data_label, color="black")
+    plt.scatter(pred_y[:, 0], pred_y[:, 1], c='red', s=3, zorder=2, label='Prediction')
+    if in_dim_niw > 1:
+        plt.plot([data[:, in_dim_niw], pred_y[:, 0]], [data[:, in_dim_niw+1], pred_y[:, 1]],color="green",zorder=1)
+    plt.title('X- and Y-Position of Endeffector')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+
+    legend = ax.legend(loc='upper right')
     ax.add_artist(legend)
-    # plt.savefig(string)
+
+    if save_kinematics:
+        tikz = os.path.join(visual_tikz_path + '_2d_' + data_label + '.tex')
+        pdf = os.path.join(visual_pdf_path + '_2d_' + data_label + '.pdf')
+        tikzplotlib.get_tikz_code(figure=fig, filepath=None, figurewidth=None, figureheight=None, textsize=10.0,
+                                  tex_relative_path_to_data=None, externalize_tables=False, override_externals=False,
+                                  strict=False, wrap=True, add_axis_environment=True, extra_axis_parameters=None,
+                                  extra_tikzpicture_parameters=None, dpi=None, show_info=False, include_disclaimer=True,
+                                  standalone=False, float_format='{:.15g}', table_row_sep='\n')
+        tikzplotlib.save(tikz, encoding=None)
+
+        plt.savefig(pdf)
+
     plt.show()
 
-def endeffector_pos_3d(data, pred, in_dim_niw, string):
+def endeffector_pos_3d(data, pred, in_dim_niw, data_label, visual_pdf_path, visual_tikz_path, save_kinematics):
+
     # plot of prediction for endeffector positions vs. data
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     # ax = plt.axes(projection='3d')
-    ax.scatter(data[:, 2], data[:, 1], data[:, 0], c='black', zorder=2, label='data')
-    ax.scatter(pred[:, 1], pred[:, 0], data[:, 0], c='red', label='prediction')
-    plt.title('X-Y-Position of endeffector for joint angles')
-    ax.set_xlabel('y-pos endeffector')
-    ax.set_ylabel('x-pos endeffector')
-    ax.set_zlabel('joint angle')
-    legend = ax.legend()
+    ax.scatter(data[:, 2], data[:, 1], data[:, 0], c='black', zorder=2, label=data_label, s=3)
+    ax.scatter(pred[:, 1], pred[:, 0], data[:, 0], c='red', zorder=2, label='Prediction', s=3)
+
+    plt.title('X- and Y-Position of Endeffector \n over Joint Angle')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('Joint Angle in rad')
+    ax.tick_params(labelsize=10)
+
+    # N =5
+    # ymin, ymax = ax.get_ylim()
+    # ax.set_yticks(np.round(np.linspace(ymin, ymax, N), 2))
+    # xmin, xmax = ax.get_xlim()
+    # ax.set_xticks(np.round(np.linspace(xmin, xmax, N), 2))
+
+    # ax.view_init(azim=30)
+    legend = ax.legend(loc='upper right')
     ax.add_artist(legend)
     # ax.contour3D(data_test[:,0], data_test[:,1], data_test[:,2], 50, cmap='binary')
     # ax.contour3D(data_test[:,0], data_test[:,1], mean_function, 50, cmap='Greens')
+
+    if save_kinematics:
+        tikz = os.path.join(visual_tikz_path + '_3d_' + data_label + '.tex')
+        pdf = os.path.join(visual_pdf_path + '_3d_' + data_label + '.pdf')
+        tikzplotlib.get_tikz_code(figure=fig, filepath=None, figurewidth=None, figureheight=None, textsize=10.0,
+                                  tex_relative_path_to_data=None, externalize_tables=False, override_externals=False,
+                                  strict=False, wrap=True, add_axis_environment=True, extra_axis_parameters=None,
+                                  extra_tikzpicture_parameters=None, dpi=None, show_info=False, include_disclaimer=True,
+                                  standalone=False, float_format='{:.15g}', table_row_sep='\n')
+        tikzplotlib.save(tikz, encoding=None)
+
+        plt.savefig(pdf)
+
     plt.show()
 
 # # plot of inverse dynamics of first joint: q,q_dot,q_dot_dot, motor torque and predicted motor torque
