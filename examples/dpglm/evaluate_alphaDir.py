@@ -17,15 +17,18 @@ import random
 import timeit
 from io import StringIO
 import datetime
+from pathlib import Path
 
 # timer
 start = timeit.default_timer()
 # set random seed
 seed = None
 np.random.seed(seed=seed)
+# set repo path
+dir = str(Path(os.path.abspath(os.path.dirname(__file__))).parent.parent)
+
 
 # user input
-dir = 'C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\'
 CMB = True
 SIN = False
 kin_1joint = False
@@ -42,21 +45,21 @@ if CMB:
     data_file = 'cmb.csv' #name of the file within datasets/
 
 if SIN:
-    n_train = 3000
+    n_train = 1500
     in_dim_niw = 1
     out_dim = 1
     str_dataset = 'SIN' #name of directory within evaluation/
     data_file = 'sin.csv' #name of the file within datasets/
 
 if kin_1joint:
-    n_train = 2500
+    n_train = 1000
     in_dim_niw = 1
     out_dim = 2
     str_dataset = 'kin_1joint' #name of directory within evaluation/
     data_file = 'kin_1joint.csv' #name of the file within datasets/
 
 if kin_2joint:
-    n_train = 2500
+    n_train = 1000
     in_dim_niw = 2
     out_dim = 2
     str_dataset = 'kin_2joint' #name of directory within evaluation/
@@ -70,7 +73,7 @@ if kin_3joint:
     data_file = 'kin_3joint.csv' #name of the file within datasets/
 
 if sarcos:
-    n_train = 3000
+    n_train = 2500
     in_dim_niw = 21
     out_dim = 7
     str_dataset = 'sarcos' #name of directory within evaluation/
@@ -106,13 +109,17 @@ for e in range(eval_iter):
     elif e == 6:
         alpha_gatings = 100
 
-    n_test = int(n_train / 4)
+    n_test = int(n_train / 5)
 
     data, data_test = load_data(n_train, n_test, keyword=data_file, dir=dir)
 
     # general settings
     affine = True
-    nb_models = 30
+    if SIN:
+        nb_models = 100
+    else:
+        nb_models = 50
+
     # metaitr = 100
     superitr = 1
 

@@ -86,13 +86,8 @@ def matrix_t(data, idx, labels,out_dim, in_dim_niw, affine, x_hat, V_k, M_k, nb_
     # dot_yx = np.dot(y, x.T)
     # dot_yy = np.dot(y, y.T)
 
-
     dot_x_hat_x_hat = np.dot(x_hat, x_hat.T)
 
-
-    # S_xx = xxT + V_k[0]
-    # S_yx = yxT + np.dot(M_k, V_k[0])
-    # S_yy = yyT + np.dot(M_k, np.dot(V_k, M_k.T))
     S_xx = dot_xx + V_k[0]
     S_yx = dot_yx + np.dot(M_k, V_k[0])
     S_yy = dot_yy + np.dot(M_k, np.dot(V_k, M_k.T))
@@ -101,15 +96,11 @@ def matrix_t(data, idx, labels,out_dim, in_dim_niw, affine, x_hat, V_k, M_k, nb_
 
     c = 1 - np.dot(transp(x_hat),np.dot(term,x_hat))
 
-
     mean_matrix_T = np.dot(S_yx, np.dot(inv(S_xx),x_hat))
     if out_dim  == 1:
         std_matrix_T = np.sqrt((S_y_x + S_0) * ( 1 / c))  # Fixme to matrix
     else:
         std_matrix_T = 0
-    # std_matrix_T = np.sqrt(std_matrix_T)  # Fixme to matrix
-    # std_matrix_T = inv(psi_mniw * ( 1 / c))
-    # sdt_matrix_T = np.sqrt(std_matrix_T)
 
     return mean_matrix_T, std_matrix_T
 
@@ -134,16 +125,15 @@ def NIW_marg_likelihood(data_x, mu, kappa, psi_niw, nu_niw, n, D):
 
     model.meanfieldupdate(data_x)
 
-    # kappa_hat = model.posterior.kappa
-    # psi_niw_hat = model.posterior.invwishart.psi
-    # nu_niw_hat = model.posterior.invwishart.nu
-
     log_term1 = np.log((1 / 2* np.pi) ** (n*D / 2))
     log_partition_posterior = model.posterior.log_partition()
 
     log_marg_likelihood = log_term1 + log_partition_posterior - log_partition_prior
     marg_likelihood = np.exp(log_marg_likelihood)
 
+    # kappa_hat = model.posterior.kappa
+    # psi_niw_hat = model.posterior.invwishart.psi
+    # nu_niw_hat = model.posterior.invwishart.nu
 
     # # term1 =  (1 / np.pi) ** (n*D / 2)
     # log_term1 = np.log((1 / np.pi) ** (n*D / 2))
