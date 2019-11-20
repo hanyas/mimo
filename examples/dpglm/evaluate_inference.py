@@ -82,7 +82,7 @@ if sarcos:
 
 
 eval_iter = 3
-metaitr = 100
+metaitr = 2
 
 # generate and save violin plots
 num_cols = eval_iter
@@ -127,7 +127,7 @@ for e in range(eval_iter):
     n_test = int(n_train / 5)
     alpha_gatings = 1
 
-    data, data_test = load_data(n_train, n_test, keyword=data_file, dir=dir)
+    data, data_test = load_data(n_train, n_test, data_file, dir, out_dim, in_dim_niw, sarcos)
 
     # general settings
     affine = True
