@@ -9,7 +9,7 @@ import random
 
 
 
-def load_data(n_train,n_test, keyword, dir):
+def load_data(n_train,n_test, keyword, dir, out_dim, in_dim_niw, sarcos):
     # set seed
     np.random.seed(seed=7)
 
@@ -23,10 +23,36 @@ def load_data(n_train,n_test, keyword, dir):
     # generate subset of training_data points
     training_data = data[:n_train, :]
     test_data = data[n_train:n_train+n_test, :]
+
+    if sarcos:
+        X_train = np.genfromtxt("Sarcos/X_train.csv", dtype=None, encoding=None, delimiter=",")
+        y_train = np.genfromtxt("Sarcos/Y_train.csv", dtype=None, encoding=None, delimiter=",")
+        X_test = np.genfromtxt("Sarcos/X_test.csv", dtype=None, encoding=None, delimiter=",")
+        y_test = np.genfromtxt("Sarcos/Y_test.csv", dtype=None, encoding=None, delimiter=",")
+
+        training_data = np.zeros((n_train,X_train.shape[1]+out_dim))
+        training_data[:n_train,:-7] = X_train[:n_train,:]
+        training_data[:n_train,in_dim_niw:] = y_train[:n_train,:]
+
+        # print(X_test)
+        # np.random.shuffle(X_test)
+        # print(X_test)
+        # np.random.shuffle(y_test)
+
+        test_data = np.zeros((X_test.shape[0],X_test.shape[1]+out_dim))
+        test_data[:,:-7] = X_test
+        test_data[:,in_dim_niw:] = y_test
+
+        np.random.shuffle(test_data)
+        test_data = test_data[:n_test,:]
+
     # data = training_data
     # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
 
+    # print('load_training', training_data[0:10, :])
+    # print('load_training', test_data[0, :])
     return training_data, test_data
+
 
 def generate_LIN(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
     # set seed
@@ -328,12 +354,13 @@ def generate_Sarcos(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False, fla
 
     # generate subset of training_data points
     training_data = data[:n_train, :]
+
     if flag:
         training_data = data[n_train:n_train+n_test, :]
     test_data = data[n_train:, :]
 
     # training_data = training_data[np.random.choice(training_data.shape[0], size=n_samples, replace=False), :]
-
+    # print('generate', training_data[0:10,:])
     return training_data
 
 def generate_Barret(n_train,n_test,in_dim_niw,out_dim, seed=None, all=False):

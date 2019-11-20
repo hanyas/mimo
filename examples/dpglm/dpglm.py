@@ -31,12 +31,14 @@ random.seed(seed)
 
 
 dir = 'C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\'
-CMB = True
-SIN = False
-kin_1joint = True
+CMB = False
+SIN = True
+kin_1joint = False
 kin_2joint = False
 kin_3joint = False
 sarcos = False
+
+n_train = 1500
 
 if CMB:
     x_categories = ['100', '200', '300', '400', '600']
@@ -86,9 +88,14 @@ if sarcos:
     str_dataset = 'sarcos' #name of directory within evaluation/
     data_file = 'sarcos.csv' #name of the file within datasets/
 
-n_train = 1000
-n_test = int(n_train / 4)
-data, data_test = load_data(n_train, n_test, keyword=data_file, dir=dir)
+
+n_test = int(n_train / 5)
+data, data_test = load_data(n_train, n_test, data_file, dir, out_dim, in_dim_niw, sarcos)
+
+# plt.plot(np.arange(1, n_train + 1), data[:, in_dim_niw], color="black")
+# plt.show()
+# plt.plot(np.arange(1, n_test + 1), data_test[:, in_dim_niw], color="black")
+# plt.show()
 
 # set working directory and file name
 os.chdir(dir)
@@ -96,15 +103,15 @@ str_eval1 = ''
 
 # general settings
 affine = True
-nb_models = 15
+nb_models = 100
 metaitr = 1
 superitr = 1
 
 # inference settings
 gibbs = True
-gibbs_iter = 100
+gibbs_iter = 300
 
-mf_conv = True #mf with convergence criterion and max_iter
+mf_conv = False #mf with convergence criterion and max_iter
 
 mf = False #mf with fixed iterations
 mf_iter = 150
@@ -112,15 +119,15 @@ mf_iter = 150
 mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
 
 # gating settings
-alpha_gatings = 1
+alpha_gatings = 100
 stick_breaking = False
 
 # plotting settings
 legend_upper_right = True
-plot_2d_prediction, save_2d_prediction = False, False
+plot_2d_prediction, save_2d_prediction = True, False
 
 plot_kinematics, save_kinematics = False, False
-plot_dynamics, save_dynamics = True, False
+plot_dynamics, save_dynamics = False, False
 
 plot_vlb = True
 # plot_metrics = False # only for mf with fixed iterations
@@ -152,6 +159,7 @@ visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + s
 # data, data_test = generate_gaussian(n_train, out_dim, in_dim_niw, seed=seed), generate_gaussian(n_test, out_dim, in_dim_niw, seed=seed)
 # data, data_test = generate_heaviside2(n_train,scaling=1), generate_heaviside2(n_test,scaling=1)
 # data, data_test = generate_kinematics(n_train=n_train,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1,l4=1,seed=seed), generate_kinematics(n_train=n_test,out_dim=out_dim,num_joints=in_dim_niw,loc_noise=0,scale_noise=5,l1=1,l2=1,l3=1,l4=1,seed=seed)
+
 # data, data_test = generate_Sarcos(n_train, n_test, in_dim_niw, out_dim, seed, all=True, flag=False),generate_Sarcos(n_train, n_test, in_dim_niw, out_dim, seed, all=True, flag=True)
 # data, data_test = generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True), generate_Barret(n_train, None, in_dim_niw, out_dim, seed, all=True)
 # data, data_test = normalize_data(data, 1),normalize_data(data_test,1)
@@ -304,7 +312,7 @@ for m in range(metaitr):
     for l in dpglm.labels_list:
         label = l.z
     # print('used labels',dpglm.used_labels)
-    # print('# used labels',len(dpglm.used_labels))
+    print('# used labels',len(dpglm.used_labels))
 
     # predict on training data
     pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)

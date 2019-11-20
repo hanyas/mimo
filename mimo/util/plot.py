@@ -165,13 +165,6 @@ def endeffector_pos_3d(data, pred, in_dim_niw, data_label, visual_pdf_path, visu
     ax.set_zlabel('Joint Angle in rad')
     ax.tick_params(labelsize=10)
 
-    # N =5
-    # ymin, ymax = ax.get_ylim()
-    # ax.set_yticks(np.round(np.linspace(ymin, ymax, N), 2))
-    # xmin, xmax = ax.get_xlim()
-    # ax.set_xticks(np.round(np.linspace(xmin, xmax, N), 2))
-
-    # ax.view_init(azim=30)
     legend = ax.legend(loc='upper right', prop={'size': 12})
     ax.add_artist(legend)
     # ax.contour3D(data_test[:,0], data_test[:,1], data_test[:,2], 50, cmap='binary')
@@ -247,17 +240,6 @@ def violin_plot_two(data, num_columns=None, tikz_path=None, pdf_path=None, x_lab
         ax.set_xlim(0.25, len(labels) + 0.75)
         ax.set_xlabel(x_label)
 
-    # print(data)
-    # print(data.shape)
-
-    # create test data
-    # np.random.seed(19680801)
-    # data = [sorted(np.random.normal(0, std, 20)) for std in range(1, 5)]
-    # data = np.asarray(data).T
-    # print(data.shape)
-
-    # print(data)
-
     fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9, 4), sharey=True)
 
     ax1.set_title(title)
@@ -324,17 +306,6 @@ def violin_plot_one(data, num_columns=None, tikz_path=None, pdf_path=None, x_lab
         ax.set_xlim(0.25, len(labels) + 0.75)
         ax.set_xlabel(x_label)
 
-    # print(data)
-    # print(data.shape)
-
-    # create test data
-    # np.random.seed(19680801)
-    # data = [sorted(np.random.normal(0, std, 20)) for std in range(1, 5)]
-    # data = np.asarray(data).T
-    # print(data.shape)
-
-    # print(data)
-
     # fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(9, 4), sharey=True)
     fig, ax2 = plt.subplots(nrows=1, ncols=1, sharey=True)
 
@@ -388,4 +359,4 @@ def violin_plot_one(data, num_columns=None, tikz_path=None, pdf_path=None, x_lab
                               standalone=False, float_format='{:.15g}', table_row_sep='\n')
     tikzplotlib.save(tikz_path, encoding=None)
     plt.savefig(pdf_path)
-    plt.show()
+    # plt.show()
