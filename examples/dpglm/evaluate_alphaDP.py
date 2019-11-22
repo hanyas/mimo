@@ -29,12 +29,12 @@ dir = str(Path(os.path.abspath(os.path.dirname(__file__))).parent.parent)
 
 
 # user input
-CMB = True
+CMB = False
 SIN = False
 kin_1joint = False
 kin_2joint = False
 kin_3joint = False
-sarcos = False         # This data set might be too large
+sarcos = True         # This data set might be too large
 
 
 if CMB:
@@ -86,28 +86,28 @@ metaitr = 100
 
 # generate and save violin plots
 num_cols = eval_iter
-x_label = 'Alpha of Dirichlet Prior'
-x_categories = ['0.01', '0.1', '1', '5', '10', '50', '100']
+x_label = 'Delta of Dirichlet Process Prior'
+x_categories = ['0.1', '1', '10', '50', '100', '500', '1000']
 y_label = 'Explained Variance Score'
 title = None    #'Violin plots for CMB dataset'
 
 for e in range(eval_iter):
 
-    print('eval_iter',e)
+    print('eval_iter', e)
     if e == 0:
-        alpha_gatings = 0.01
-    elif e == 1:
         alpha_gatings = 0.1
-    elif e == 2:
+    elif e == 1:
         alpha_gatings = 1
-    elif e == 3:
-        alpha_gatings = 5
-    elif e == 4:
+    elif e == 2:
         alpha_gatings = 10
-    elif e == 5:
+    elif e == 3:
         alpha_gatings = 50
-    elif e == 6:
+    elif e == 4:
         alpha_gatings = 100
+    elif e == 5:
+        alpha_gatings = 500
+    # elif e == 6:
+    #     alpha_gatings = 1000
 
     n_test = int(n_train / 5)
 
@@ -119,13 +119,14 @@ for e in range(eval_iter):
         nb_models = 100
     else:
         nb_models = 50
+
     # metaitr = 100
     superitr = 1
 
     # set working directory and file name
     os.chdir(dir)
     # str_dataset = 'CMB'
-    str_eval1 = 'alphaDir'
+    str_eval1 = 'alphaDP'
     str_eval2 = alpha_gatings
     time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
 
@@ -133,12 +134,18 @@ for e in range(eval_iter):
     tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.tex')
     pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.pdf')
     stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' + time + '.csv')
+    # csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_raw' + '.csv')
+    # tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) +'.tex')
+    # pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '.pdf')
+    # stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' '.csv')
+
     visual_tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
     visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
 
     # # write headers
     # header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
     # header2 = "1:expl_var_test 2:expl_var_train 3:VLB 4:used_labels 5:mf_iter 6:inf_time 7:pred_time"
+    #
     # f = open(csv_path, 'a+')
     # f.write(header1 + "\n")
     # f.write(header2 + "\n")
@@ -157,7 +164,7 @@ for e in range(eval_iter):
 
     # gating settings
     # alpha_gatings = 1
-    stick_breaking = False
+    stick_breaking = True
 
     # generate data
     # in_dim_niw = 1
@@ -481,7 +488,7 @@ for e in range(eval_iter):
 
     # load data
 
-    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0]).values # , skiprows=2
+    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0]).values # skiprows=2,
 
     data_intermed = explained_var_test #np.column_stack((nMSE_test, nMAE_test))
 

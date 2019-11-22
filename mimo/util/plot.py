@@ -315,6 +315,10 @@ def violin_plot_one(data, num_columns=None, tikz_path=None, pdf_path=None, x_lab
 
     # fig.set_title(title)
     # data = np.ndarray.tolist(data)
+
+    # ax2.boxplot(data , showfliers = True, showmeans = True, meanline = True)#,  whis=[5, 95])
+
+    # UNCOMMENT FOR VIOLIN PLOT
     parts = ax2.violinplot(
         data, showmeans=False, showmedians=False, showextrema=False)
     for pc in parts['bodies']:
@@ -359,4 +363,4 @@ def violin_plot_one(data, num_columns=None, tikz_path=None, pdf_path=None, x_lab
                               standalone=False, float_format='{:.15g}', table_row_sep='\n')
     tikzplotlib.save(tikz_path, encoding=None)
     plt.savefig(pdf_path)
-    # plt.show()
+    plt.show()

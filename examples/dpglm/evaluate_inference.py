@@ -82,7 +82,7 @@ if sarcos:
 
 
 eval_iter = 3
-metaitr = 2
+metaitr = 100
 
 # generate and save violin plots
 num_cols = eval_iter
@@ -143,22 +143,23 @@ for e in range(eval_iter):
     # str_dataset = 'CMB'
     str_eval1 = 'inf'
     str_eval2 = str_eval2
+    time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
 
-    csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_raw' + '.csv')
-    tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '.tex')
-    pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '.pdf')
-    stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' + '.csv')
+    csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_raw' + time + '.csv')
+    tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.tex')
+    pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.pdf')
+    stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' + time + '.csv')
     visual_tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
     visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
 
-    # write headers
-    header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
-    header2 = "1:expl_var_test 2:expl_var_train 3:VLB 4:used_labels 5:mf_iter 6:inf_time 7:pred_time"
-
-    f = open(csv_path, 'a+')
-    f.write(header1 + "\n")
-    f.write(header2 + "\n")
-    f.close()
+    # # write headers
+    # header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
+    # header2 = "1:expl_var_test 2:expl_var_train 3:VLB 4:used_labels 5:mf_iter 6:inf_time 7:pred_time"
+    #
+    # f = open(csv_path, 'a+')
+    # f.write(header1 + "\n")
+    # f.write(header2 + "\n")
+    # f.close()
 
     # inference settings
     # gibbs = True
@@ -201,6 +202,8 @@ for e in range(eval_iter):
         gating_prior = distributions.StickBreaking(**gating_hypparams)
 
     for m in range(metaitr):
+
+        print('meta_iter', m)
 
         # initialize prior parameters: draw from uniform disitributions
         components_prior = []
@@ -365,12 +368,23 @@ for e in range(eval_iter):
         start_prediction = timeit.default_timer()
 
         # calculate alpha_hat (sum over alpha_k)
-        if stick_breaking == False:
+        if not stick_breaking:
             alphas_hat = 0
             alphas = dpglm.gating.posterior.alphas
             for idx, c in enumerate(dpglm.components):
                 if idx in dpglm.used_labels:
                     alphas_hat = alphas_hat + alphas[idx]
+        else:
+            stick_lengths = np.ones([len(dpglm.components)])
+            product = np.ones([len(dpglm.components)])
+            gammas = dpglm.gating.posterior.gammas
+            deltas = dpglm.gating.posterior.deltas
+            for idx, c in enumerate(dpglm.components):
+                if idx in dpglm.used_labels:
+                    product[idx] = gammas[idx] / gammas[idx] + deltas[idx]
+                    for j in range(idx):
+                        product[idx] = product[idx] * gammas[j] / gammas[j] + deltas[j]
+            alphas = product
 
         # initialize variables
         mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:])
@@ -410,7 +424,7 @@ for e in range(eval_iter):
                 if idx in dpglm.used_labels:
                     mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
                     S_0, N_0 = get_component_standard_parameters(c.prior)[6], get_component_standard_parameters(c.prior)[7]
-                    mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw)
+                    mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
 
                     # mean function
                     term_mean = term_mean + mat_T * marg[idx] * alphas[idx] / alphas_marg_sum
@@ -484,7 +498,7 @@ for e in range(eval_iter):
 
     # load data
 
-    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0], skiprows=2).values
+    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0]).values #, skiprows=2
 
     data_intermed = explained_var_test #np.column_stack((nMSE_test, nMAE_test))
 
