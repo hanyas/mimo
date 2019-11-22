@@ -36,7 +36,7 @@ def student_t(x_hat, m_k, beta_k, W_k, v_k, D):
     return prob
 
 
-def matrix_t(data, idx, labels,out_dim, in_dim_niw, affine, x_hat, V_k, M_k, nb_models, S_0, dot_xx, dot_yx, dot_yy, psi_mniw):
+def matrix_t(data, idx, labels, out_dim, in_dim_niw, affine, x_hat, V_k, M_k, nb_models, S_0, dot_xx, dot_yx, dot_yy, psi_mniw, nu_mniw, N_0):
     def inv(arg):
         if isinstance(arg,int):
             arg = 1 / arg
@@ -97,10 +97,14 @@ def matrix_t(data, idx, labels,out_dim, in_dim_niw, affine, x_hat, V_k, M_k, nb_
     c = 1 - np.dot(transp(x_hat),np.dot(term,x_hat))
 
     mean_matrix_T = np.dot(S_yx, np.dot(inv(S_xx),x_hat))
+
     if out_dim  == 1:
-        std_matrix_T = np.sqrt((S_y_x + S_0) * ( 1 / c))  # Fixme to matrix
+        std_matrix_T = np.sqrt((S_y_x + S_0) * ( 1 / c) / nu_mniw + N_0 + 1 - 2)  # variance of a matrix-T is scale-parameter divided by df -2 (see wikipedia and minka - bayesian linear regression)
     else:
-        std_matrix_T = 0
+        std_matrix_T = 0 #Fixme to multivariate output
+
+    # mean_matrix_T = np.dot(M_k,x_hat)
+    # std_matrix_T = np.sqrt(psi_mniw / nu_mniw-out_dim-1 )
 
     return mean_matrix_T, std_matrix_T
 

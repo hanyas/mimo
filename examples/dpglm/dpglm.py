@@ -12,6 +12,7 @@ from mimo.util.data import *
 from mimo.util.plot import *
 from mimo.util.error_metrics import calc_error_metrics
 from mimo.util.prediction import *
+from mimo.util.mean_gibbs import calculate_mean_gibbs
 
 import os
 import copy
@@ -31,14 +32,14 @@ random.seed(seed)
 
 
 dir = 'C:\\Users\\pistl\\Dropbox\\MA\\mimo_final\\'
-CMB = False
-SIN = True
+CMB = True
+SIN = False
 kin_1joint = False
 kin_2joint = False
 kin_3joint = False
 sarcos = False
 
-n_train = 1500
+n_train = 2500
 
 if CMB:
     x_categories = ['100', '200', '300', '400', '600']
@@ -103,7 +104,7 @@ str_eval1 = ''
 
 # general settings
 affine = True
-nb_models = 100
+nb_models = 50
 metaitr = 1
 superitr = 1
 
@@ -111,7 +112,7 @@ superitr = 1
 gibbs = True
 gibbs_iter = 300
 
-mf_conv = False #mf with convergence criterion and max_iter
+mf_conv = True #mf with convergence criterion and max_iter
 
 mf = False #mf with fixed iterations
 mf_iter = 150
@@ -119,7 +120,7 @@ mf_iter = 150
 mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
 
 # gating settings
-alpha_gatings = 100
+alpha_gatings = 1
 stick_breaking = False
 
 # plotting settings
@@ -134,8 +135,8 @@ plot_vlb = True
 
 
 # set pathes
-header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
-header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
+# header1 = str(datetime.datetime.now().strftime('date, time: %Y<f-%m-%d, %H-%M-%S'))
+# header2 = "1:nMSE_train 2:nMAE_train 3:VLB 4:nMSE_test 5:nMAE_test 6:used_labels 7:mf_iter 8:gibbs_iter 9:inf_time 10:pred_time"
 
 csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_raw' + '.csv')
 tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1)  + '.tex')
@@ -153,7 +154,7 @@ visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + s
 
 
 
-# data, data_test = generate_SIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed), generate_SIN(n_test,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
+# data, data_test = generate_SIN(n_train,in_dim_niw, out_dim, freq=3, shuffle=False, seed=seed), generate_SIN(n_test,in_dim_niw, out_dim, freq=3, shuffle=False, seed=seed)
 # data, data_test = generate_CMB(n_train, n_test,seed)
 # data, data_test = generate_LIN(n_train,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed),generate_LIN(n_test,in_dim_niw, out_dim, freq=14, shuffle=False, seed=seed)
 # data, data_test = generate_gaussian(n_train, out_dim, in_dim_niw, seed=seed), generate_gaussian(n_test, out_dim, in_dim_niw, seed=seed)
@@ -237,7 +238,7 @@ for m in range(metaitr):
 
         # Gibbs sampling to wander around the posterior
         if gibbs == True:
-            # print('Gibbs Sampling')
+            print('Gibbs Sampling')
             for _ in progprint_xrange(gibbs_iter):
             # for _ in range(gibbs_iter):
                 dpglm.resample_model()
@@ -339,15 +340,32 @@ for m in range(metaitr):
     if plot_dynamics == True:
         motor_torque(n_train, data, pred_y, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path,
                      'Training Data')
+
     start_prediction = timeit.default_timer()
 
+
+    # calculate_mean_gibbs(dpglm, n_test, 5, dir)
+
+
     # calculate alpha_hat (sum over alpha_k)
-    if stick_breaking == False:
+    if not stick_breaking:
         alphas_hat = 0
         alphas = dpglm.gating.posterior.alphas
         for idx, c in enumerate(dpglm.components):
             if idx in dpglm.used_labels:
                 alphas_hat = alphas_hat + alphas[idx]
+    else:
+        stick_lengths = np.ones([len(dpglm.components)])
+        product = np.ones([len(dpglm.components)])
+        gammas = dpglm.gating.posterior.gammas
+        deltas = dpglm.gating.posterior.deltas
+        for idx, c in enumerate(dpglm.components):
+            if idx in dpglm.used_labels:
+                product[idx] = gammas[idx] / gammas[idx] + deltas[idx]
+                for j in range(idx):
+                    product[idx] = product[idx] * gammas[j] / gammas[j] + deltas[j]
+        alphas = product
+
 
     # initialize variables
     mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:])
@@ -377,7 +395,6 @@ for m in range(metaitr):
                 mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
                 marg[idx] = NIW_marg_likelihood(x_hat, mu, kappa, psi_niw, nu_niw, 1, out_dim)
                 alphas_marg_sum = alphas_marg_sum + alphas[idx] * marg[idx]
-                # stud_t[idx] = student_t(x_hat, mu, kappa, psi_niw, nu_niw, in_dim_niw)
 
         # calculate contribution of each cluster to mean function / prediction for training data x_hat
         term_mean = 0
@@ -387,7 +404,7 @@ for m in range(metaitr):
             if idx in dpglm.used_labels:
                 mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
                 S_0, N_0 = get_component_standard_parameters(c.prior)[6], get_component_standard_parameters(c.prior)[7]
-                mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw)
+                mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
 
                 # mean function
                 term_mean = term_mean + mat_T * marg[idx] * alphas[idx] / alphas_marg_sum
@@ -395,8 +412,8 @@ for m in range(metaitr):
                 # term = term + mat_T * alphas[idx] * marg[idx]  / alphas_sum * len(dpglm.components)
 
                 # confidence interval
-                term_plus_std = term_plus_std + (mat_T + 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
-                term_minus_std = term_minus_std + (mat_T - 0.2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
+                term_plus_std = term_plus_std + (mat_T + 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
+                term_minus_std = term_minus_std + (mat_T - 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
 
         if out_dim > 1:
             term_mean = term_mean[:, 0]
@@ -443,11 +460,11 @@ for m in range(metaitr):
     pred_time = stop_prediction - start_prediction
     overall_time = stop - start
 
-#     # print('Inference time:', inf_time)
-#     # print('Plotting (training) time: ', plot_time)
-#     # print('Prediction time: ', pred_time)
-#     # print('Overall time: ', overall_time)
-#
+    print('Inference time:', inf_time)
+    print('Plotting (training) time: ', plot_time)
+    print('Prediction time: ', pred_time)
+    print('Overall time: ', overall_time)
+
 #     # write to file
 #     f = open(csv_path, 'a+')
 #     f.write(str(nMSE_train[0]) + " ")
