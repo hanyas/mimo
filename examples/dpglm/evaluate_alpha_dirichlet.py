@@ -1,198 +1,130 @@
 import numpy as np
 import numpy.random as npr
+
 from sklearn.metrics import explained_variance_score
 import pandas
 
+import mimo
 from mimo import distributions, models
 from mimo.util.text import progprint_xrange
 from mimo.util.data import *
 from mimo.util.plot import *
-from mimo.util.error_metrics import calc_error_metrics
 from mimo.util.prediction import *
 
 import os
-import copy
 import operator
-import random
+import copy
 import timeit
-from io import StringIO
 import datetime
-from pathlib import Path
+import argparse
+
+# set random seed
+np.random.seed(seed=None)
 
 # timer
 start = timeit.default_timer()
-# set random seed
-seed = None
-np.random.seed(seed=seed)
-# set repo path
-dir = str(Path(os.path.abspath(os.path.dirname(__file__))).parent.parent)
 
+parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Dirichlet prior')
+parser.add_argument('--dataset', help='Choose dataset', default='cmb')
+parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+parser.add_argument('--prior', help='Set prior type', default='dirichlet')
+parser.add_argument('--inference', help='Set inference technique', default='gibbs')
+parser.add_argument('--iterations', help='Set inference iterations', default=300)
+parser.add_argument('--nb_seeds', help='Set number of seeds', default=100)
+parser.add_argument('--nb_models', help='Set max number of models', default=100)
+parser.add_argument('--affine', help='Set affine or not', default=True)
 
-# user input
-CMB = True
-SIN = False
-kin_1joint = False
-kin_2joint = False
-kin_3joint = False
-sarcos = False         # This data set might be too large
+args = parser.parse_args()
 
-
-if CMB:
+data_file = args.dataset + '.csv'  # name of the file within datasets/
+if args.dataset == 'cmb':
     n_train = 600
     in_dim_niw = 1
     out_dim = 1
-    str_dataset = 'CMB' #name of directory within evaluation/
-    data_file = 'cmb.csv' #name of the file within datasets/
-
-if SIN:
+elif args.dataset == 'sine':
     n_train = 1500
     in_dim_niw = 1
     out_dim = 1
-    str_dataset = 'SIN' #name of directory within evaluation/
-    data_file = 'sin.csv' #name of the file within datasets/
-
-if kin_1joint:
+elif args.dataset == 'fk_1joint':
     n_train = 1000
     in_dim_niw = 1
     out_dim = 2
-    str_dataset = 'kin_1joint' #name of directory within evaluation/
-    data_file = 'kin_1joint.csv' #name of the file within datasets/
-
-if kin_2joint:
+elif args.dataset == 'fk_2joint':
     n_train = 1000
     in_dim_niw = 2
     out_dim = 2
-    str_dataset = 'kin_2joint' #name of directory within evaluation/
-    data_file = 'kin_2joint.csv' #name of the file within datasets/
-
-if kin_3joint:
+elif args.dataset == 'fk_3joint':
     n_train = 2500
     in_dim_niw = 3
     out_dim = 2
-    str_dataset = 'kin_3joint' #name of directory within evaluation/
-    data_file = 'kin_3joint.csv' #name of the file within datasets/
-
-if sarcos:
+elif args.dataset == 'sarcos':
     n_train = 2500
     in_dim_niw = 21
     out_dim = 7
-    str_dataset = 'sarcos' #name of directory within evaluation/
-    data_file = 'sarcos.csv' #name of the file within datasets/
+else:
+    raise RuntimeError("Dataset does not exist")
 
+# concentration parameter of the prior
+alphas = [0.01, 0.1, 1., 5., 10., 50., 100.]
 
-
-eval_iter = 7
-metaitr = 100
+# number of seeds
+metaitr = args.nb_seeds
 
 # generate and save violin plots
-num_cols = eval_iter
+num_cols = len(alphas)
 x_label = 'Alpha of Dirichlet Prior'
 x_categories = ['0.01', '0.1', '1', '5', '10', '50', '100']
 y_label = 'Explained Variance Score'
-title = None    #'Violin plots for CMB dataset'
+title = None
 
-for e in range(eval_iter):
-
-    print('eval_iter',e)
-    if e == 0:
-        alpha_gatings = 0.01
-    elif e == 1:
-        alpha_gatings = 0.1
-    elif e == 2:
-        alpha_gatings = 1
-    elif e == 3:
-        alpha_gatings = 5
-    elif e == 4:
-        alpha_gatings = 10
-    elif e == 5:
-        alpha_gatings = 50
-    elif e == 6:
-        alpha_gatings = 100
+for alpha in alphas:
+    print('Current alpha value', alpha)
 
     n_test = int(n_train / 5)
+    data, data_test = load_data(n_train, n_test, data_file, args.datapath, out_dim, in_dim_niw, args.dataset=='sarcos')
 
-    data, data_test = load_data(n_train, n_test, data_file, dir, out_dim, in_dim_niw, sarcos)
-
-    # general settings
-    affine = True
-    if SIN:
-        nb_models = 100
-    else:
-        nb_models = 50
-    # metaitr = 100
     superitr = 1
 
     # set working directory and file name
-    os.chdir(dir)
-    # str_dataset = 'CMB'
-    str_eval1 = 'alphaDir'
-    str_eval2 = alpha_gatings
+    os.chdir(args.datapath)
+    str1 = 'alpha_' + str(args.prior)
+    str2 = alpha
     time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
 
-    csv_path = os.path.join('evaluation/' + str(str_dataset) + '/raw/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_raw' + time + '.csv')
-    tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/tikz/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.tex')
-    pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/pdf/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + time + '.pdf')
-    stat_path = os.path.join('evaluation/' + str(str_dataset) + '/stats/' + str(str_dataset) + '_' + str(str_eval1) + '_' + str(str_eval2) + '_stats' + time + '.csv')
-    visual_tikz_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
-    visual_pdf_path = os.path.join('evaluation/' + str(str_dataset) + '/visual/' + str(str_dataset) + '_' + str(str_eval1))
-
-    # # write headers
-    # header1 = str(datetime.datetime.now().strftime('date, time: %Y-%m-%d, %H-%M-%S'))
-    # header2 = "1:expl_var_test 2:expl_var_train 3:VLB 4:used_labels 5:mf_iter 6:inf_time 7:pred_time"
-    # f = open(csv_path, 'a+')
-    # f.write(header1 + "\n")
-    # f.write(header2 + "\n")
-    # f.close()
+    csv_path = os.path.join('evaluation/' + str(args.dataset) + '/raw/' + str(args.dataset) + '_' + str(str1) + '_' + str(str2) + '_raw' + time + '.csv')
+    tikz_path = os.path.join('evaluation/' + str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(str1) + '_' + str(str2) + time + '.tex')
+    pdf_path = os.path.join('evaluation/' + str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(str1) + '_' + str(str2) + time + '.pdf')
+    stat_path = os.path.join('evaluation/' + str(args.dataset) + '/stats/' + str(args.dataset) + '_' + str(str1) + '_' + str(str2) + '_stats' + time + '.csv')
+    visual_tikz_path = os.path.join('evaluation/' + str(args.dataset) + '/visual/' + str(args.dataset) + '_' + str(str1))
+    visual_pdf_path = os.path.join('evaluation/' + str(args.dataset) + '/visual/' + str(args.dataset) + '_' + str(str1))
 
     # inference settings
     gibbs = True
     gibbs_iter = 300
 
-    mf_conv = True  #mf with convergence criterion and max_iter
+    mf_conv = True  # mf with convergence criterion and max_iter
 
-    mf = False      #mf with fixed iterations
+    mf = False      # mf with fixed iterations
     mf_iter = 150
 
     mf_sgd, batch_size, epochs, step_size = False, 30, 300, 1e-1
 
-    # gating settings
-    # alpha_gatings = 1
-    stick_breaking = False
-
-    # generate data
-    # in_dim_niw = 1
-    # out_dim = 1
-    # n_train = 600
-    # n_test = 299
-
-    # plotting settings
-    legend_upper_right = False
-
-    plot_2d_prediction, save_2d_prediction, = False, False
-
-    plot_kinematics, save_kinematics = False, False
-    plot_dynamics, save_dynamics = False, False
-
-    plot_vlb = False
-    # plot_metrics = False # only for mf with fixed iterations
-
     # define gating
-    if stick_breaking == False:
-        gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )) * alpha_gatings)
-        gating_prior = distributions.Dirichlet(**gating_hypparams)
-    else:
-        gating_hypparams = dict(K=nb_models, gammas=np.ones((nb_models, )), deltas=np.ones((nb_models, )) * alpha_gatings)
+    if args.prior == 'stick-breaking':
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models, )), deltas=np.ones((args.nb_models, )) * alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
+    else:
+        gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models, )) * alpha)
+        gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-    for m in range(metaitr):
-
-        print('meta_iter', m)
+    for m in range(args.nb_seeds):
+        print('meta iter', m)
 
         # initialize prior parameters: draw from uniform disitributions
         components_prior = []
-        for j in range(nb_models):
+        for j in range(args.nb_models):
             in_dim_mniw = in_dim_niw
-            if affine:
+            if args.affine:
                 in_dim_mniw = in_dim_niw + 1
 
             V = np.eye(in_dim_mniw)
@@ -200,67 +132,63 @@ for e in range(eval_iter):
                 if i < in_dim_mniw - 1:
                     V[i, i] = npr.uniform(0, 10)
                 else:
-                    V[i, i] = npr.uniform(0, 1000) # offset
+                    V[i, i] = npr.uniform(0, 1000)  # offset
             rnd_psi_mniw = npr.uniform(0, 0.1)
             nu_mniw = 2 * out_dim + 1
 
-            mu_low = np.amin(data[:,:-out_dim])
-            mu_high = np.amax(data[:,:-out_dim])
+            mu_low = np.amin(data[:, :-out_dim])
+            mu_high = np.amax(data[:, :-out_dim])
 
             rnd_psi_niw = npr.uniform(0, 10)
-            rnd_kappa = npr.uniform(0,0.1)
+            rnd_kappa = npr.uniform(0, 0.1)
 
-
-            components_hypparams = dict(mu=npr.uniform(mu_low,mu_high,size=in_dim_niw),
-                                        kappa= rnd_kappa,  #0.05
+            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=in_dim_niw),
+                                        kappa=rnd_kappa,  # 0.05
                                         psi_niw=np.eye(in_dim_niw) * rnd_psi_niw,
                                         nu_niw=2 * in_dim_niw + 1,
-                                        M=np.zeros((out_dim, in_dim_mniw)),
-                                        V=V,
-                                        affine=affine,
+                                        M=np.zeros((out_dim, in_dim_mniw)), V=V,
+                                        affine=args.affine,
                                         psi_mniw=np.eye(out_dim) * rnd_psi_mniw,
-                                        nu_mniw= nu_mniw )
+                                        nu_mniw=nu_mniw)
             components_prior_rand = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
             components_prior.append(components_prior_rand)
 
         # define model
-        if stick_breaking == False:
-            dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                 components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
-        else:
+        if args.prior == 'stick-breaking':
             dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                  components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
-
+                                   components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        else:
+            dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                   components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
         dpglm.add_data(data)
 
         start_inference = timeit.default_timer()
 
         # inference
-        allscores = []
-        allmodels = []
-        all_nMSE = []
+        all_scores = []
+        all_models = []
+        all_nmse = []
         all_err = []
         for _ in range(superitr):
             scores = []
-            nMSE = []
-            err_ = []
+            nmse = []
+            err = []
 
             # Gibbs sampling to wander around the posterior
-            if gibbs == True:
+            if gibbs:
                 # print('Gibbs Sampling')
                 # for _ in progprint_xrange(gibbs_iter):
                 for _ in range(gibbs_iter):
                     dpglm.resample_model()
                     # this is needed if Gibbs sampling is used without Mean Field
-                    if mf != True and mf_conv != True and mf_sgd != True:
+                    if not mf and not mf_conv and not mf_sgd:
                         for idx, l in enumerate(dpglm.labels_list):
                             l.r = l.get_responsibility()
                         scores.append(dpglm._vlb())
-
-            if mf == True:
+            if mf:
                 # mean field to lock onto a mode (without convergence criterion, with fixed number of iterations)
                 # print('Mean Field')
-                if gibbs != True:
+                if not gibbs:
                     dpglm.resample_model()
                 # scores = [dpglm.meanfield_coordinate_descent_step() for _ in progprint_xrange(250)]
                 # for _ in progprint_xrange(mf_iter):
@@ -270,20 +198,20 @@ for e in range(eval_iter):
             # pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)
             # var = np.var(data[:, in_dim_niw:], axis=0)
             # MSE = 1 / n_train * err_squared
-            # nMSE.append(np.sum(MSE[0] / var[0]))
+            # nmse.append(np.sum(MSE[0] / var[0]))
             # err_.append(np.sum(err))
 
-            if mf_conv == True:
+            if mf_conv:
                 # mean field to lock onto a mode (with convergence criterion)
                 # print('Mean Field')
-                if gibbs != True:
+                if not gibbs:
                     dpglm.resample_model()
                 scores = dpglm.meanfield_coordinate_descent(tol=1e-2, maxiter=500, progprint=False)
 
             # stochastic mean field to lock onto a mode
-            if mf_sgd == True:
+            if mf_sgd:
                 # print('Stochastic Mean Field')
-                if gibbs != True:
+                if not gibbs:
                     dpglm.resample_model()
                 minibatchsize = batch_size
                 prob = minibatchsize / float(n_train)
@@ -294,26 +222,17 @@ for e in range(eval_iter):
                     for idx, l in enumerate(dpglm.labels_list):
                         l.r = l.get_responsibility()
                     scores.append(dpglm._vlb())
-                # allscores.append(dpglm.meanfield_coordinate_descent_step())
+                # all_scores.append(dpglm.meanfield_coordinate_descent_step())
 
             # all_err.append(err_)
-            # all_nMSE.append(nMSE)
-            allscores.append(scores)
-            allmodels.append(copy.deepcopy(dpglm))
-
-
+            # all_nmse.append(nmse)
+            all_scores.append(scores)
+            all_models.append(copy.deepcopy(dpglm))
 
         start_plotting = timeit.default_timer()
 
-        # plot vlb and error metrics over iterations
-        if plot_vlb:
-            plot_scores(allscores)
-        # if mf and plot_metrics:
-        #     plot_nMSE(all_nMSE)
-        #     plot_absolute_error(all_err)
-
         # Sort models and select best one
-        models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
+        models_and_scores = sorted([(m, s[-1]) for m, s in zip(all_models, all_scores)],
                                    key=operator.itemgetter(1), reverse=True)
         dpglm = models_and_scores[0][0]
         vlb = models_and_scores[0][1]
@@ -328,26 +247,8 @@ for e in range(eval_iter):
         pred_y, err, err_squared = predict_train(dpglm, data, out_dim, in_dim_niw)
 
         # calculate error metrics on training data
-        # nMSE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[0]
-        # nMAE_train = calc_error_metrics(data, n_train, in_dim_niw, err, err_squared)[1]
-        explained_var_train = explained_variance_score(data[:, in_dim_niw:], pred_y,multioutput='variance_weighted')
+        explained_var_train = explained_variance_score(data[:, in_dim_niw:], pred_y, multioutput='variance_weighted')
 
-        # plots of 2d prediction for training data
-        if plot_2d_prediction:
-            if in_dim_niw + out_dim == 2:
-                plot_prediction_2d(data, pred_y, 'Training Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
-
-        # plot of prediction for endeffector positions vs. data
-        if plot_kinematics == True:
-            endeffector_pos_2d(data, in_dim_niw, pred_y, 'Training Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-            if in_dim_niw == 1:
-             # 3d plot of x,y position endeffector and angle
-                endeffector_pos_3d(data, pred_y, in_dim_niw, 'Training Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-
-        # plot of inverse dynamics of first joint: motor torque and predicted motor torque
-        if plot_dynamics == True:
-            motor_torque(n_train, data, pred_y, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path,
-                         'Training Data')
         start_prediction = timeit.default_timer()
 
         # calculate alpha_hat (sum over alpha_k)
@@ -370,7 +271,10 @@ for e in range(eval_iter):
             alphas = product
 
         # initialize variables
-        mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:])
+        mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:, in_dim_niw:]),\
+                                                               np.empty_like(data_test[:, in_dim_niw:]),\
+                                                               np.empty_like(data_test[:, in_dim_niw:])
+
         marg, stud_t = np.zeros([len(dpglm.components)]), np.zeros([len(dpglm.components)])
         err, err_squared = 0, 0
         dot_xx = np.zeros([len(dpglm.components), in_dim_mniw, in_dim_mniw])
@@ -380,7 +284,6 @@ for e in range(eval_iter):
 
         # get statistics for each component for training data
         for idx, c in enumerate(dpglm.components):
-
             statistics = c.posterior.get_statistics([l.data[l.z == idx] for l in dpglm.labels_list])
             dot_yx[idx], dot_xx[idx], dot_yy[idx], n[idx] = statistics[4], statistics[5], statistics[6], statistics[7]
 
@@ -407,7 +310,9 @@ for e in range(eval_iter):
                 if idx in dpglm.used_labels:
                     mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
                     S_0, N_0 = get_component_standard_parameters(c.prior)[6], get_component_standard_parameters(c.prior)[7]
-                    mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
+                    mat_T, std_T = matrix_t(data, idx, label, out_dim, in_dim_niw, affine,
+                                            x_hat, V, M, args.nb_models, S_0, dot_xx[idx],
+                                            dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
 
                     # mean function
                     term_mean = term_mean + mat_T * marg[idx] * alphas[idx] / alphas_marg_sum
@@ -426,34 +331,13 @@ for e in range(eval_iter):
                 plus_std_function[i,:] = term_plus_std
                 minus_std_function[i,:] = term_minus_std
 
-            # # error for nMSE
+            # # error for nmse
             # err = err + np.absolute((y_hat - mean_function[i]))
             # err_squared = err_squared + ((y_hat - mean_function[i]) ** 2)
 
         stop_prediction = timeit.default_timer()
 
-        if plot_2d_prediction:
-            if in_dim_niw + out_dim == 2:
-                # plot_prediction_2d(data_test, mean_function)
-                plot_prediction_2d(data_test, mean_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path,
-                                   legend_upper_right)
-                plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
-
-        # plot of kinematics data
-        if plot_kinematics == True:
-            # plot of prediction for endeffector positions vs. data
-            endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-            if in_dim_niw == 1:
-                # 3d plot of x,y position endeffector and angle
-                endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-
-        # plot of inverse dynamics of first joint: motor torque and predicted motor torque
-        if plot_dynamics == True:
-            motor_torque(n_test, data_test, mean_function, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path, 'Test Data')
-
-        # nMSE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[0]
-        # nMAE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[1]
-        explained_var_test= explained_variance_score(data_test[:, in_dim_niw:], mean_function,multioutput='variance_weighted')
+        explained_var_test = explained_variance_score(data_test[:, in_dim_niw:], mean_function, multioutput='variance_weighted')
 
         # timer
         stop = timeit.default_timer()
@@ -480,10 +364,9 @@ for e in range(eval_iter):
         f.close()
 
     # load data
+    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0]).values  # skiprows=2
 
-    explained_var_test = pandas.read_csv(csv_path, header=None, dtype=None, engine='python', sep=" ", index_col=False, usecols=[0]).values # , skiprows=2
-
-    data_intermed = explained_var_test #np.column_stack((nMSE_test, nMAE_test))
+    data_intermed = explained_var_test  # np.column_stack((nmse_test, nMAE_test))
 
     # write statistics of data to stats file
     mean = np.mean(data_intermed, axis=0)
@@ -494,25 +377,11 @@ for e in range(eval_iter):
     q3 = np.quantile(data_intermed, 0.75, axis=0)
 
     f = open(stat_path, 'w+')
-    f.write('mean'+ " " + str(mean) + "\n")
-    f.write('std'+ " " + str(std) + "\n")
-    f.write('var'+ " " + str(var) + "\n")
-    f.write('median'+ " " + str(median) + "\n")
-    f.write('q1'+ " " + str(q1) + "\n")
-    f.write('q3' + " "+ str(q3)+ "\n")
+    f.write('mean' + " " + str(mean) + "\n")
+    f.write('std' + " " + str(std) + "\n")
+    f.write('var' + " " + str(var) + "\n")
+    f.write('median' + " " + str(median) + "\n")
+    f.write('q1' + " " + str(q1) + "\n")
+    f.write('q3' + " " + str(q3) + "\n")
     # f.write("\n")
     f.close()
-
-    if e == 0:
-        data_violin = data_intermed
-    else:
-        data_violin = np.column_stack((data_violin, data_intermed))
-
-# print(data_violin)
-
-violin_plot_one(data_violin, num_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
-    ## remove file
-    # os.remove(csv_path)
-
-
-
