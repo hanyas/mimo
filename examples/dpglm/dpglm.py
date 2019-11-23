@@ -39,7 +39,7 @@ kin_2joint = False
 kin_3joint = False
 sarcos = False
 
-n_train = 2500
+n_train = 600
 
 if CMB:
     x_categories = ['100', '200', '300', '400', '600']
@@ -104,7 +104,7 @@ str_eval1 = ''
 
 # general settings
 affine = True
-nb_models = 50
+nb_models = 5
 metaitr = 1
 superitr = 1
 
@@ -344,126 +344,126 @@ for m in range(metaitr):
     start_prediction = timeit.default_timer()
 
 
-    # calculate_mean_gibbs(dpglm, n_test, 5, dir)
+    calculate_mean_gibbs(dpglm, data_test, n_test, 5, dir)
 
 
-    # calculate alpha_hat (sum over alpha_k)
-    if not stick_breaking:
-        alphas_hat = 0
-        alphas = dpglm.gating.posterior.alphas
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                alphas_hat = alphas_hat + alphas[idx]
-    else:
-        stick_lengths = np.ones([len(dpglm.components)])
-        product = np.ones([len(dpglm.components)])
-        gammas = dpglm.gating.posterior.gammas
-        deltas = dpglm.gating.posterior.deltas
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                product[idx] = gammas[idx] / gammas[idx] + deltas[idx]
-                for j in range(idx):
-                    product[idx] = product[idx] * gammas[j] / gammas[j] + deltas[j]
-        alphas = product
-
-
-    # initialize variables
-    mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:])
-    marg, stud_t = np.zeros([len(dpglm.components)]), np.zeros([len(dpglm.components)])
-    err, err_squared = 0, 0
-    dot_xx = np.zeros([len(dpglm.components), in_dim_mniw, in_dim_mniw])
-    dot_yx = np.zeros([len(dpglm.components), out_dim, in_dim_mniw])
-    dot_yy = np.zeros([len(dpglm.components), out_dim, out_dim])
-    n = np.zeros([len(dpglm.components)])
-
-    # get statistics for each component for training data
-    for idx, c in enumerate(dpglm.components):
-
-        statistics = c.posterior.get_statistics([l.data[l.z == idx] for l in dpglm.labels_list])
-        dot_yx[idx], dot_xx[idx], dot_yy[idx], n[idx] = statistics[4], statistics[5], statistics[6], statistics[7]
-
-    # prediction / mean function of y_hat for all training data x_hat
-    for i in range(len(data_test[:, :-out_dim])):
-        x_hat = data_test[i, :-out_dim]
-        y_hat = data_test[i, in_dim_niw:]
-
-        # calculate the marginal likelihood of training data x_hat for each cluster (under NIW distribution)
-        # calculate the normalization term for mean function (= alphas_marg_sum) for x_hat
-        alphas_marg_sum = 0
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
-                marg[idx] = NIW_marg_likelihood(x_hat, mu, kappa, psi_niw, nu_niw, 1, out_dim)
-                alphas_marg_sum = alphas_marg_sum + alphas[idx] * marg[idx]
-
-        # calculate contribution of each cluster to mean function / prediction for training data x_hat
-        term_mean = 0
-        term_plus_std = 0
-        term_minus_std = 0
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
-                S_0, N_0 = get_component_standard_parameters(c.prior)[6], get_component_standard_parameters(c.prior)[7]
-                mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
-
-                # mean function
-                term_mean = term_mean + mat_T * marg[idx] * alphas[idx] / alphas_marg_sum
-                # term_mean = term_mean + mat_T * marg[idx] / marg.sum()
-                # term = term + mat_T * alphas[idx] * marg[idx]  / alphas_sum * len(dpglm.components)
-
-                # confidence interval
-                term_plus_std = term_plus_std + (mat_T + 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
-                term_minus_std = term_minus_std + (mat_T - 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
-
-        if out_dim > 1:
-            term_mean = term_mean[:, 0]
-        mean_function[i,:] = term_mean
-
-        if out_dim == 1:
-            plus_std_function[i,:] = term_plus_std
-            minus_std_function[i,:] = term_minus_std
-
-        # # error for nMSE
-        # err = err + np.absolute((y_hat - mean_function[i]))
-        # err_squared = err_squared + ((y_hat - mean_function[i]) ** 2)
-
-    stop_prediction = timeit.default_timer()
-
-    if plot_2d_prediction:
-        if in_dim_niw + out_dim == 2:
-            # plot_prediction_2d(data_test, mean_function)
-            plot_prediction_2d(data_test, mean_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path,
-                               legend_upper_right)
-            plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
-
-    # plot of kinematics data
-    if plot_kinematics == True:
-        # plot of prediction for endeffector positions vs. data
-        endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-        if in_dim_niw == 1:
-            # 3d plot of x,y position endeffector and angle
-            endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
-
-    # plot of inverse dynamics of first joint: motor torque and predicted motor torque
-    if plot_dynamics == True:
-        motor_torque(n_test, data_test, mean_function, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path, 'Test Data')
-
-    # nMSE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[0]
-    # nMAE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[1]
-    explained_var_test= explained_variance_score(data_test[:, in_dim_niw:], mean_function,multioutput='variance_weighted')
-    print(explained_var_test)
-
-    # timer
-    stop = timeit.default_timer()
-    inf_time = start_plotting - start_inference
-    plot_time = start_prediction - start_plotting
-    pred_time = stop_prediction - start_prediction
-    overall_time = stop - start
-
-    print('Inference time:', inf_time)
-    print('Plotting (training) time: ', plot_time)
-    print('Prediction time: ', pred_time)
-    print('Overall time: ', overall_time)
+    # # calculate alpha_hat (sum over alpha_k)
+    # if not stick_breaking:
+    #     alphas_hat = 0
+    #     alphas = dpglm.gating.posterior.alphas
+    #     for idx, c in enumerate(dpglm.components):
+    #         if idx in dpglm.used_labels:
+    #             alphas_hat = alphas_hat + alphas[idx]
+    # else:
+    #     stick_lengths = np.ones([len(dpglm.components)])
+    #     product = np.ones([len(dpglm.components)])
+    #     gammas = dpglm.gating.posterior.gammas
+    #     deltas = dpglm.gating.posterior.deltas
+    #     for idx, c in enumerate(dpglm.components):
+    #         if idx in dpglm.used_labels:
+    #             product[idx] = gammas[idx] / gammas[idx] + deltas[idx]
+    #             for j in range(idx):
+    #                 product[idx] = product[idx] * gammas[j] / gammas[j] + deltas[j]
+    #     alphas = product
+    #
+    #
+    # # initialize variables
+    # mean_function, plus_std_function, minus_std_function = np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:]), np.empty_like(data_test[:,in_dim_niw:])
+    # marg, stud_t = np.zeros([len(dpglm.components)]), np.zeros([len(dpglm.components)])
+    # err, err_squared = 0, 0
+    # dot_xx = np.zeros([len(dpglm.components), in_dim_mniw, in_dim_mniw])
+    # dot_yx = np.zeros([len(dpglm.components), out_dim, in_dim_mniw])
+    # dot_yy = np.zeros([len(dpglm.components), out_dim, out_dim])
+    # n = np.zeros([len(dpglm.components)])
+    #
+    # # get statistics for each component for training data
+    # for idx, c in enumerate(dpglm.components):
+    #
+    #     statistics = c.posterior.get_statistics([l.data[l.z == idx] for l in dpglm.labels_list])
+    #     dot_yx[idx], dot_xx[idx], dot_yy[idx], n[idx] = statistics[4], statistics[5], statistics[6], statistics[7]
+    #
+    # # prediction / mean function of y_hat for all training data x_hat
+    # for i in range(len(data_test[:, :-out_dim])):
+    #     x_hat = data_test[i, :-out_dim]
+    #     y_hat = data_test[i, in_dim_niw:]
+    #
+    #     # calculate the marginal likelihood of training data x_hat for each cluster (under NIW distribution)
+    #     # calculate the normalization term for mean function (= alphas_marg_sum) for x_hat
+    #     alphas_marg_sum = 0
+    #     for idx, c in enumerate(dpglm.components):
+    #         if idx in dpglm.used_labels:
+    #             mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
+    #             marg[idx] = NIW_marg_likelihood(x_hat, mu, kappa, psi_niw, nu_niw, 1, out_dim)
+    #             alphas_marg_sum = alphas_marg_sum + alphas[idx] * marg[idx]
+    #
+    #     # calculate contribution of each cluster to mean function / prediction for training data x_hat
+    #     term_mean = 0
+    #     term_plus_std = 0
+    #     term_minus_std = 0
+    #     for idx, c in enumerate(dpglm.components):
+    #         if idx in dpglm.used_labels:
+    #             mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = get_component_standard_parameters(c.posterior)
+    #             S_0, N_0 = get_component_standard_parameters(c.prior)[6], get_component_standard_parameters(c.prior)[7]
+    #             mat_T, std_T = matrix_t(data,idx,label,out_dim,in_dim_niw,affine,x_hat, V, M, nb_models, S_0, dot_xx[idx], dot_yx[idx], dot_yy[idx], psi_mniw, nu_mniw, N_0)
+    #
+    #             # mean function
+    #             term_mean = term_mean + mat_T * marg[idx] * alphas[idx] / alphas_marg_sum
+    #             # term_mean = term_mean + mat_T * marg[idx] / marg.sum()
+    #             # term = term + mat_T * alphas[idx] * marg[idx]  / alphas_sum * len(dpglm.components)
+    #
+    #             # confidence interval
+    #             term_plus_std = term_plus_std + (mat_T + 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
+    #             term_minus_std = term_minus_std + (mat_T - 2 * std_T) * marg[idx] * alphas[idx] / alphas_marg_sum
+    #
+    #     if out_dim > 1:
+    #         term_mean = term_mean[:, 0]
+    #     mean_function[i,:] = term_mean
+    #
+    #     if out_dim == 1:
+    #         plus_std_function[i,:] = term_plus_std
+    #         minus_std_function[i,:] = term_minus_std
+    #
+    #     # # error for nMSE
+    #     # err = err + np.absolute((y_hat - mean_function[i]))
+    #     # err_squared = err_squared + ((y_hat - mean_function[i]) ** 2)
+    #
+    # stop_prediction = timeit.default_timer()
+    #
+    # if plot_2d_prediction:
+    #     if in_dim_niw + out_dim == 2:
+    #         # plot_prediction_2d(data_test, mean_function)
+    #         plot_prediction_2d(data_test, mean_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path,
+    #                            legend_upper_right)
+    #         plot_prediction_2d_mean(data_test, mean_function, plus_std_function, minus_std_function, 'Test Data', save_2d_prediction, visual_pdf_path, visual_tikz_path, legend_upper_right)
+    #
+    # # plot of kinematics data
+    # if plot_kinematics == True:
+    #     # plot of prediction for endeffector positions vs. data
+    #     endeffector_pos_2d(data_test, in_dim_niw, mean_function, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
+    #     if in_dim_niw == 1:
+    #         # 3d plot of x,y position endeffector and angle
+    #         endeffector_pos_3d(data_test, mean_function, in_dim_niw, 'Test Data', visual_pdf_path, visual_tikz_path, save_kinematics)
+    #
+    # # plot of inverse dynamics of first joint: motor torque and predicted motor torque
+    # if plot_dynamics == True:
+    #     motor_torque(n_test, data_test, mean_function, in_dim_niw, save_dynamics, visual_tikz_path, visual_pdf_path, 'Test Data')
+    #
+    # # nMSE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[0]
+    # # nMAE_test = calc_error_metrics(data_test, n_test, in_dim_niw, err, err_squared)[1]
+    # explained_var_test= explained_variance_score(data_test[:, in_dim_niw:], mean_function,multioutput='variance_weighted')
+    # print(explained_var_test)
+    #
+    # # timer
+    # stop = timeit.default_timer()
+    # inf_time = start_plotting - start_inference
+    # plot_time = start_prediction - start_plotting
+    # pred_time = stop_prediction - start_prediction
+    # overall_time = stop - start
+    #
+    # print('Inference time:', inf_time)
+    # print('Plotting (training) time: ', plot_time)
+    # print('Prediction time: ', pred_time)
+    # print('Overall time: ', overall_time)
 
 #     # write to file
 #     f = open(csv_path, 'a+')
