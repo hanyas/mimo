@@ -106,8 +106,8 @@ for e in range(eval_iter):
         alpha_gatings = 100
     elif e == 5:
         alpha_gatings = 500
-    # elif e == 6:
-    #     alpha_gatings = 1000
+    elif e == 6:
+        alpha_gatings = 1000
 
     n_test = int(n_train / 5)
 
