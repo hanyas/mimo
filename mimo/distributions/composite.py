@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: compose.py
-# @Date: 2019-06-08-21-53
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
-
 import numpy as np
 
 from mimo.abstractions import Distribution
@@ -48,8 +40,8 @@ class NormalInverseWishart(Distribution):
 
     def log_likelihood(self, x):
         mu, sigma = x
-        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu) +\
-               self.invwishart.log_likelihood(sigma)
+        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu)\
+               + self.invwishart.log_likelihood(sigma)
 
     def mean(self):
         return tuple([self.gaussian.mean(), self.invwishart.mean()])
@@ -58,22 +50,10 @@ class NormalInverseWishart(Distribution):
         return tuple([self.gaussian.mode(), self.invwishart.mode()])
 
     def log_partition(self):
-        return 0.5 * self.invwishart.nu * self.dim * np.log(2) +\
-               multigammaln(self.invwishart.nu / 2., self.dim) +\
-               0.5 * self.dim * np.log(2. * np.pi / self.kappa) -\
-               self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
-
-        # # In Bishop B.79 notation, this is -log B(W, nu), where W = sigma^{-1}
-        # D = self.invwishart.psi.shape[0]
-        # chol = self.invwishart.psi_chol
-        # return -1 * (self.invwishart.nu * np.log(chol.diagonal()).sum() - (self.invwishart.nu * D / 2 * np.log(2) + D * (D - 1) / 4 * np.log(np.pi) \
-        #                                                    + gammaln((self.invwishart.nu - np.arange(D)) / 2).sum()))
-
-        # # In Bishop B.79 notation, this is -log B(W, nu), where W = sigma^{-1}
-        # D = sigma.shape[0]
-        # chol = np.linalg.cholesky(sigma) if chol is None else chol
-        # return -1 * (nu * np.log(chol.diagonal()).sum() - (nu * D / 2 * np.log(2) + D * (D - 1) / 4 * np.log(np.pi) \
-        #                                                    + special.gammaln((nu - np.arange(D)) / 2).sum()))
+        return 0.5 * self.invwishart.nu * self.dim * np.log(2)\
+               + multigammaln(self.invwishart.nu / 2., self.dim)\
+               + 0.5 * self.dim * np.log(2. * np.pi / self.kappa)\
+               - self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
 
     def entropy(self):
         raise NotImplementedError
@@ -135,8 +115,8 @@ class NormalInverseWishart(Distribution):
         E_J = self.invwishart.nu * np.linalg.inv(self.invwishart.psi)
         E_h = self.invwishart.nu * np.linalg.solve(self.invwishart.psi, self.gaussian.mu)
         E_muJmuT = self.dim / self.kappa + self.gaussian.mu.dot(E_h)
-        E_logdetSigmainv = np.sum(digamma((self.invwishart.nu - np.arange(self.dim)) / 2.)) +\
-                           self.dim * np.log(2.) - np.linalg.slogdet(self.invwishart.psi)[1]
+        E_logdetSigmainv = np.sum(digamma((self.invwishart.nu - np.arange(self.dim)) / 2.))\
+                           + self.dim * np.log(2.) - np.linalg.slogdet(self.invwishart.psi)[1]
 
         return E_J, E_h, E_muJmuT, E_logdetSigmainv
 
@@ -170,8 +150,8 @@ class NormalInverseGamma(Distribution):
 
     def log_likelihood(self, x):
         mu, sigmas = x
-        return DiagonalGaussian(mu=self.gaussian.mu, sigmas=sigmas/self.kappa).log_likelihood(mu) +\
-               self.invgamma.log_likelihood(sigmas)
+        return DiagonalGaussian(mu=self.gaussian.mu, sigmas=sigmas/self.kappa).log_likelihood(mu)\
+               + self.invgamma.log_likelihood(sigmas)
 
     def mean(self):
         return tuple([self.gaussian.mean(), self.invgamma.mean()])
@@ -180,9 +160,9 @@ class NormalInverseGamma(Distribution):
         return tuple([self.gaussian.mode(), self.invgamma.mode()])
 
     def log_partition(self):
-        return np.sum(gammaln(self.invgamma.alphas) -
-                      self.invgamma.alphas * np.log(self.invgamma.betas)) +\
-               np.sum(0.5 * np.log(2. * np.pi / self.kappas))
+        return np.sum(gammaln(self.invgamma.alphas)
+                      - self.invgamma.alphas * np.log(self.invgamma.betas))\
+               + np.sum(0.5 * np.log(2. * np.pi / self.kappas))
 
     def entropy(self):
         raise NotImplementedError
@@ -276,8 +256,8 @@ class MatrixNormalInverseWishart(Distribution):
 
     def log_likelihood(self, x):
         A, sigma = x
-        return MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma).log_likelihood(A) +\
-               self.invwishart.log_likelihood(sigma)
+        return MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma).log_likelihood(A)\
+               + self.invwishart.log_likelihood(sigma)
 
     def mean(self):
         return tuple([self.matnorm.mean(), self.invwishart.mean()])
@@ -506,7 +486,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             #        self.invwishart_niw.nu * np.sum(np.log(np.diag(self.invwishart_niw.psi_chol))) + \
             #        n * self.invwishart_mniw.nu / 2 * np.log(2) + multigammaln(self.invwishart_mniw.nu / 2., n) \
             #        - self.invwishart_mniw.nu / 2 * np.linalg.slogdet(self.invwishart_mniw.psi)[1] - n / 2 * np.linalg.slogdet(self.matnorm.V)[1]
-
 
         # def log_partition(self):
         #     return 0.5 * self.invwishart.nu * self.dim * np.log(2) + \
