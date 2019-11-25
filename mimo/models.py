@@ -113,13 +113,13 @@ class Labels:
 
         logpitilde = self.gating.expected_log_likelihood(np.arange(len(self.components)))
 
-        q_entropy = -prod.sum()
+        q_entropy = - prod.sum()
         p_avgengy = (self.r * logpitilde).sum()
 
         return p_avgengy + q_entropy
 
     # EM
-    def E_step(self):
+    def estep(self):
         data, N, K = self.data, self.data.shape[0], len(self.components)
 
         self.expectations = np.empty((N, K))
@@ -320,7 +320,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
 
         # E step
         for l in self.labels_list:
-            l.E_step()
+            l.estep()
 
         # M step
         # component parameters
@@ -432,11 +432,3 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         for k in blocklens:
             outs.append(csums[k:] - csums[:-k])
         return outs
-
-    def mean_posterior(self, weights):
-        weights = weights if weights is None else np.ones((len(self.components, )))
-        params = [c.posterior.params for c in self.components]
-        aux = []
-        for m in list(zip(*params)):
-            aux.append(sum(_w * _p for _w, _p in zip(weights, m)))
-        return aux

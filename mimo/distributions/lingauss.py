@@ -13,11 +13,13 @@ class LinearGaussian(Distribution):
     Parameters are linear transf. and covariance matrix:
         A, sigma
     """
-    def __init__(self,  A=None, sigma=None, affine=False,):
+    def __init__(self, A=None, sigma=None, affine=False):
 
         self.A = A
-        self._sigma = sigma
         self.affine = affine
+
+        self._sigma = sigma
+        self._sigma_chol = None
 
     @property
     def params(self):
@@ -30,7 +32,7 @@ class LinearGaussian(Distribution):
     @property
     def din(self):
         # input dimension
-        return self.A.shape[1] if not self.affine else self.A.shape[1] + 1
+        return self.A.shape[1]
 
     @property
     def dout(self):
@@ -44,11 +46,13 @@ class LinearGaussian(Distribution):
     @sigma.setter
     def sigma(self, value):
         self._sigma = value
+        # reset Cholesky for new values of sigma
+        # A new Cholesky will be computed when needed
         self._sigma_chol = None
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
+        if self._sigma_chol is None:
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
@@ -113,12 +117,13 @@ class LinearGaussian(Distribution):
         return out
 
     def log_partition(self):
-        return 0.5 * self.dout * np.log(2. * np.pi) +\
-               np.sum(np.log(np.diag(self.sigma_chol)))
+        return 0.5 * self.dout * np.log(2. * np.pi)\
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def entropy(self):
-        return 0.5 * (self.dout * np.log(2. * np.pi) + self.dout +
-                      2. * np.sum(np.log(np.diag(self.sigma_chol))))
+        return 0.5 * (self.dout * np.log(2. * np.pi) + self.dout
+                      + 2. * np.sum(np.log(np.diag(self.sigma_chol))))
+
 
 class LinearGaussianWithNoisyInputs(Distribution):
     """
@@ -126,7 +131,7 @@ class LinearGaussianWithNoisyInputs(Distribution):
     Parameters are linear transf. and covariance matrix:
         A, sigma
     """
-    def __init__(self, mu=None, sigma_niw=None, A=None, sigma=None, affine=False,):
+    def __init__(self, mu=None, sigma_niw=None, A=None, sigma=None, affine=False):
 
         self.mu = mu
         self._sigma_niw = sigma_niw
@@ -261,8 +266,7 @@ class LinearGaussianWithNoisyInputs(Distribution):
 
     # distribution
     def log_likelihood(self, xy):
-
-        #log-likelihood of linear gaussian
+        # log-likelihood of linear gaussian
         A, sigma, dout = self.A, self.sigma, self.dout
         x, y = (xy[:, :-dout], xy[:, -dout:])
 
