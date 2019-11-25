@@ -271,14 +271,6 @@ class MatrixNormalInverseWishart(Distribution):
                0.5 * self.dout * np.log(2. * np.pi) -\
                self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) -\
                self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
-        # n = self.dout
-        # return n * self.invwishart.nu / 2 * np.log(2) + multigammaln(self.invwishart.nu / 2., n) \
-        #        - self.invwishart.nu / 2 * np.linalg.slogdet(self.invwishart.psi)[1] - n / 2 * np.linalg.slogdet(self.matnorm.V)[1]
-
-        # D = self.invwishart.psi.shape[0]
-        # chol = self.invwishart.psi_chol
-        # return -1 * (self.invwishart.nu * np.log(chol.diagonal()).sum() - (self.invwishartnu * D / 2 * np.log(2) + D * (D - 1) / 4 * np.log(np.pi) \
-        #                                                    + gammaln((self.invwishart.nu - np.arange(D)) / 2).sum()))
 
     def entropy(self):
         raise NotImplementedError
@@ -293,8 +285,7 @@ class MatrixNormalInverseWishart(Distribution):
         self.matnorm.M, self.matnorm.V,\
         self.invwishart.psi, self.invwishart.nu = self._nat_to_standard(natparam)
 
-    @staticmethod
-    def _standard_to_nat(M, V, psi, nu):
+    def _standard_to_nat(self, M, V, psi, nu):
         V_inv = inv_psd(V)
         _psi = psi + M.dot(V_inv).dot(M.T)
         _M = M.dot(V_inv)
@@ -302,8 +293,7 @@ class MatrixNormalInverseWishart(Distribution):
         _nu = nu
         return np.array([_M, _V, _psi, _nu])
 
-    @staticmethod
-    def _nat_to_standard(natparam):
+    def _nat_to_standard(self, natparam):
         # (yxT, xxT, yyT, n)
         nu = natparam[3]
         V = inv_psd(natparam[1])
@@ -520,7 +510,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         #     self.gaussian.mu, self.kappa, \
         #     self.invwishart.psi, self.invwishart.nu = self._nat_to_standard(natparam)
 
-        #@staticmethod
         def _standard_to_nat(self, mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw):
             _psi_niw = psi_niw + kappa * np.outer(mu, mu)
             _mu = kappa * mu
@@ -542,8 +531,7 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         #     _nu = nu + 2 + self.dim
         #     return np.array([_mu, _kappa, _psi, _nu])
 
-        #@staticmethod
-        def _nat_to_standard(self,natparam):
+        def _nat_to_standard(self, natparam):
             kappa = natparam[1]
             mu = natparam[0] / kappa
             nu_niw = natparam[3] - 2 - self.dim
