@@ -11,8 +11,8 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
     thesize = np.array(p_log.shape)
     thesize[axis] = 1
     randvals = npr.random(size=thesize) * \
-            np.reshape(cumvals[tuple([slice(None) if i is not axis else -1
-                                      for i in range(p_log.ndim)])], thesize)
+               np.reshape(cumvals[tuple([slice(None) if i is not axis else -1
+                                         for i in range(p_log.ndim)])], thesize)
     samples = np.sum(randvals > cumvals, axis=axis, dtype=dtype)
     if return_lognorms:
         return samples, lognorms
