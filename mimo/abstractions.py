@@ -71,7 +71,7 @@ class MeanField(with_metaclass(abc.ABCMeta, BayesianDistribution)):
         pass
 
     @abc.abstractmethod
-    def meanfieldupdate(self, data, weights):
+    def meanfield_update(self, data, weights):
         pass
 
     def get_vlb(self):
@@ -98,9 +98,9 @@ class MaxLikelihood(with_metaclass(abc.ABCMeta, Distribution)):
         raise NotImplementedError
 
 
-class MAP(with_metaclass(abc.ABCMeta, BayesianDistribution)):
+class MaxAPosteriori(with_metaclass(abc.ABCMeta, BayesianDistribution)):
     @abc.abstractmethod
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         """
         sets the parameters to their MAP values given the (weighted) data
         analogous to max_likelihood but includes hyperparameters

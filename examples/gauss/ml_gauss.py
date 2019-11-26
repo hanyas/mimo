@@ -12,5 +12,5 @@ hypparams = dict(mu=np.zeros((dim, )), kappa=0.05, psi=np.eye(dim), nu=2 * dim +
 prior = distributions.NormalInverseWishart(**hypparams)
 
 model = distributions.BayesianGaussian(prior=prior)
-model.MAP(data)
+model.max_aposteriori(data)
 print("ML mean"+"\n", model.mu.T, "\n"+"ML sigma"+"\n", model.sigma)
