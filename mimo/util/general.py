@@ -5,7 +5,7 @@ from scipy.special import logsumexp
 
 
 def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int32):
-    'samples log probability array along specified axis'
+    # samples log probability array along specified axis
     lognorms = logsumexp(p_log, axis=axis)
     cumvals = np.exp(p_log - np.expand_dims(lognorms, axis)).cumsum(axis)
     thesize = np.array(p_log.shape)
