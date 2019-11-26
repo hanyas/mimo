@@ -12,5 +12,5 @@ hypparams = dict(mu=np.zeros((dim, )), kappa=0.05, psi=np.eye(dim), nu=2 * dim +
 prior = distributions.NormalInverseWishart(**hypparams)
 
 model = distributions.BayesianGaussian(prior=prior)
-model.meanfieldupdate(data)
+model.meanfield_update(data)
 print("Meanfield mean"+"\n", model.mu.T, "\n"+"Meanfield sigma"+"\n", model.sigma)

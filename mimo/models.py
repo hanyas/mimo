@@ -97,7 +97,7 @@ class Labels:
         return r
 
     # Mean Field
-    def meanfieldupdate(self, importance=None):
+    def meanfield_update(self, importance=None):
         # get responsibilities
         self.r = self.get_responsibility(importance=importance)
         # for plotting
@@ -256,21 +256,21 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
     def meanfield_update_labels(self, importance=[]):
         for idx, l in enumerate(self.labels_list):
             if not importance:
-                l.meanfieldupdate(importance=None)
+                l.meanfield_update(importance=None)
             else:
-                l.meanfieldupdate(importance=importance[idx])
+                l.meanfield_update(importance=importance[idx])
 
     def meanfield_update_parameters(self):
         self.meanfield_update_components()
         self.meanfield_update_gating()
 
     def meanfield_update_gating(self):
-        self.gating.meanfieldupdate(None, [l.r for l in self.labels_list])
+        self.gating.meanfield_update(None, [l.r for l in self.labels_list])
         self.clear_caches()
 
     def meanfield_update_components(self):
         for idx, c in enumerate(self.components):
-            c.meanfieldupdate([l.data for l in self.labels_list], [l.r[:, idx] for l in self.labels_list])
+            c.meanfield_update([l.data for l in self.labels_list], [l.r[:, idx] for l in self.labels_list])
         self.clear_caches()
 
     def _vlb(self):
@@ -296,7 +296,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             mb_labels_list.append(self.labels_list.pop())
 
         for l in mb_labels_list:
-            l.meanfieldupdate()
+            l.meanfield_update()
 
         self._meanfield_sgdstep_parameters(mb_labels_list, prob, stepsize)
 
