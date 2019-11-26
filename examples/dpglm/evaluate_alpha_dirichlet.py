@@ -6,7 +6,7 @@ from mimo import distributions, models
 from mimo.util.data import load_data
 from mimo.util.prediction import niw_marginal_likelihood, matrix_t
 from mimo.util.prediction import sample_prediction
-from mimo.util.plot import violin_plot
+from mimo.util.plot import plot_violin_box
 
 import os
 import operator
@@ -173,12 +173,12 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', help='Choose dataset', default='cmb')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
-    parser.add_argument('--nb_seeds', help='Set number of seeds', default=1)
+    parser.add_argument('--nb_seeds', help='Set number of seeds', default=100)
     parser.add_argument('--prior', help='Set prior type', default='dirichlet')
-    parser.add_argument('--nb_models', help='Set max number of models', default=2)
+    parser.add_argument('--nb_models', help='Set max number of models', default=50)
     parser.add_argument('--affine', help='Set affine or not', default=True)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=2)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=1)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2)
 
     args = parser.parse_args()
@@ -293,8 +293,8 @@ if __name__ == "__main__":
     overall_time = stop - start
 
     # set paths for tikz and pdf
-    tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(tmp) + '_' + time + '.tex')
-    pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(tmp) + '_' + time + '.pdf')
+    tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(tmp) + '_' + time)
+    pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(tmp) + '_' + time)
 
     # generate and save violin plots
     nb_cols = len(alphas)
@@ -309,4 +309,4 @@ if __name__ == "__main__":
     y_label = 'Explained Variance Score'
     title = None
 
-    violin_plot(violin_data, nb_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
+    plot_violin_box(violin_data, nb_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
