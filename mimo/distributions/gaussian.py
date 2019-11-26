@@ -59,8 +59,8 @@ class Gaussian(Distribution):
             bads = np.isnan(np.atleast_2d(x)).any(axis=1)
             xc = np.nan_to_num(x).reshape((-1, self.dim)) - self.mu
             xs = linalg.solve_triangular(self.sigma_chol, xc.T, lower=True)
-            out = - 0.5 * self.dim * np.log(2. * np.pi) -\
-                  np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
+            out = - 0.5 * self.dim * np.log(2. * np.pi)\
+                  - np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
             out[bads] = 0
             return out
         except np.linalg.LinAlgError:
