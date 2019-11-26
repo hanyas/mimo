@@ -68,17 +68,19 @@ class NormalInverseWishart(Distribution):
         self.gaussian.mu, self.kappa,\
         self.invwishart.psi, self.invwishart.nu = self._nat_to_standard(natparam)
 
-    def _standard_to_nat(self, mu, kappa, psi, nu):
+    @staticmethod
+    def _standard_to_nat(mu, kappa, psi, nu):
         _psi = psi + kappa * np.outer(mu, mu)
         _mu = kappa * mu
         _kappa = kappa
-        _nu = nu + 2 + self.dim
+        _nu = nu + 2 + mu.shape[0]
         return np.array([_mu, _kappa, _psi, _nu])
 
-    def _nat_to_standard(self, natparam):
+    @staticmethod
+    def _nat_to_standard(natparam):
         kappa = natparam[1]
         mu = natparam[0] / kappa
-        nu = natparam[3] - 2 - self.dim
+        nu = natparam[3] - 2 - mu.shape[0]
         psi = natparam[2] - kappa * np.outer(mu, mu)
         return mu, kappa, psi, nu
 
@@ -177,10 +179,12 @@ class NormalInverseGamma(Distribution):
         self.gaussian.mu, self.kappas,\
         self.invgamma.alphas, self.invgamma.betas = self._nat_to_standard(natparam)
 
-    def _standard_to_nat(self, mu, kappas, alphas, betas):
+    @staticmethod
+    def _standard_to_nat(mu, kappas, alphas, betas):
         return np.array([kappas * mu, kappas, 2. * alphas, 2. * betas + kappas * mu**2])
 
-    def _nat_to_standard(self, natparam):
+    @staticmethod
+    def _nat_to_standard(natparam):
         _kappas = natparam[1]
         _mu = natparam[0] / _kappas
         _alphas = natparam[2] / 2.
@@ -266,11 +270,11 @@ class MatrixNormalInverseWishart(Distribution):
         return tuple([self.matnorm.mode(), self.invwishart.mode()])
 
     def log_partition(self):
-        return 0.5 * self.invwishart.nu * self.dout * np.log(2) +\
-               multigammaln(self.invwishart.nu / 2., self.dout) +\
-               0.5 * self.dout * np.log(2. * np.pi) -\
-               self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) -\
-               self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
+        return 0.5 * self.invwishart.nu * self.dout * np.log(2)\
+               + multigammaln(self.invwishart.nu / 2., self.dout)\
+               + 0.5 * self.dout * np.log(2. * np.pi)\
+               - self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol)))\
+               - self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
 
     def entropy(self):
         raise NotImplementedError
@@ -285,15 +289,17 @@ class MatrixNormalInverseWishart(Distribution):
         self.matnorm.M, self.matnorm.V,\
         self.invwishart.psi, self.invwishart.nu = self._nat_to_standard(natparam)
 
-    def _standard_to_nat(self, M, V, psi, nu):
-        V_inv = inv_psd(V)
-        _psi = psi + M.dot(V_inv).dot(M.T)
-        _M = M.dot(V_inv)
-        _V = V_inv
+    @staticmethod
+    def _standard_to_nat(M, V, psi, nu):
+        _V_inv = inv_psd(V)
+        _psi = psi + M.dot(_V_inv).dot(M.T)
+        _M = M.dot(_V_inv)
+        _V = _V_inv
         _nu = nu
         return np.array([_M, _V, _psi, _nu])
 
-    def _nat_to_standard(self, natparam):
+    @staticmethod
+    def _nat_to_standard(natparam):
         # (yxT, xxT, yyT, n)
         nu = natparam[3]
         V = inv_psd(natparam[1])
@@ -377,11 +383,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             self.invwishart_mniw = InverseWishart(psi=psi_mniw, nu=nu_mniw)
             self.affine = affine
 
-        # def __init__(self, mu, kappa, psi, nu):
-        #     self.gaussian = Gaussian(mu=mu)
-        #     self.invwishart = InverseWishart(psi=psi, nu=nu)
-        #     self.kappa = kappa
-
         @property
         def din(self):
             return self.matnorm.dcol
@@ -399,18 +400,10 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             return self.gaussian.mu, self.kappa, self.invwishart_niw.psi, self.invwishart_niw.nu, \
                    self.matnorm.M, self.matnorm.V, self.invwishart_mniw.psi, self.invwishart_mniw.nu
 
-        # @property
-        # def params(self):
-        #     return self.gaussian.mu, self.kappa, self.invwishart.psi, self.invwishart.nu
-
         @params.setter
         def params(self, values):
             self.gaussian.mu, self.kappa, self.invwishart_niw.psi, self.invwishart_niw.nu, \
             self.matnorm.M, self.matnorm.V, self.invwishart_mniw.psi, self.invwishart_mniw.nu = values
-
-        # @params.setter
-        # def params(self, values):
-        #     self.gaussian.mu, self.kappa, self.invwishart.psi, self.invwishart.nu = values
 
         def rvs(self, size=None):
             # sample sigma from inverse wishart (niw)
@@ -427,77 +420,37 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
 
             return mu, sigma_niw, A, sigma_mniw
 
-        # def rvs(self, size=None):
-        #     # sample sigma from inverse wishart
-        #     sigma = self.invwishart.rvs()
-        #     # sample mean from gaussian
-        #     self.gaussian.sigma = sigma / self.kappa
-        #     mu = self.gaussian.rvs()
-        #     return mu, sigma
-
         def log_likelihood(self, x):
             mu, sigma_niw, A, sigma_mniw = x
-            return Gaussian(mu=self.gaussian.mu, sigma=sigma_niw / self.kappa).log_likelihood(mu) + \
-                   self.invwishart_niw.log_likelihood(sigma_niw) + \
-                   MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma_mniw).log_likelihood(A) + \
-                   self.invwishart_mniw.log_likelihood(sigma_mniw)
-
-        # def log_likelihood(self, x):
-        #     mu, sigma = x
-        #     return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu) + \
-        #            self.invwishart.log_likelihood(sigma)
+            return Gaussian(mu=self.gaussian.mu, sigma=sigma_niw / self.kappa).log_likelihood(mu)\
+                   + self.invwishart_niw.log_likelihood(sigma_niw)\
+                   + MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma_mniw).log_likelihood(A)\
+                   + self.invwishart_mniw.log_likelihood(sigma_mniw)
 
         def mean(self):
             return tuple([self.gaussian.mean(), self.invwishart_niw.mean(), self.matnorm.mean(), self.invwishart_mniw.mean()])
 
-        # def mean(self):
-        #     return tuple([self.gaussian.mean(), self.invwishart.mean()])
-
         def mode(self):
             return tuple([self.gaussian.mode(), self.invwishart_niw.mode(), self.matnorm.mode(), self.invwishart_mniw.mode()])
 
-        # def mode(self):
-        #     return tuple([elf.gaussian.mode(), self.invwishart.mode()s])
-
         def log_partition(self):
-            return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2) + \
-                   multigammaln(self.invwishart_niw.nu / 2., self.dim) + \
-                   0.5 * self.dim * np.log(2. * np.pi / self.kappa) - \
-                   self.invwishart_niw.nu * np.sum(np.log(np.diag(self.invwishart_niw.psi_chol))) + \
-                   0.5 * self.invwishart_mniw.nu * self.dout * np.log(2) + \
-                   multigammaln(self.invwishart_mniw.nu / 2., self.dout) + \
-                   0.5 * self.dout * np.log(2. * np.pi) - \
-                   self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol))) - \
-                   self.invwishart_mniw.nu * np.sum(np.log(np.diag(self.invwishart_mniw.psi_chol)))
-            # n = self.dout
-            # return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2) + \
-            #        multigammaln(self.invwishart_niw.nu / 2., self.dim) + \
-            #        0.5 * self.dim * np.log(2. * np.pi / self.kappa) - \
-            #        self.invwishart_niw.nu * np.sum(np.log(np.diag(self.invwishart_niw.psi_chol))) + \
-            #        n * self.invwishart_mniw.nu / 2 * np.log(2) + multigammaln(self.invwishart_mniw.nu / 2., n) \
-            #        - self.invwishart_mniw.nu / 2 * np.linalg.slogdet(self.invwishart_mniw.psi)[1] - n / 2 * np.linalg.slogdet(self.matnorm.V)[1]
-
-        # def log_partition(self):
-        #     return 0.5 * self.invwishart.nu * self.dim * np.log(2) + \
-        #            multigammaln(self.invwishart.nu / 2., self.dim) + \
-        #            0.5 * self.dim * np.log(2. * np.pi / self.kappa) - \
-        #            self.invwishart.nu * np.sum(np.log(np.diag(self.invwishart.psi_chol)))
+            return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2)\
+                   + multigammaln(self.invwishart_niw.nu / 2., self.dim)\
+                   + 0.5 * self.dim * np.log(2. * np.pi / self.kappa)\
+                   - self.invwishart_niw.nu * np.sum(np.log(np.diag(self.invwishart_niw.psi_chol)))\
+                   + 0.5 * self.invwishart_mniw.nu * self.dout * np.log(2)\
+                   + multigammaln(self.invwishart_mniw.nu / 2., self.dout)\
+                   + 0.5 * self.dout * np.log(2. * np.pi)\
+                   - self.dout * np.sum(np.log(np.diag(self.matnorm.V_chol)))\
+                   - self.invwishart_mniw.nu * np.sum(np.log(np.diag(self.invwishart_mniw.psi_chol)))
 
         def entropy(self):
             raise NotImplementedError
-
-        # def entropy(self):
-        #     raise NotImplementedError
 
         @property
         def nat_param(self):
             return self._standard_to_nat(self.gaussian.mu, self.kappa, self.invwishart_niw.psi, self.invwishart_niw.nu,
                                          self.matnorm.M, self.matnorm.V, self.invwishart_mniw.psi, self.invwishart_mniw.nu)
-        # @property
-        # def nat_param(self):
-        #     return self._standard_to_nat(self.gaussian.mu, self.kappa,
-        #                                  self.invwishart.psi, self.invwishart.nu)
-
         @nat_param.setter
         def nat_param(self, natparam):
             self.gaussian.mu, self.kappa, \
@@ -505,31 +458,19 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             self.matnorm.M, self.matnorm.V, \
             self.invwishart_mniw.psi, self.invwishart_mniw.nu = self._nat_to_standard(natparam)
 
-        # @nat_param.setter
-        # def nat_param(self, natparam):
-        #     self.gaussian.mu, self.kappa, \
-        #     self.invwishart.psi, self.invwishart.nu = self._nat_to_standard(natparam)
-
         def _standard_to_nat(self, mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw):
             _psi_niw = psi_niw + kappa * np.outer(mu, mu)
             _mu = kappa * mu
             _kappa = kappa
             _nu_niw = nu_niw + 2 + self.dim
 
-            V_inv = inv_psd(V)
-            _psi_mniw = psi_mniw + M.dot(V_inv).dot(M.T)
-            _M = M.dot(V_inv)
-            _V = V_inv
+            _V_inv = inv_psd(V)
+            _psi_mniw = psi_mniw + M.dot(_V_inv).dot(M.T)
+            _M = M.dot(_V_inv)
+            _V = _V_inv
             _nu_mniw = nu_mniw
 
             return np.array([_mu, _kappa, _psi_niw, _nu_niw, _M, _V, _psi_mniw, _nu_mniw])
-
-        # def _standard_to_nat(self, mu, kappa, psi, nu):
-        #     _psi = psi + kappa * np.outer(mu, mu)
-        #     _mu = kappa * mu
-        #     _kappa = kappa
-        #     _nu = nu + 2 + self.dim
-        #     return np.array([_mu, _kappa, _psi, _nu])
 
         def _nat_to_standard(self, natparam):
             kappa = natparam[1]
@@ -553,13 +494,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             assert np.all(0 < np.linalg.eigvalsh(V))
 
             return mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw
-
-        # def _nat_to_standard(self, natparam):
-        #     kappa = natparam[1]
-        #     mu = natparam[0] / kappa
-        #     nu = natparam[3] - 2 - self.dim
-        #     psi = natparam[2] - kappa * np.outer(mu, mu)
-        #     return mu, kappa, psi, nu
 
         def get_statistics(self, data):
             if isinstance(data, np.ndarray):
@@ -585,18 +519,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
                 return np.array([x_niw, n_niw, xxT_niw, n_niw, yxT_mniw, xxT_mniw, yyT_mniw, n_mniw])
             else:
                 return sum(list(map(self.get_statistics, data)), self._empty_statistics())
-
-        # def get_statistics(self, data):
-        #     if isinstance(data, np.ndarray):
-        #         idx = ~np.isnan(data).any(1)
-        #         data = data[idx]
-        #
-        #         xxT = np.einsum('nk,nh->kh', data, data)
-        #         x = np.sum(data, axis=0)
-        #         n = data.shape[0]
-        #         return np.array([x, n, xxT, n])
-        #     else:
-        #         return sum(list(map(self.get_statistics, data)), self._empty_statistics())
 
         def get_weighted_statistics(self, data, weights):
             if isinstance(data, np.ndarray):
@@ -624,29 +546,12 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             else:
                 return sum(list(map(self.get_weighted_statistics, data, weights)), self._empty_statistics())
 
-        # def get_weighted_statistics(self, data, weights):
-        #     if isinstance(data, np.ndarray):
-        #         idx = ~np.isnan(data).any(1)
-        #         data = data[idx]
-        #         weights = weights[idx]
-        #
-        #         xxT = np.einsum('nk,n,nh->kh', data, weights, data)
-        #         x = weights.dot(data)
-        #         n = weights.sum()
-        #         return np.array([x, n, xxT, n])
-        #     else:
-        #         return sum(list(map(self.get_weighted_statistics, data, weights)), self._empty_statistics())
-
         def _empty_statistics(self):
             return np.array([np.zeros((self.dim,)), 0,
                              np.zeros((self.dim, self.dim)), 0,
                              np.zeros((self.dout, self.din)),
                              np.zeros((self.din, self.din)),
                              np.zeros((self.dout, self.dout)), 0])
-
-        # def _empty_statistics(self):
-        #     return np.array([np.zeros((self.dim,)), 0,
-        #                      np.zeros((self.dim, self.dim)), 0])
 
         def get_expected_statistics(self):
             E_J = self.invwishart_niw.nu * np.linalg.inv(self.invwishart_niw.psi)
@@ -664,12 +569,3 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
 
             return E_J, E_h, E_muJmuT, E_logdetSigmainv_niw, E_Sigmainv, \
                    E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv_mniw
-
-        # def get_expected_statistics(self):
-        #     E_J = self.invwishart.nu * np.linalg.inv(self.invwishart.psi)
-        #     E_h = self.invwishart.nu * np.linalg.solve(self.invwishart.psi, self.gaussian.mu)
-        #     E_muJmuT = self.dim / self.kappa + self.gaussian.mu.dot(E_h)
-        #     E_logdetSigmainv = np.sum(digamma((self.invwishart.nu - np.arange(self.dim)) / 2.)) + \
-        #                        self.dim * np.log(2.) - np.linalg.slogdet(self.invwishart.psi)[1]
-        #
-        #     return E_J, E_h, E_muJmuT, E_logdetSigmainv

@@ -31,7 +31,7 @@ class LinearGaussian(Distribution):
 
     @property
     def din(self):
-        # input dimension
+        # input dimension, intercept included
         return self.A.shape[1]
 
     @property
@@ -130,36 +130,34 @@ class LinearGaussianWithNoisyInputs(Distribution):
     Multivariate Gaussian distribution with a linear mean function.
     Parameters are linear transf. and covariance matrix:
         A, sigma
+    The input is modelled as a Multivariate Gaussian distribution
+    Parameters are a constant mean and covariance matrix:
+        mu, sigma
     """
     def __init__(self, mu=None, sigma_niw=None, A=None, sigma=None, affine=False):
 
         self.mu = mu
         self._sigma_niw = sigma_niw
+        self._sigma_niw_chol = None
 
         self.A = A
         self._sigma = sigma
+        self._sigma_chol = None
+
         self.affine = affine
 
     @property
     def params(self):
         return self.mu, self.sigma_niw, self.A, self.sigma
 
-    # @property
-    # def params(self):
-    #     return self.mu, self.sigma
-
     @params.setter
     def params(self, values):
         self.mu, self.sigma_niw, self.A, self.sigma = values
 
-    # @params.setter
-    # def params(self, values):
-    #     self.mu, self.sigma = values
-
     @property
     def din(self):
-        # input dimension
-        return self.A.shape[1] if not self.affine else self.A.shape[1] + 1
+        # input dimension, intercept included
+        return self.A.shape[1]
 
     @property
     def dout(self):
@@ -178,10 +176,6 @@ class LinearGaussianWithNoisyInputs(Distribution):
     def sigma_niw(self):
         return self._sigma_niw
 
-    # @property
-    # def sigma(self):
-    #     return self._sigma
-
     @sigma.setter
     def sigma(self, value):
         self._sigma = value
@@ -192,28 +186,17 @@ class LinearGaussianWithNoisyInputs(Distribution):
         self._sigma_niw = value
         self._sigma_niw_chol = None
 
-    # @sigma.setter
-    # def sigma(self, value):
-    #     self._sigma = value
-    #     self._sigma_chol = None
-
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
+        if self._sigma_chol is None:
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
     @property
     def sigma_niw_chol(self):
-        if not hasattr(self, '_sigma_niw_chol') or self._sigma_niw_chol is None:
+        if self._sigma_niw_chol is None:
             self._sigma_niw_chol = np.linalg.cholesky(self.sigma_niw)
         return self._sigma_niw_chol
-
-    # @property
-    # def sigma_chol(self):
-    #     if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
-    #         self._sigma_chol = np.linalg.cholesky(self.sigma)
-    #     return self._sigma_chol
 
     def rvs(self, x=None, size=None):
         size = 1 if size is None else size
@@ -234,13 +217,6 @@ class LinearGaussianWithNoisyInputs(Distribution):
 
         return np.hstack((x, y))
 
-    # def rvs(self, size=None):
-    #     if size is None:
-    #         return self.mu + npr.normal(size=self.dim).dot(self.sigma_chol.T)
-    #     else:
-    #         size = tuple([size, self.dim])
-    #         return self.mu + npr.normal(size=size).dot(self.sigma_chol.T)
-
     def predict(self, x):
         A, sigma = self.A, self.sigma
 
@@ -255,14 +231,8 @@ class LinearGaussianWithNoisyInputs(Distribution):
     def mean(self):
         return self.mu, self.A
 
-    # def mean(self):
-    #     return self.mu
-
     def mode(self):
         return self.mu, self.A
-
-    # def mode(self):
-    #     return self.mu
 
     # distribution
     def log_likelihood(self, xy):
@@ -293,13 +263,14 @@ class LinearGaussianWithNoisyInputs(Distribution):
             out -= x.dot(A.T).dot(sigma_inv).dot(b)
             out -= 0.5 * b.dot(sigma_inv).dot(b)
 
-        #log-likelihood of gaussian
+        # log-likelihood of gaussian
         try:
             bads = np.isnan(np.atleast_2d(x)).any(axis=1)
             xc = np.nan_to_num(x).reshape((-1, self.dim)) - self.mu
             xs = linalg.solve_triangular(self.sigma_niw_chol, xc.T, lower=True)
-            out1 = - 0.5 * self.dim * np.log(2. * np.pi) -\
-                  np.sum(np.log(np.diag(self.sigma_niw_chol))) - 0.5 * inner1d(xs.T, xs.T)
+            out1 = - 0.5 * self.dim * np.log(2. * np.pi)\
+                   - np.sum(np.log(np.diag(self.sigma_niw_chol)))\
+                   - 0.5 * inner1d(xs.T, xs.T)
             out1[bads] = 0
             # return out
         except np.linalg.LinAlgError:
@@ -308,35 +279,14 @@ class LinearGaussianWithNoisyInputs(Distribution):
 
         return out + out1
 
-    # def log_likelihood(self, x):
-    #     try:
-    #         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
-    #         xc = np.nan_to_num(x).reshape((-1, self.dim)) - self.mu
-    #         xs = linalg.solve_triangular(self.sigma_chol, xc.T, lower=True)
-    #         out = - 0.5 * self.dim * np.log(2. * np.pi) -\
-    #               np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
-    #         out[bads] = 0
-    #         return out
-    #     except np.linalg.LinAlgError:
-    #         # NOTE: degenerate distribution doesn't have a density
-    #         return np.repeat(-np.inf, x.shape[0])
-
     def log_partition(self):
-        return 0.5 * self.dout * np.log(2. * np.pi) +\
-               np.sum(np.log(np.diag(self.sigma_chol))) +\
-               0.5 * self.dim * np.log(2. * np.pi) +\
-               np.sum(np.log(np.diag(self.sigma_niw_chol)))
-
-    # def log_partition(self):
-    #     return 0.5 * self.dim * np.log(2. * np.pi) +\
-    #            np.sum(np.log(np.diag(self.sigma_chol)))
+        return 0.5 * self.dout * np.log(2. * np.pi)\
+               + np.sum(np.log(np.diag(self.sigma_chol)))\
+               + 0.5 * self.dim * np.log(2. * np.pi)\
+               + np.sum(np.log(np.diag(self.sigma_niw_chol)))
 
     def entropy(self):
-        return 0.5 * (self.dout * np.log(2. * np.pi) + self.dout +
-                      2. * np.sum(np.log(np.diag(self.sigma_chol)))) +\
-               0.5 * (self.dim * np.log(2. * np.pi) + self.dim +\
-                      2. * np.sum(np.log(np.diag(self.sigma_niw_chol))))
-
-    # def entropy(self):
-    #     return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim +
-    #                   2. * np.sum(np.log(np.diag(self.sigma_chol))))
+        return 0.5 * (self.dout * np.log(2. * np.pi) + self.dout
+                      + 2. * np.sum(np.log(np.diag(self.sigma_chol))))\
+               + 0.5 * (self.dim * np.log(2. * np.pi) + self.dim
+                        + 2. * np.sum(np.log(np.diag(self.sigma_niw_chol))))
