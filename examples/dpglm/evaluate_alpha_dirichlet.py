@@ -293,8 +293,8 @@ if __name__ == "__main__":
     overall_time = stop - start
 
     # set paths for tikz and pdf
-    tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(tmp) + '_' + time)
-    pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(tmp) + '_' + time)
+    tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(tmp) + time)
+    pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(tmp) + time)
 
     # generate and save violin plots
     nb_cols = len(alphas)
