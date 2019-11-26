@@ -9,7 +9,7 @@ import numpy as np
 
 import copy
 
-from mimo.abstractions import MaxLikelihood, MAP
+from mimo.abstractions import MaxLikelihood, MaxAPosteriori
 from mimo.abstractions import GibbsSampling, MeanField, MeanFieldSVI
 
 from mimo.distributions.gaussian import Gaussian, DiagonalGaussian
@@ -21,7 +21,7 @@ from numpy.core.umath_tests import inner1d
 from mimo.util.general import blockarray
 
 
-class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
+class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
                        GibbsSampling, MeanField, MeanFieldSVI):
     """
     Multivariate Gaussian distribution class.
@@ -67,7 +67,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return self
 
     # Max a posteriori
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -99,7 +99,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -149,7 +149,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
                self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
 
 
-class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
+class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
                                GibbsSampling, MeanField, MeanFieldSVI):
     """
     Product of normal-gamma priors over mu (mean vector) and sigmas
@@ -191,7 +191,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return self
 
     # Max a posteriori
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -225,7 +225,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -260,7 +260,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return (x**2).dot(a) + x.dot(b) + c.sum() + d.sum() - 0.5 * self.D * np.log(2. * np.pi)
 
 
-class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
+class BayesianCategoricalWithDirichlet(Categorical, MaxLikelihood, MaxAPosteriori,
                                        GibbsSampling, MeanField, MeanFieldSVI):
     """
     This class represents a categorical distribution over labels, where the
@@ -305,7 +305,7 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         self.probs = counts / counts.sum()
         return self
 
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -322,7 +322,7 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         return self
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -400,7 +400,7 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         return self
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -546,7 +546,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
