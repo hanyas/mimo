@@ -23,50 +23,48 @@ for i in range(data.shape[0]):
 plt.figure()
 plt.plot(data[:, 0], data[:, 1], 'kx')
 plt.title('data')
-
+plt.show()
 
 nb_models = 5
-
 
 gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-
-in_dim = 1
-out_dim = 1
 affine = True
-if affine:
-    in_dim = in_dim + 1
+out_dim = 1
+in_dim = 1
 
-components_hypparams = dict(M=np.zeros((out_dim, in_dim)),
-                 V=1. * np.eye(in_dim),
-                 # V= np.asarray([[1, 0],[0, 25]]),
-                 affine=affine,
-                 psi=np.eye(out_dim)*0.01,
-                 nu=2 * out_dim + 1)
+if affine:
+    n_params = in_dim + 1
+else:
+    n_params = in_dim
+
+components_hypparams = dict(M=np.zeros((out_dim, n_params)),
+                            V=1. * np.eye(out_dim),
+                            affine=affine,
+                            psi=np.eye(out_dim) * 0.01,
+                            nu=2 * out_dim + 1)
 components_prior = distributions.MatrixNormalInverseWishart(**components_hypparams)
 
-gmm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                     components=[distributions.BayesianLinearGaussian(components_prior) for _ in range(nb_models)])
+model = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                       components=[distributions.BayesianLinearGaussian(components_prior) for _ in range(nb_models)])
 
-gmm.add_data(data)
+model.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(1):
+for superitr in range(5):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
     scores = []
-    for _ in progprint_xrange(100):
-
-        gmm.resample_model()
-        for idx, l in enumerate(gmm.labels_list):
+    for _ in progprint_xrange(300):
+        model.resample_model()
+        for idx, l in enumerate(model.labels_list):
             l.r = l.get_responsibility()
-
-        scores.append(gmm._vlb())
+        scores.append(model._vlb())  # A hack to compare models
 
     allscores.append(scores)
-    allmodels.append(copy.deepcopy(gmm))
+    allmodels.append(copy.deepcopy(model))
 
 plt.figure()
 for scores in allscores:
@@ -75,34 +73,29 @@ plt.title('model vlb scores vs iteration')
 
 models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
                            key=operator.itemgetter(1), reverse=True)
-
-gmm = models_and_scores[0][0]
+model = models_and_scores[0][0]
 
 # print labels
-for l in gmm.labels_list:
+for l in model.labels_list:
     label = l.z
     print(label)
-print('used labels',gmm.used_labels)
+print('used labels', model.used_labels)
 
 # prediction
-componentA = np.zeros([len(gmm.components),np.size(gmm.components[0].A)])
-for idx, component in enumerate(gmm.components):
+componentA = np.zeros([len(model.components), np.size(model.components[0].A)])
+for idx, component in enumerate(model.components):
     componentA[idx] = component.A
 
-if affine:
-    in_dim_pred = in_dim - 1
-else:
-    in_dim_pred = in_dim
 pred_y = np.zeros(data.shape[0])
 for i in range(data.shape[0]):
-    idx = gmm.labels_list[0].z[i]
+    idx = model.labels_list[0].z[i]
     if affine:
-        pred_y[i] = np.matmul(componentA[idx,:-1], data[i,:-out_dim].T) + componentA[idx,in_dim_pred:] * 1
+        pred_y[i] = np.matmul(componentA[idx,:-1], data[i, :-out_dim].T) + componentA[idx, in_dim:] * 1
     else:
-        pred_y[i] = np.matmul(componentA[idx,:], data[i,:-out_dim].T)
+        pred_y[i] = np.matmul(componentA[idx,:], data[i, :-out_dim].T)
 
 plt.figure()
 plt.plot(data[:, 0], data[:, 1], 'kx')
-plt.scatter(data[:,0], pred_y, c='red', s=2)
+plt.scatter(data[:, 0], pred_y, c='red', s=2)
 plt.title('best model')
 plt.show()

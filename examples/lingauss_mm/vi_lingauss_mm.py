@@ -18,7 +18,6 @@ step = 14. * np.pi / n_samples
 for i in range(data.shape[0]):
     x = i * step - 6.
     data[i, 0] = x + npr.normal(0, 0.1)
-    # data[i, 0] = x + npr.normal(0, 10)
     data[i, 1] = 3. * (np.sin(x) + npr.normal(0, .1))
 
 # # Normalize data to 0 mean, 1 std_deviation
@@ -30,50 +29,46 @@ for i in range(data.shape[0]):
 plt.figure()
 plt.plot(data[:, 0], data[:, 1], 'kx')
 plt.title('data')
+plt.show()
 
 nb_models = 25
 
-
-
-
-gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, ))*1)
+gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )) * 1)
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
 affine = True
 out_dim = 1
 if affine:
-    in_dim = data.shape[1] - out_dim + 1
+    n_params = data.shape[1] - out_dim + 1
 else:
-    in_dim = data.shape[1] - out_dim
-print(in_dim)
+    n_params = data.shape[1] - out_dim
 
-components_hypparams = dict(M=np.zeros((out_dim, in_dim)),
-                 # V=1 * np.eye(in_dim),
-                 V= np.asarray([[1, 0],[0, 100]]),
-                 affine=affine,
-                 psi=np.eye(out_dim)*0.001,
-                 nu=2 * out_dim + 1)
+
+components_hypparams = dict(M=np.zeros((out_dim, n_params)),
+                            V=np.np.array([[1., 0.], [0., 100.]]),
+                            affine=affine,
+                            psi=np.eye(out_dim)*0.001,
+                            nu=2 * out_dim + 1)
 components_prior = distributions.MatrixNormalInverseWishart(**components_hypparams)
 
-gmm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                     components=[distributions.BayesianLinearGaussian(components_prior) for _ in range(nb_models)])
-
-gmm.add_data(data)
+model = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                       components=[distributions.BayesianLinearGaussian(components_prior) for _ in range(nb_models)])
+model.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(1):
+for superitr in range(5):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
     for _ in progprint_xrange(50):
-        gmm.resample_model()
+        model.resample_model()
 
     # mean field to lock onto a mode
     print('Mean Field')
-    scores = [gmm.meanfield_coordinate_descent_step() for _ in progprint_xrange(200)]
+    scores = [model.meanfield_coordinate_descent_step() for _ in progprint_xrange(200)]
 
     allscores.append(scores)
-    allmodels.append(copy.deepcopy(gmm))
+    allmodels.append(copy.deepcopy(model))
 
 plt.figure()
 for scores in allscores:
@@ -82,34 +77,30 @@ plt.title('model vlb scores vs iteration')
 
 models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
                            key=operator.itemgetter(1), reverse=True)
-
-
 plt.show()
 
-gmm = models_and_scores[0][0]
+model = models_and_scores[0][0]
 
-print('used label',gmm.used_labels)
-componentA = np.zeros([len(gmm.components),np.size(gmm.components[0].A)])
-for idx, component in enumerate(gmm.components):
+print('used label', model.used_labels)
+componentA = np.zeros([len(model.components), np.size(model.components[0].A)])
+for idx, component in enumerate(model.components):
     componentA[idx] = component.A
-
 print(componentA)
 
-for l in gmm.labels_list:
+for l in model.labels_list:
     label = l.z
     print(label)
 
 pred_y = np.zeros(data.shape[0])
 for i in range(data.shape[0]):
-    idx = gmm.labels_list[0].z[i]
+    idx = model.labels_list[0].z[i]
     if affine:
-        pred_y[i] = componentA[idx,0] * data[i, 0] + componentA[idx,1] * 1
+        pred_y[i] = componentA[idx, 0] * data[i, 0] + componentA[idx, 1] * 1
     else:
-        pred_y[i] = componentA[idx,0] * data[i, 0]
+        pred_y[i] = componentA[idx, 0] * data[i, 0]
 
 plt.figure()
 plt.plot(data[:, 0], data[:, 1], 'kx')
-plt.scatter(data[:,0], pred_y, c='red', s=2)
+plt.scatter(data[:, 0], pred_y, c='red', s=2)
 plt.title('best model')
 plt.show()
-
