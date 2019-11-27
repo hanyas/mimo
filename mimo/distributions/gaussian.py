@@ -12,7 +12,9 @@ class Gaussian(Distribution):
 
     def __init__(self, mu=None, sigma=None):
         self.mu = mu
+
         self._sigma = sigma
+        self._sigma_chol = None
 
     @property
     def params(self):
@@ -37,7 +39,7 @@ class Gaussian(Distribution):
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
+        if self._sigma_chol is None:
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
@@ -68,12 +70,12 @@ class Gaussian(Distribution):
             return np.repeat(-np.inf, x.shape[0])
 
     def log_partition(self):
-        return 0.5 * self.dim * np.log(2. * np.pi) +\
-               np.sum(np.log(np.diag(self.sigma_chol)))
+        return 0.5 * self.dim * np.log(2. * np.pi)\
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def entropy(self):
-        return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim +
-                      2. * np.sum(np.log(np.diag(self.sigma_chol))))
+        return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim
+                      + 2. * np.sum(np.log(np.diag(self.sigma_chol))))
 
     _parameterplot = None
     _scatterplot = None
@@ -102,6 +104,8 @@ class DiagonalGaussian(Gaussian):
 
     def __init__(self, mu=None, sigmas=None):
         self._sigmas = sigmas
+        self._sigma_chol = None
+
         super(DiagonalGaussian, self).__init__(mu=mu, sigma=self.sigma)
 
     @property
@@ -122,10 +126,6 @@ class DiagonalGaussian(Gaussian):
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
+        if self._sigma_chol is None:
             self._sigma_chol = np.diag(np.sqrt(self._sigmas))
         return self._sigma_chol
-
-
-if __name__ == "__main__":
-    pass
