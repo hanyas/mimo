@@ -102,8 +102,7 @@ def create_job(kwargs):
         weights = product
 
     # initialize variables
-    mean, var = np.zeros((n_test, output_dim)),\
-                np.zeros((n_test, output_dim))
+    mean, var, = np.zeros((n_test, output_dim)), np.zeros((n_test, output_dim)),
 
     mlklhd = np.zeros((args.nb_models, ))
     stats = []
