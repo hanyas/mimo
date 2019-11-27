@@ -42,8 +42,8 @@ def matrix_t(query, prior, posterior, stats):
 
     qqT = np.outer(q, q)
 
-    Sxx = xxT + Vk[0]
-    Syx = yxT + np.dot(Mk, Vk[0])
+    Sxx = xxT + Vk
+    Syx = yxT + np.dot(Mk, Vk)
     Syy = yyT + np.dot(Mk, np.dot(Vk, Mk.T))
     _Syx = Syy - np.dot(Syx, np.dot(np.linalg.inv(Sxx), Syx.T))
     c = 1. - q.T @ np.linalg.inv(Sxx + qqT) @ q
