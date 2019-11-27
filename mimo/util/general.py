@@ -83,7 +83,7 @@ def combinedata(datas):
 
 
 def flattendata(data):
-    # data is either an array (possibly rnd_V maskedarray) or rnd_V list of arrays
+    # data is either an array (possibly a maskedarray) or a list of arrays
     if isinstance(data, np.ndarray):
         return data
     elif isinstance(data, list) or isinstance(data, tuple):
