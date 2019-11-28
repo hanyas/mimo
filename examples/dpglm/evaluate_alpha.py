@@ -172,12 +172,12 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', help='Choose dataset', default='cmb')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
-    parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
+    parser.add_argument('--nb_seeds', help='Set number of seeds', default=100, type=int)
     parser.add_argument('--prior', help='Set prior type', default='dirichlet')
-    parser.add_argument('--nb_models', help='Set max number of models', default=50, type=int)
+    parser.add_argument('--nb_models', help='Set max number of models', default=100, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=2, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=2, type=int)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
     args = parser.parse_args()
@@ -231,17 +231,17 @@ if __name__ == "__main__":
 
     # set working directory and file name
     os.chdir(args.evalpath)
-    tmp = 'alpha_' + str(args.prior)
+    eval_str = 'alpha_' + str(args.prior)
 
-    violin_data = None
+    violin_data_scores = None
+    violin_data_labels = None
 
     for itr, alpha in enumerate(alphas):
         print('Current alpha value', alpha)
 
-        raw_path = os.path.join(str(args.dataset) + '/raw/' + str(args.dataset) + '_' + str(tmp) + '_' + str(alpha) + '_raw' + time + '.csv')
-        stats_path = os.path.join(str(args.dataset) + '/stats/' + str(args.dataset) + '_' + str(tmp) + '_' + str(alpha) + '_stats' + time + '.csv')
-        visual_tikz_path = os.path.join(str(args.dataset) + '/visual/' + str(args.dataset) + '_' + str(tmp))
-        visual_pdf_path = os.path.join(str(args.dataset) + '/visual/' + str(args.dataset) + '_' + str(tmp))
+        raw_path = os.path.join(str(args.dataset) + '/raw/' + str(args.dataset) + '_' + str(eval_str) + '_' + str(alpha) + '_raw' + time + '.csv')
+        scores_stats_path = os.path.join(str(args.dataset) + '/stats/' + str(args.dataset) + '_' + str(eval_str) + '_' + str(alpha) + '_scores_stats' + time + '.csv')
+        labels_stats_path = os.path.join(str(args.dataset) + '/stats/' + str(args.dataset) + '_' + str(eval_str) + '_' + str(alpha) + '_labels_stats' + time + '.csv')
 
         # define gating
         if args.prior == 'stick-breaking':
@@ -259,10 +259,10 @@ if __name__ == "__main__":
                                                               arguments=args)
 
         # write raw data to file
-        _used_labels = [len(dpglm.used_labels) for dpglm in dpglms]
+        used_labels = [len(dpglm.used_labels) for dpglm in dpglms]
         with open(raw_path, 'w+') as f:
             writer = csv.writer(f, delimiter='\t')
-            writer.writerows(zip(test_evars, _used_labels))
+            writer.writerows(zip(test_evars, used_labels))
 
         # write stats data to file
         _test_evars = np.asarray(test_evars)
@@ -273,7 +273,7 @@ if __name__ == "__main__":
         _test_evars_q1 = np.quantile(_test_evars, 0.25, axis=0)
         _test_evars_q3 = np.quantile(_test_evars, 0.75, axis=0)
 
-        file = open(stats_path, 'w+')
+        file = open(scores_stats_path, 'w+')
         file.write('mean' + ' ' + str(_test_evars_mean) + '\n')
         file.write('std' + ' ' + str(_test_evars_std) + '\n')
         file.write('var' + ' ' + str(_test_evars_var) + '\n')
@@ -283,17 +283,42 @@ if __name__ == "__main__":
         file.close()
 
         if itr == 0:
-            violin_data = _test_evars
+            violin_data_scores = _test_evars
         else:
-            violin_data = np.column_stack((violin_data, _test_evars))
+            violin_data_scores = np.column_stack((violin_data_scores, _test_evars))
+
+        # write label stats data to file
+        _used_labels = np.asarray(used_labels)
+        _used_labels_mean = np.mean(_used_labels, axis=0)
+        _used_labels_std = np.std(_used_labels, axis=0)
+        _used_labels_var = np.var(_used_labels, axis=0)
+        _used_labels_median = np.median(_used_labels, axis=0)
+        _used_labels_q1 = np.quantile(_used_labels, 0.25, axis=0)
+        _used_labels_q3 = np.quantile(_used_labels, 0.75, axis=0)
+
+        file = open(labels_stats_path, 'w+')
+        file.write('mean' + ' ' + str(_used_labels_mean) + '\n')
+        file.write('std' + ' ' + str(_used_labels_std) + '\n')
+        file.write('var' + ' ' + str(_used_labels_var) + '\n')
+        file.write('median' + ' ' + str(_used_labels_median) + '\n')
+        file.write('q1' + ' ' + str(_used_labels_q1) + '\n')
+        file.write('q3' + ' ' + str(_used_labels_q3) + '\n')
+        file.close()
+
+        if itr == 0:
+            violin_data_labels = _used_labels
+        else:
+            violin_data_labels = np.column_stack((violin_data_labels, _used_labels))
 
     # total script runtime
     stop = timeit.default_timer()
     overall_time = stop - start
 
     # set paths for tikz and pdf
-    tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(tmp) + time)
-    pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(tmp) + time)
+    scores_tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(eval_str) + '_scores' + time)
+    scores_pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(eval_str) + '_scores' + time)
+    labels_tikz_path = os.path.join(str(args.dataset) + '/tikz/' + str(args.dataset) + '_' + str(eval_str) + '_labels' + time)
+    labels_pdf_path = os.path.join(str(args.dataset) + '/pdf/' + str(args.dataset) + '_' + str(eval_str) + '_labels' + time)
 
     # generate and save violin plots
     nb_cols = len(alphas)
@@ -305,7 +330,9 @@ if __name__ == "__main__":
         x_label = 'Alpha of Stick-breaking Prior'
 
     x_categories = [str(alpha) for alpha in alphas]
-    y_label = 'Explained Variance Score'
+    scores_y_label = 'Explained Variance Score'
+    labels_y_label = 'Number of Linear Models'
     title = None
 
-    plot_violin_box(violin_data, nb_cols, tikz_path, pdf_path, x_label, y_label, title, x_categories)
+    plot_violin_box(violin_data_scores, nb_cols, scores_tikz_path, scores_pdf_path, x_label, scores_y_label, title, x_categories)
+    plot_violin_box(violin_data_labels, nb_cols, labels_tikz_path, labels_pdf_path, x_label, labels_y_label, title, x_categories)
