@@ -217,7 +217,7 @@ if __name__ == "__main__":
     time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
 
     # evaluation criteria
-    eval_str = 'datasize_'
+    eval_str = 'datasize'
 
     violin_data_scores = None
     violin_data_labels = None
