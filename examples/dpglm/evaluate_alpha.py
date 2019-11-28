@@ -104,7 +104,6 @@ def create_job(kwargs):
     # initialize variables
     mean, var, = np.zeros((n_test, output_dim)), np.zeros((n_test, output_dim)),
 
-    mlklhd = np.zeros((args.nb_models, ))
     stats = []
     # get statistics for each component for training data
     for idx, c in enumerate(dpglm.components):
@@ -116,6 +115,7 @@ def create_job(kwargs):
         xhat = test_data[i, :input_dim]
 
         # calculate the marginal likelihood of training data xhat for each cluster
+        mlklhd = np.zeros((args.nb_models,))
         # calculate the normalization term for mean function for xhat
         normalizer = 0.
         for idx, c in enumerate(dpglm.components):
@@ -172,12 +172,12 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', help='Choose dataset', default='cmb')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
-    parser.add_argument('--nb_seeds', help='Set number of seeds', default=100, type=int)
+    parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='dirichlet')
     parser.add_argument('--nb_models', help='Set max number of models', default=50, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=2, type=int)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=2, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
     args = parser.parse_args()
