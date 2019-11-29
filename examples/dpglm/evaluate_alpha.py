@@ -104,12 +104,6 @@ def create_job(kwargs):
     # initialize variables
     mean, var, = np.zeros((n_test, output_dim)), np.zeros((n_test, output_dim)),
 
-    stats = []
-    # get statistics for each component for training data
-    for idx, c in enumerate(dpglm.components):
-        _, _, _, _, _yxT, _xxT, _yyT, _n = c.posterior.get_statistics([l.data[l.z == idx] for l in dpglm.labels_list])
-        stats.append({'xxT': _xxT, 'yxT': _yxT, 'yyT': _yyT, 'n': _n})
-
     # prediction / mean function of yhat for all training data xhat
     for i in range(n_test):
         xhat = test_data[i, :input_dim]
@@ -126,7 +120,7 @@ def create_job(kwargs):
         # calculate contribution of each cluster to mean function
         for idx, c in enumerate(dpglm.components):
             if idx in dpglm.used_labels:
-                t_mean, t_var, _ = matrix_t(xhat, c.prior, c.posterior, stats[idx])
+                t_mean, t_var, _ = matrix_t(xhat, c.posterior)
                 t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
                 # Mean of a mixture = sum of weihted means

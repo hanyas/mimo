@@ -30,41 +30,29 @@ def sample_prediction(dpglm, data, n_draws=25):
     plt.show()
 
 
-def matrix_t(query, prior, posterior, stats):
+def matrix_t(query, posterior):
     mu, kappa, psi_niw, nu_niw, Mk, Vk, psi_mniw, nu_mniw = posterior.params
-    _, _, _, _, _, _, S0, N0 = prior.params
-
-    xxT, yxT, yyT = stats['xxT'], stats['yxT'], stats['yyT']
 
     q = query
-    if prior.affine:
+    if posterior.affine:
         q = np.hstack((query, 1.))
 
     qqT = np.outer(q, q)
 
-    Sxx = xxT + Vk
-    Syx = yxT + np.dot(Mk, Vk)
-    Syy = yyT + np.dot(Mk, np.dot(Vk, Mk.T))
-    _Syx = Syy - np.dot(Syx, np.dot(np.linalg.inv(Sxx), Syx.T))
-    c = 1. - q.T @ np.linalg.inv(Sxx + qqT) @ q
-
-    df = nu_mniw + N0 + 1
-    mean = np.dot(Syx, np.dot(np.linalg.inv(Sxx), q))
-
-    # Variance of a matrix-T is scale-parameter divided by (df - 2)
-    # (see Wikipedia and Minka - Bayesian linear regression)
-    var = 1. / c * (_Syx + S0) / (df - 2)
+    df = nu_mniw + 1
+    c = 1. - q.T @ np.linalg.inv(np.linalg.inv(Vk) + qqT) @ q
+    mean = Mk @ q
+    var = 1. / c * psi_mniw / (df - 2)
 
     return mean, var, df
 
 
 # see Murphy (2007) - Conjugate bayesian analysis of the gaussian distribution,
 # marginal likelihood for a matrix-inverse-wishart prior
-def niw_marginal_likelihood(data, prior):
-    # Note the passed prior is actually the inferred posterior
+def niw_marginal_likelihood(data, posterior):
     # copy parameters of the input Normal-Inverse-Wishart posterior
-    mu, kappa = prior.gaussian.mu, prior.kappa
-    psi, nu = prior.invwishart_niw.psi, prior.invwishart_niw.nu
+    mu, kappa = posterior.gaussian.mu, posterior.kappa
+    psi, nu = posterior.invwishart_niw.psi, posterior.invwishart_niw.nu
 
     hypparams = dict(mu=mu, kappa=kappa, psi=psi, nu=nu)
     prior = distributions.NormalInverseWishart(**hypparams)
