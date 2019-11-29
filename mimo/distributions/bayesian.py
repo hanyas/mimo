@@ -650,14 +650,19 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             self.mu = x_niw / n_niw
             self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
 
-        self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
-        self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
+        if n_mniw < (self.din * self.dout) or np.sum(np.linalg.svd(xxT_mniw, compute_uv=False) > 1e-6) < self.din\
+                or np.sum(np.linalg.svd(yyT_mniw, compute_uv=False) > 1e-6) < self.dout:
+            self.A = 99999999 * np.ones((self.dout, self.din))
+            self.sigma = np.eye(self.dout)
+        else:
+            self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
+            self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
 
         def symmetrize(A):
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = 1e-8 * np.eye(self.dout) + symmetrize(self.sigma)
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
