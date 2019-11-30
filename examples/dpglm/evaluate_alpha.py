@@ -4,13 +4,11 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, models
 from mimo.util.data import load_data
-from mimo.util.prediction import niw_marginal_likelihood, matrix_t
-from mimo.util.prediction import sample_prediction
+from mimo.util.prediction import sample_prediction, single_prediction
+from mimo.util.prediction import em_prediction, meanfield_prediction
 from mimo.util.plot import plot_violin_box
 
 import os
-import operator
-import copy
 import timeit
 import datetime
 import argparse
@@ -19,7 +17,6 @@ from joblib import Parallel, delayed
 
 from sklearn.metrics import explained_variance_score
 import csv
-import pandas
 
 import multiprocessing
 nb_cores = multiprocessing.cpu_count()
@@ -73,63 +70,40 @@ def create_job(kwargs):
     dpglm.add_data(train_data)
 
     # inference
-    score = []
+    mean, var, score = None, None,  []
 
-    # Gibbs sampling to wander around the posterior
-    for _ in range(args.gibbs_iters):
-        dpglm.resample_model()
+    if args.inference == 'em':
+        # Expectation Maximizaiton
+        for _ in range(args.em_iters):
+            dpglm.EM_step()
 
-    # Mean field
-    score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                                    maxiter=args.meanfield_iters,
-                                                    progprint=False))
+        # EM testing prediction
+        mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
 
-    # # sample prediction
-    # sample_prediction(dpglm, train_data)
+    elif args.inference == 'gibbs':
+        # Gibbs sampling
+        for _ in range(args.gibbs_iters):
+            dpglm.resample_model()
 
-    # compute posterior mixing weights
-    weights = None
-    if args.prior == 'dirichlet':
-        weights = dpglm.gating.posterior.alphas
-    elif args.prior == 'stick-breaking':
-        product = np.ones((args.nb_models, ))
-        gammas = dpglm.gating.posterior.gammas
-        deltas = dpglm.gating.posterior.deltas
-        for idx, c in enumerate(dpglm.components):
-            product[idx] = gammas[idx] / (gammas[idx] + deltas[idx])
-            for j in range(idx):
-                product[idx] = product[idx] * (1. - gammas[j] / (gammas[j] + deltas[j]))
-        weights = product
+    elif args.inference == 'meanfield':
+        # Mean field
+        score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+                                                        maxiter=args.meanfield_iters,
+                                                        progprint=False))
+        # meanfield marginal prediction
+        mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
 
-    # initialize variables
-    mean, var, = np.zeros((n_test, output_dim)), np.zeros((n_test, output_dim)),
+    elif args.inference == 'gibbs-meanfield':
+        # Gibbs sampling
+        for _ in range(args.gibbs_iters):
+            dpglm.resample_model()
 
-    # prediction / mean function of yhat for all training data xhat
-    for i in range(n_test):
-        xhat = test_data[i, :input_dim]
-
-        # calculate the marginal likelihood of training data xhat for each cluster
-        mlklhd = np.zeros((args.nb_models,))
-        # calculate the normalization term for mean function for xhat
-        normalizer = 0.
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                mlklhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
-                normalizer = normalizer + weights[idx] * mlklhd[idx]
-
-        # calculate contribution of each cluster to mean function
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                t_mean, t_var, _ = matrix_t(xhat, c.posterior)
-                t_var = np.diag(t_var)  # consider only diagonal variances for plots
-
-                # Mean of a mixture = sum of weihted means
-                mean[i, :] += t_mean * mlklhd[idx] * weights[idx] / normalizer
-
-                # Variance of a mixture = sum of weighted variances + ...
-                # ... + sum of weighted squared means - squared sum of weighted means
-                var[i, :] += (t_var + t_mean ** 2) * mlklhd[idx] * weights[idx] / normalizer
-        var[i, :] -= mean[i, :] ** 2
+        # Mean field
+        score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+                                                        maxiter=args.meanfield_iters,
+                                                        progprint=False))
+        # marginal prediction
+        mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
 
     # # demo plots for CMB and Sine datasets
     # sorting = np.argsort(test_data, axis=0)  # sort based on input values
@@ -163,13 +137,15 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Dirichlet prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='cmb')
+    parser.add_argument('--dataset', help='Choose dataset', default='sine')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=100, type=int)
     parser.add_argument('--prior', help='Set prior type', default='dirichlet')
     parser.add_argument('--nb_models', help='Set max number of models', default=100, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
+    parser.add_argument('--inference', help='Set inference technique', default='gibbs-meanfield')
+    parser.add_argument('--em_iters', help='Set EM iterations', default=1000, type=int)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000, type=int)
     parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
