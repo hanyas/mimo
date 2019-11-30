@@ -1,20 +1,134 @@
 import numpy as np
-
 from mimo import distributions
 
 
+# Marginalize prediction under posterior
+def meanfield_prediction(dpglm, data, input_dim, output_dim, prior='stick-breaking'):
+    nb_data = len(data)
+    nb_models = len(dpglm.components)
+
+    # initialize variables
+    mean, var, = np.zeros((nb_data, output_dim)), np.zeros((nb_data, output_dim)),
+
+    # compute posterior mixing weights
+    weights = None
+    if prior == 'dirichlet':
+        weights = dpglm.gating.posterior.alphas
+    elif prior == 'stick-breaking':
+        product = np.ones((nb_models, ))
+        gammas = dpglm.gating.posterior.gammas
+        deltas = dpglm.gating.posterior.deltas
+        for idx, c in enumerate(dpglm.components):
+            product[idx] = gammas[idx] / (gammas[idx] + deltas[idx])
+            for j in range(idx):
+                product[idx] = product[idx] * (1. - gammas[j] / (gammas[j] + deltas[j]))
+        weights = product
+
+    # prediction / mean function of yhat for all training data xhat
+    for i in range(nb_data):
+        xhat = data[i, :input_dim]
+
+        # calculate the marginal likelihood of training data xhat for each cluster
+        mlklhd = np.zeros((nb_models,))
+        # calculate the normalization term for mean function for xhat
+        normalizer = 0.
+        for idx, c in enumerate(dpglm.components):
+            if idx in dpglm.used_labels:
+                mlklhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
+                normalizer = normalizer + weights[idx] * mlklhd[idx]
+
+        # calculate contribution of each cluster to mean function
+        for idx, c in enumerate(dpglm.components):
+            if idx in dpglm.used_labels:
+                t_mean, t_var, _ = matrix_t(xhat, c.posterior)
+                t_var = np.diag(t_var)  # consider only diagonal variances for plots
+
+                # Mean of a mixture = sum of weihted means
+                mean[i, :] += t_mean * mlklhd[idx] * weights[idx] / normalizer
+
+                # Variance of a mixture = sum of weighted variances + ...
+                # ... + sum of weighted squared means - squared sum of weighted means
+                var[i, :] += (t_var + t_mean ** 2) * mlklhd[idx] * weights[idx] / normalizer
+        var[i, :] -= mean[i, :] ** 2
+
+    return mean, var
+
+
+# Weighted EM predictions over all models
+def em_prediction(dpglm, data, input_dim, output_dim):
+    nb_data = len(data)
+    nb_models = len(dpglm.components)
+
+    # initialize variables
+    mean, var, = np.zeros((nb_data, output_dim)), np.zeros((nb_data, output_dim)),
+
+    # mixing weights
+    weights = dpglm.gating.probs
+
+    # prediction / mean function of yhat for all training data xhat
+    for i in range(nb_data):
+        xhat = data[i, :input_dim]
+
+        # calculate the marginal likelihood of training data xhat for each cluster
+        lklhd = np.zeros((nb_models,))
+        # calculate the normalization term for mean function for xhat
+        normalizer = 0.
+        for idx, c in enumerate(dpglm.components):
+            if idx in dpglm.used_labels:
+                lklhd[idx] = gaussian_likelihood(xhat, c)
+                normalizer = normalizer + weights[idx] * lklhd[idx]
+
+        # calculate contribution of each cluster to mean function
+        for idx, c in enumerate(dpglm.components):
+            if idx in dpglm.used_labels:
+                t_mean = c.predict(xhat)
+                t_var = np.diag(c.sigma_niw)  # consider only diagonal variances for plots
+
+                # Mean of a mixture = sum of weihted means
+                mean[i, :] += t_mean * lklhd[idx] * weights[idx] / normalizer
+
+                # Variance of a mixture = sum of weighted variances + ...
+                # ... + sum of weighted squared means - squared sum of weighted means
+                var[i, :] += (t_var + t_mean ** 2) * lklhd[idx] * weights[idx] / normalizer
+        var[i, :] -= mean[i, :] ** 2
+
+    return mean, var
+
+
+# Single-model predictions after EM
 # assume single input and output
-def sample_prediction(dpglm, data, n_draws=25):
-    n_train = data.shape[0]
+def single_prediction(dpglm, data):
+    nb_data = len(data)
+
     _train_inputs = data[:, :1]
     _train_outputs = data[:, 1:]
-    _prediction_samples = np.zeros((n_draws, n_train, 1))
+    _prediction = np.zeros((nb_data, 1))
+
+    for i in range(nb_data):
+        idx = dpglm.labels_list[0].z[i]
+        _prediction[i, :] = dpglm.components[idx].predict(_train_inputs[i, :])
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(16, 6))
+    plt.scatter(_train_inputs, _train_outputs, s=1)
+    plt.scatter(_train_inputs, _prediction, color='red', s=1)
+    plt.show()
+
+
+# Sample single-model predictions from posterior
+# assume single input and output
+def sample_prediction(dpglm, data, n_draws=25):
+    nb_data = len(data)
+
+    _train_inputs = data[:, :1]
+    _train_outputs = data[:, 1:]
+    _prediction_samples = np.zeros((n_draws, nb_data, 1))
 
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(25, 12))
     for d in range(n_draws):
         dpglm.resample_model()
-        for i in range(n_train):
+        for i in range(nb_data):
             idx = dpglm.labels_list[0].z[i]
             _prediction_samples[d, i, :] = dpglm.components[idx].predict(_train_inputs[i, :])
 
@@ -28,6 +142,17 @@ def sample_prediction(dpglm, data, n_draws=25):
     plt.scatter(_train_inputs, _train_outputs, s=1)
     plt.scatter(_train_inputs, _prediction_mean, color='red', s=1)
     plt.show()
+
+
+def gaussian_likelihood(data, distribution):
+    mu, sigma = distribution.mu, distribution.sigma_niw
+    model = distributions.Gaussian(mu=mu, sigma=sigma)
+
+    log_likelihood = model.log_likelihood(data)
+    log_partition = model.log_partition()
+
+    likelihood = np.exp(log_partition + log_likelihood)
+    return likelihood
 
 
 def matrix_t(query, posterior):
