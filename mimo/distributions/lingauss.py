@@ -28,7 +28,7 @@ class LinearGaussian(Distribution):
     @property
     def din(self):
         # input dimension
-        return self.A.shape[1] if not self.affine else self.A.shape[1] + 1
+        return self.A.shape[1]
 
     @property
     def dout(self):
