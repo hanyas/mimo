@@ -47,6 +47,7 @@ for superitr in range(5):
 
     # mean field to lock onto a mode
     print('Mean Field')
+    gmm.resample_model()  # sample once to initialize posterior
     scores = [gmm.meanfield_coordinate_descent_step() for _ in progprint_xrange(100)]
 
     allscores.append(scores)
