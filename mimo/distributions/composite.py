@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: compose.py
-# @Date: 2019-06-08-21-53
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
-
 import numpy as np
 
 from mimo.abstractions import Distribution
@@ -48,8 +40,8 @@ class NormalInverseWishart(Distribution):
 
     def log_likelihood(self, x):
         mu, sigma = x
-        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu) +\
-               self.invwishart.log_likelihood(sigma)
+        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu)\
+               + self.invwishart.log_likelihood(sigma)
 
     def mean(self):
         return tuple([self.gaussian.mean(), self.invwishart.mean()])
