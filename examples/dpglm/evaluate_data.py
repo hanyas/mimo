@@ -5,7 +5,7 @@ import mimo
 from mimo import distributions, models
 from mimo.util.data import load_data
 from mimo.util.prediction import sample_prediction, single_prediction
-from mimo.util.prediction import em_prediction, meanfield_prediction
+from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction
 from mimo.util.plot import plot_violin_box
 
 import os
@@ -37,14 +37,14 @@ def create_job(kwargs):
     if args.affine:
         n_params = n_params + 1
 
-    # initilaize Normal-Inverse-Wishart of input
+    # initialize Normal-Inverse-Wishart of input
     mu_low = np.amin(train_data[:, :-output_dim])
     mu_high = np.amax(train_data[:, :-output_dim])
 
     psi_niw = npr.uniform(0, 10)
     kappa = npr.uniform(0, 0.1)
 
-    # initilaize Matrix-Normal-Inverse-Wishart of output
+    # initialize Matrix-Normal-Inverse-Wishart of output
     psi_mniw = npr.uniform(0, 0.1)
 
     V = np.eye(n_params) * np.diag(npr.uniform(0, 10, size=n_params))
@@ -82,21 +82,24 @@ def create_job(kwargs):
                                                     progprint=False))
 
     # marginal prediction
-    mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
+    # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
+    # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
+    gibbs_samples = 5
+    mean, var = gibbs_prediction(dpglm, test_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
 
     # # demo plots for CMB and Sine datasets
-    # sorting = np.argsort(test_data, axis=0)  # sort based on input values
-    # sorted_data = np.take_along_axis(test_data, sorting, axis=0)
-    # sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
-    # sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
-    #
-    # import matplotlib.pyplot as plt
+    sorting = np.argsort(test_data, axis=0)  # sort based on input values
+    sorted_data = np.take_along_axis(test_data, sorting, axis=0)
+    sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
+    sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
+
+    import matplotlib.pyplot as plt
     # plt.figure(figsize=(16, 6))
-    # plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
-    # plt.plot(sorted_data[:, 0], sorted_mean, color='red')
-    # plt.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
-    # plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
-    # plt.show()
+    plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
+    plt.plot(sorted_data[:, 0], sorted_mean, color='red')
+    plt.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
+    plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
+    plt.show()
 
     test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
 
@@ -116,16 +119,16 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='sine')
+    parser.add_argument('--dataset', help='Choose dataset', default='cmb')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
-    parser.add_argument('--nb_seeds', help='Set number of seeds', default=100, type=int)
+    parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='Set concentration parameter', default=10., type=float)
-    parser.add_argument('--nb_models', help='Set max number of models', default=100, type=int)
+    parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=300, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
     args = parser.parse_args()
@@ -134,7 +137,8 @@ if __name__ == "__main__":
     nb_samples = []
     data_file = args.dataset + '.csv'  # name of the file within datasets/
     if args.dataset == 'cmb':
-        nb_samples = [100, 200, 300, 400, 600]
+        # nb_samples = [100, 200, 300, 400, 600]
+        nb_samples = [600]
         input_dim = 1
         output_dim = 1
     elif args.dataset == 'sine':
@@ -173,7 +177,7 @@ if __name__ == "__main__":
         print('Current size of dataset', n_train)
 
         # load dataset
-        n_test = int(n_train / 5)
+        n_test = int(n_train / 2)
         train_data, test_data = load_data(n_train, n_test,
                                           data_file, args.datapath,
                                           output_dim, input_dim,
