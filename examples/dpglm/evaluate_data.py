@@ -5,7 +5,7 @@ import mimo
 from mimo import distributions, models
 from mimo.util.data import load_data
 from mimo.util.prediction import sample_prediction, single_prediction
-from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction
+from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights
 from mimo.util.plot import plot_violin_box
 
 import os
@@ -76,16 +76,19 @@ def create_job(kwargs):
     for _ in range(args.gibbs_iters):
         dpglm.resample_model()
 
-    # Mean field
-    score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                                    maxiter=args.meanfield_iters,
-                                                    progprint=False))
+    # # Mean field
+    # score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+    #                                                 maxiter=args.meanfield_iters,
+    #                                                 progprint=False))
 
     # marginal prediction
+    single_prediction(dpglm, train_data)
     # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
     # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
-    gibbs_samples = 5
-    mean, var = gibbs_prediction(dpglm, test_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
+    gibbs_samples = 2
+    mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
+    # mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
+
 
     # # demo plots for CMB and Sine datasets
     sorting = np.argsort(test_data, axis=0)  # sort based on input values
@@ -119,16 +122,16 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='cmb')
+    parser.add_argument('--dataset', help='Choose dataset', default='sine')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
-    parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=10., type=float)
+    parser.add_argument('--prior', help='Set prior type', default='dirichlet')
+    parser.add_argument('--alpha', help='Set concentration parameter', default=100., type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=300, type=int)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=0, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
     args = parser.parse_args()
@@ -138,11 +141,12 @@ if __name__ == "__main__":
     data_file = args.dataset + '.csv'  # name of the file within datasets/
     if args.dataset == 'cmb':
         # nb_samples = [100, 200, 300, 400, 600]
-        nb_samples = [600]
+        nb_samples = [300]
         input_dim = 1
         output_dim = 1
     elif args.dataset == 'sine':
-        nb_samples = [250, 500, 750, 1000, 1500]
+        # nb_samples = [250, 500, 750, 1000, 1500]
+        nb_samples = [1500]
         input_dim = 1
         output_dim = 1
     elif args.dataset == 'fk_1joint':
@@ -278,5 +282,5 @@ if __name__ == "__main__":
     labels_y_label = 'Number of Linear Models'
     title = None
 
-    plot_violin_box(violin_data_scores, nb_cols, scores_tikz_path, scores_pdf_path, x_label, scores_y_label, title, x_categories)
-    plot_violin_box(violin_data_labels, nb_cols, labels_tikz_path, labels_pdf_path, x_label, labels_y_label, title, x_categories)
+    # plot_violin_box(violin_data_scores, nb_cols, scores_tikz_path, scores_pdf_path, x_label, scores_y_label, title, x_categories)
+    # plot_violin_box(violin_data_labels, nb_cols, labels_tikz_path, labels_pdf_path, x_label, labels_y_label, title, x_categories)
