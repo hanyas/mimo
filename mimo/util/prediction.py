@@ -95,8 +95,9 @@ def em_prediction(dpglm, data, input_dim, output_dim):
     return mean, var
 
 
-# Prediction using posterior samples; weighted predictions over predictions of all models, averaged over gibbs iterations
-def gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, gibbs_iter, gating_prior, affine):
+# Prediction using posterior samples of the Gibbs sampler;
+# weighted by likelihood of test data and cluster weights, averaged over gibbs iterations
+def gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, gating_prior, affine):
     nb_data_test = len(test_data)
     nb_models = len(dpglm.components)
 
@@ -107,65 +108,78 @@ def gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, gibbs_
     weights = dpglm.gating.probs
 
     # average over samples
-    for g in range(gibbs_iter):
+    for g in range(gibbs_samples):
 
         # de-correlate samples / subsample markov chain; no subsampling for gibbs_step == 1
         gibbs_step = 1
         for r in range(gibbs_step):
             dpglm.resample_model()
 
+        # calculate marginal likelihood of all test data xhat
+        # assuming identical prior parameters for each
+        niw_marginal_normalized = np.zeros((nb_data_test, output_dim))
+        for i in range(nb_data_test):
+            xhat = test_data[i, :input_dim]
+            niw_marginal_normalized[i] = niw_marginal_likelihood(xhat, dpglm.components[0].prior)
+        niw_marginal_normalized = niw_marginal_normalized / niw_marginal_normalized.sum()
+
         # prediction / mean function of yhat for all test data xhat
         for i in range(nb_data_test):
             xhat = test_data[i, :input_dim]
 
-            # calculate the marginal likelihood of test data xhat for each cluster
-            lklhd = np.zeros((nb_models,))
+            # calculate the likelihood of test data xhat for each cluster
             # calculate the normalization term for mean function for xhat
+            lklhd = np.zeros((nb_models,))
             normalizer = 0.
             for idx, c in enumerate(dpglm.components):
                 if idx in dpglm.used_labels:
                     lklhd[idx] = gaussian_likelihood(xhat, c)
                     normalizer = normalizer + weights[idx] * lklhd[idx]
 
-            # # for j in range(nb_data_train):
-            #
-            # # if stick-breaking, consider prediction of a new cluster with probability proportional to concentration parameter
-            # # assuming identical hyperparameters for all components
-            # if gating_prior == 'stick-breaking':
-            #
-            #     # get prior parameter
-            #     delta = dpglm.gating.prior.deltas[0]
-            #     Mk = dpglm.components[0].prior.matnorm.M
-            #
-            #     normalizer = normalizer + delta * niw_marginal_likelihood(xhat, dpglm.components[0].prior)
-            #
-            #     if affine:
-            #         Mk, b = Mk[:, :-1], Mk[:, -1]
-            #         y = xhat.dot(Mk.T) + b.T
-            #     else:
-            #         y = xhat.dot(Mk.T)
-            #
-            #     mean[i, :] += delta * y / gibbs_iter
+            # if stick-breaking, consider prediction of a new cluster with probability proportional to concentration parameter
+            # assuming identical hyperparameters for all components
+            if gating_prior == 'stick-breaking':
 
-            # calculate contribution of each cluster to mean function
+                # get prior parameter
+                delta = dpglm.gating.prior.deltas[0]
+                Mk = dpglm.components[0].prior.matnorm.M
+
+                # add term to normalizer
+                # normalizer = normalizer + delta * niw_marginal_likelihood(xhat, dpglm.components[0].prior)
+                normalizer = normalizer + delta * niw_marginal_normalized[i]
+
+                # prediction for prior parameters
+                if affine:
+                    Mk, b = Mk[:, :-1], Mk[:, -1]
+                    y = xhat.dot(Mk.T) + b.T
+                else:
+                    y = xhat.dot(Mk.T)
+
+                # add term to mean function
+                mean[i, :] += delta * y * niw_marginal_normalized[i] / (gibbs_samples * normalizer)
+
+            # calculate contribution of each existing cluster to mean function
             for idx, c in enumerate(dpglm.components):
                 if idx in dpglm.used_labels:
+
                     t_mean = c.predict(xhat)
-                    t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
+                    t_var = np.diag(c.sigma) # consider only diagonal variances for plots
 
                     # Mean of mixture = sum of weighted, sampled means
-                    mean[i, :] += t_mean * lklhd[idx] * weights[idx] / (gibbs_iter * normalizer)
+                    mean[i, :] += t_mean * lklhd[idx] * weights[idx] / (gibbs_samples * normalizer)
 
-                    # Variance of mixture = sum of weighted, sampled variances
-                    var[i, :] += t_var * lklhd[idx] * weights[idx] / (gibbs_iter * normalizer)
-
+                    # Variance of a mixture = sum of weighted variances + ...
+                    # ... + sum of weighted squared means - squared sum of weighted means
+                    var[i, :] += t_var * lklhd[idx] * weights[idx] / (gibbs_samples * normalizer)
+                    # var[i, :] += (t_var + t_mean ** 2) * lklhd[idx] * weights[idx] / (gibbs_samples * normalizer)
+            # var[i, :] -= mean[i, :] ** 2 / gibbs_samples
     return mean, var
 
-# Prediction using posterior samples; predictions of the models that are assigned to the training data; weighted by test data likelihood; averaged over gibbs iterations
+# Prediction using posterior samples of the Gibbs sampler
+# weighted by test data likelihood; not weighted by cluster weights; averaged over gibbs iterations
 def gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, gating_prior, affine):
     nb_data_test = len(test_data)
     nb_data_train = len(train_data)
-    nb_models = len(dpglm.components)
 
     # initialize variables
     mean, var, = np.zeros((nb_data_test, output_dim)), np.zeros((nb_data_test, output_dim)),
@@ -178,13 +192,21 @@ def gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_d
         for r in range(gibbs_step):
             dpglm.resample_model()
 
+        # calculate marginal likelihood of all test data xhat
+        # assuming identical prior parameters for each component
+        niw_marginal_normalized = np.zeros((nb_data_test, output_dim))
+        for i in range(nb_data_test):
+            xhat = test_data[i, :input_dim]
+            niw_marginal_normalized[i] = niw_marginal_likelihood(xhat, dpglm.components[0].prior)
+        niw_marginal_normalized = niw_marginal_normalized / niw_marginal_normalized.sum()
+
         # prediction / mean function of yhat for all test data xhat
         for i in range(nb_data_test):
             xhat = test_data[i, :input_dim]
 
             # calculate the marginal likelihood of test data xhat for each cluster
-            lklhd = np.zeros((nb_data_train,))
             # calculate the normalization term for mean function for xhat
+            lklhd = np.zeros((nb_data_train,))
             normalizer = 0.
             for j in range(nb_data_train):
                 idx = dpglm.labels_list[0].z[j]
@@ -192,29 +214,32 @@ def gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_d
                 lklhd[j] = gaussian_likelihood(xhat, component)
                 normalizer = normalizer + lklhd[j]
 
-            # calculate contribution of each cluster to mean function
+            # if stick-breaking, consider prediction of a new cluster with probability proportional to concentration parameter
+            # assuming identical hyperparameters for all components
+            if gating_prior == 'stick-breaking':
+
+                # get prior parameter
+                delta = dpglm.gating.prior.deltas[0]
+                Mk = dpglm.components[0].prior.matnorm.M
+
+                # add term to normalizer
+                # normalizer = normalizer + delta * niw_marginal_likelihood(xhat, dpglm.components[0].prior)
+                normalizer = normalizer + delta * niw_marginal_normalized[i]
+
+                # prediction for prior parameters
+                if affine:
+                    Mk, b = Mk[:, :-1], Mk[:, -1]
+                    y = xhat.dot(Mk.T) + b.T
+                else:
+                    y = xhat.dot(Mk.T)
+
+                # add term to mean function
+                mean[i, :] += delta * y * niw_marginal_normalized[i] / (gibbs_samples * normalizer)
+
+            # calculate contribution of each existing cluster to mean function
             for j in range(nb_data_train):
                 idx = dpglm.labels_list[0].z[j]
                 component = dpglm.components[idx]
-
-            # # if stick-breaking, consider prediction of a new cluster with probability proportional to concentration parameter
-            # # assuming identical hyperparameters for all components
-            # if gating_prior == 'stick-breaking':
-            #
-            #     # get prior parameter
-            #     delta = dpglm.gating.prior.deltas[0]
-            #     Mk = dpglm.components[0].prior.matnorm.M
-            #
-            #     normalizer = normalizer + delta * niw_marginal_likelihood(xhat, dpglm.components[0].prior)
-            #
-            #     if affine:
-            #         Mk, b = Mk[:, :-1], Mk[:, -1]
-            #         y = xhat.dot(Mk.T) + b.T
-            #     else:
-            #         y = xhat.dot(Mk.T)
-            #
-        #     mean[i, :] += delta * y / gibbs_samples
-
 
                 # calculate contribution of each cluster to mean function
                 t_mean = component.predict(xhat)
@@ -223,9 +248,11 @@ def gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_d
                 # Mean of mixture = sum of weighted, sampled means
                 mean[i, :] += t_mean * lklhd[j] / (gibbs_samples * normalizer)
 
-                # Variance of mixture = sum of weighted, sampled variances
+                # Variance of a mixture = sum of weighted variances + ...
+                # ... + sum of weighted squared means - squared sum of weighted means
                 var[i, :] += t_var * lklhd[j] / (gibbs_samples * normalizer)
-
+                # var[i, :] += (t_var + t_mean ** 2) * lklhd[j] / (gibbs_samples * normalizer)
+        # var[i, :] -= mean[i, :] ** 2 / gibbs_samples
     return mean, var
 
 # Single-model predictions after EM

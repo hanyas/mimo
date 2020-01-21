@@ -5,7 +5,7 @@ import mimo
 from mimo import distributions, models
 from mimo.util.data import load_data
 from mimo.util.prediction import sample_prediction, single_prediction
-from mimo.util.prediction import em_prediction, meanfield_prediction
+from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights
 from mimo.util.plot import plot_violin_box
 
 import os
@@ -85,6 +85,8 @@ def create_job(kwargs):
         for _ in range(args.gibbs_iters):
             dpglm.resample_model()
 
+        mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+
     elif args.inference == 'meanfield':
         # Mean field
         score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
@@ -147,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument('--inference', help='Set inference technique', default='gibbs-meanfield')
     parser.add_argument('--em_iters', help='Set EM iterations', default=1000, type=int)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1000, type=int)
+    parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=5, type=int)
     parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
