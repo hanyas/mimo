@@ -82,13 +82,11 @@ def create_job(kwargs):
     #                                                 progprint=False))
 
     # marginal prediction
-    single_prediction(dpglm, train_data)
+    single_prediction(dpglm, train_data) # show prediction for a single sample from posterior
     # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
     # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
-    gibbs_samples = 2
-    mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
-    # mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, gibbs_samples, args.prior, args.affine)
-
+    # mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+    mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
 
     # # demo plots for CMB and Sine datasets
     sorting = np.argsort(test_data, axis=0)  # sort based on input values
@@ -122,15 +120,16 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='sine')
+    parser.add_argument('--dataset', help='Choose dataset', default='cmb')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
-    parser.add_argument('--prior', help='Set prior type', default='dirichlet')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=100., type=float)
+    parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
+    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
+    parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=3, type=int)
     parser.add_argument('--meanfield_iters', help='Set VI iterations', default=0, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
@@ -141,7 +140,7 @@ if __name__ == "__main__":
     data_file = args.dataset + '.csv'  # name of the file within datasets/
     if args.dataset == 'cmb':
         # nb_samples = [100, 200, 300, 400, 600]
-        nb_samples = [300]
+        nb_samples = [600]
         input_dim = 1
         output_dim = 1
     elif args.dataset == 'sine':
