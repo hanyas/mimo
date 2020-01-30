@@ -3,15 +3,17 @@ import numpy.random as npr
 
 import mimo
 from mimo import distributions, models
-from mimo.util.data import load_data
-from mimo.util.prediction import sample_prediction, single_prediction
-from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights
+from mimo.util.data import load_data, trajectory_data
+from mimo.util.prediction import sample_prediction, single_prediction, single_trajectory_prediction
+from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights, \
+    meanfield_traj_prediction
 from mimo.util.plot import plot_violin_box
 
 import os
 import timeit
 import datetime
 import argparse
+import matplotlib.pyplot as plt
 
 from joblib import Parallel, delayed
 
@@ -76,33 +78,47 @@ def create_job(kwargs):
     for _ in range(args.gibbs_iters):
         dpglm.resample_model()
 
-    # # Mean field
-    # score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-    #                                                 maxiter=args.meanfield_iters,
-    #                                                 progprint=False))
+    # Mean field
+    score.append(dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+                                                    maxiter=args.meanfield_iters,
+                                                    progprint=False))
 
     # marginal prediction
-    single_prediction(dpglm, train_data) # show prediction for a single sample from posterior
-    # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, prior=args.prior)
+    mean, var = meanfield_traj_prediction(dpglm, test_data, input_dim, output_dim, args.traj_step, args.mode_prediction, prior=args.prior)
+    # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, args.mode_prediction, prior=args.prior)
     # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
     # mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
-    mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+    # mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
 
-    # # demo plots for CMB and Sine datasets
-    sorting = np.argsort(test_data, axis=0)  # sort based on input values
-    sorted_data = np.take_along_axis(test_data, sorting, axis=0)
-    sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
-    sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
+    # # demo plots for 2-dim datasets
+    if args.trajectory:
+        # single_trajectory_prediction(dpglm, train_data, train_data_noTraj)
 
-    import matplotlib.pyplot as plt
-    # plt.figure(figsize=(16, 6))
-    plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
-    plt.plot(sorted_data[:, 0], sorted_mean, color='red')
-    plt.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
-    plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
-    plt.show()
+        plt.scatter(test_data_noTraj[: , 0], test_data[:, 0], s=1)
+        plt.plot(test_data_noTraj[:, 0], mean, color='red')
+        timestep = np.arange(len(test_data))
+        # plt.scatter(timestep, test_data[:, 0], s=1)
+        # plt.plot(timestep, mean, color='red')
+        plt.show()
 
-    test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
+    else:
+        single_prediction(dpglm, train_data)  # show prediction for a single sample from posterior
+
+        sorting = np.argsort(test_data, axis=0)  # sort based on input values
+        sorted_data = np.take_along_axis(test_data, sorting, axis=0)
+        sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
+        sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
+
+        plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
+        plt.plot(sorted_data[:, 0], sorted_mean, color='red')
+        plt.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
+        plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
+        plt.show()
+
+    if args.trajectory:
+        test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
+    else:
+        test_evar = explained_variance_score(test_data[:, :input_dim], mean, multioutput='variance_weighted')
 
     return dpglm, score, test_evar
 
@@ -120,17 +136,20 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='cmb')
+    parser.add_argument('--dataset', help='Choose dataset', default='ball')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=1000, type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
     parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=3, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=0, type=int)
+    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
+    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or Bayesian avg.', default=True, type=bool)
+    parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
+    parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
 
     args = parser.parse_args()
@@ -164,6 +183,22 @@ if __name__ == "__main__":
         nb_samples = [500, 1000, 1500, 2000, 2500]
         input_dim = 21
         output_dim = 7
+    elif args.dataset == 'step_noise':
+        nb_samples = [300]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'step':
+        nb_samples = [300]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'ball': # 6900
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
     else:
         raise RuntimeError("Dataset does not exist")
 
@@ -180,12 +215,22 @@ if __name__ == "__main__":
         print('Current size of dataset', n_train)
 
         # load dataset
-        n_test = int(n_train / 2)
+        n_test = int(n_train / 5)
         train_data, test_data = load_data(n_train, n_test,
                                           data_file, args.datapath,
                                           output_dim, input_dim,
                                           args.dataset == 'sarcos',
                                           seed=1337)
+
+
+        # convert to trajectory dataset
+        train_data_noTraj = train_data
+        test_data_noTraj = test_data
+        if args.trajectory:
+            train_data = trajectory_data(train_data, output_dim, input_dim)
+            test_data = trajectory_data(test_data, output_dim, input_dim)
+            input_dim = output_dim
+
 
         # set working directory
         os.chdir(args.evalpath)
@@ -207,15 +252,18 @@ if __name__ == "__main__":
                                                               test_data=test_data,
                                                               input_dim=input_dim,
                                                               output_dim=output_dim,
+                                                              train_data_old=train_data_noTraj,
+                                                              test_data_old=test_data_noTraj,
                                                               arguments=args)
 
-        # write raw data to file
+        # # write raw data to file
         used_labels = [len(dpglm.used_labels) for dpglm in dpglms]
-        with open(raw_path, 'w+') as f:
-            writer = csv.writer(f, delimiter='\t')
-            writer.writerows(zip(test_evars, used_labels))
-
-        # write explained variance stats data to file
+        print('used_labels',used_labels)
+        # with open(raw_path, 'w+') as f:
+        #     writer = csv.writer(f, delimiter='\t')
+        #     writer.writerows(zip(test_evars, used_labels))
+        #
+        # # write explained variance stats data to file
         _test_evars = np.asarray(test_evars)
         _test_evars_mean = np.mean(_test_evars, axis=0)
         _test_evars_std = np.std(_test_evars, axis=0)
@@ -223,15 +271,15 @@ if __name__ == "__main__":
         _test_evars_median = np.median(_test_evars, axis=0)
         _test_evars_q1 = np.quantile(_test_evars, 0.25, axis=0)
         _test_evars_q3 = np.quantile(_test_evars, 0.75, axis=0)
-
-        file = open(scores_stats_path, 'w+')
-        file.write('mean' + ' ' + str(_test_evars_mean) + '\n')
-        file.write('std' + ' ' + str(_test_evars_std) + '\n')
-        file.write('var' + ' ' + str(_test_evars_var) + '\n')
-        file.write('median' + ' ' + str(_test_evars_median) + '\n')
-        file.write('q1' + ' ' + str(_test_evars_q1) + '\n')
-        file.write('q3' + ' ' + str(_test_evars_q3) + '\n')
-        file.close()
+        #
+        # file = open(scores_stats_path, 'w+')
+        # file.write('mean' + ' ' + str(_test_evars_mean) + '\n')
+        # file.write('std' + ' ' + str(_test_evars_std) + '\n')
+        # file.write('var' + ' ' + str(_test_evars_var) + '\n')
+        # file.write('median' + ' ' + str(_test_evars_median) + '\n')
+        # file.write('q1' + ' ' + str(_test_evars_q1) + '\n')
+        # file.write('q3' + ' ' + str(_test_evars_q3) + '\n')
+        # file.close()
 
         if itr == 0:
             violin_data_scores = _test_evars
@@ -247,14 +295,14 @@ if __name__ == "__main__":
         _used_labels_q1 = np.quantile(_used_labels, 0.25, axis=0)
         _used_labels_q3 = np.quantile(_used_labels, 0.75, axis=0)
 
-        file = open(labels_stats_path, 'w+')
-        file.write('mean' + ' ' + str(_used_labels_mean) + '\n')
-        file.write('std' + ' ' + str(_used_labels_std) + '\n')
-        file.write('var' + ' ' + str(_used_labels_var) + '\n')
-        file.write('median' + ' ' + str(_used_labels_median) + '\n')
-        file.write('q1' + ' ' + str(_used_labels_q1) + '\n')
-        file.write('q3' + ' ' + str(_used_labels_q3) + '\n')
-        file.close()
+        # file = open(labels_stats_path, 'w+')
+        # file.write('mean' + ' ' + str(_used_labels_mean) + '\n')
+        # file.write('std' + ' ' + str(_used_labels_std) + '\n')
+        # file.write('var' + ' ' + str(_used_labels_var) + '\n')
+        # file.write('median' + ' ' + str(_used_labels_median) + '\n')
+        # file.write('q1' + ' ' + str(_used_labels_q1) + '\n')
+        # file.write('q3' + ' ' + str(_used_labels_q3) + '\n')
+        # file.close()
 
         if itr == 0:
             violin_data_labels = _used_labels

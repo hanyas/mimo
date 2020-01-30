@@ -14,11 +14,22 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
     os.chdir(dir)
     data = np.genfromtxt(keyword, dtype=None, encoding=None, delimiter=",")
 
-    np.random.shuffle(data)
+    # randomly create a training and a test set from the data, but keep ordering of data
+    sample_size = n_train
+    train_data = [
+        data[i] for i in sorted(random.sample(range(len(data)), sample_size))
+    ]
+    sample_size = n_test
+    test_data = [
+        data[i] for i in sorted(random.sample(range(len(data)), sample_size))
+    ]
+    train_data = np.asarray(train_data)
+    test_data = np.asarray(test_data)
 
+    # np.random.shuffle(data)
     # generate subset of training_data points
-    train_data = data[:n_train, :]
-    test_data = data[n_train:n_train + n_test, :]
+    # train_data = data[:n_train, :]
+    # test_data = data[n_train:n_train + n_test, :]
 
     if sarcos:
         X_train = np.genfromtxt("Sarcos/X_train.csv", dtype=None, encoding=None, delimiter=",")
@@ -34,11 +45,24 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
         test_data[:, :-7] = X_test
         test_data[:, input_dim:] = y_test
 
-        np.random.shuffle(test_data)
+        # np.random.shuffle(test_data) #Fixme
         test_data = test_data[:n_test, :]
 
     return train_data, test_data
 
+def trajectory_data(data, output_dim, input_dim):
+
+    n_train = len(data[:,0])
+    data_new = np.zeros((n_train, output_dim + output_dim))
+
+    X = data[:,:-output_dim]
+    Y = data[:,input_dim:]
+    Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
+
+    Y_diff = np.append(Y_diff,np.array(Y[-1], ndmin=2),axis=0)
+    data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
+
+    return data_new
 
 def generate_linear(n_train, input_dim, output_dim, shuffle=False, seed=1337):
     # set random seed
@@ -93,6 +117,31 @@ def generate_sine(n_train, input_dim, output_dim, freq,
             writer = csv.writer(csvFile)
             writer.writerows(data)
         csvFile.close()
+
+    return data
+
+def generate_noisy_sine(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
+    # set seed
+    np.random.seed(seed=seed)
+
+    # create sin data
+    data = np.zeros((n_train, in_dim_niw + out_dim))
+    step = freq * np.pi / n_train
+    for i in range(data.shape[0]):
+        x = i * step
+        data[i, 0] = x#(x + npr.normal(0, 0))
+        if data[i, 0] < np.pi / 2:
+            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.5)))
+        if data[i, 0] >= np.pi / 2 and data[i, 0] < np.pi:
+            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.1)))
+        if data[i, 0] >= np.pi and data[i, 0] < 3/2 * np.pi:
+            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.5)))
+        if data[i, 0] >= 3/2 * np.pi and data[i, 0] <= 2 * np.pi:
+            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.1)))
+    with open('sine_noise.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
 
     return data
 
@@ -172,7 +221,7 @@ def generate_heaviside(n_train):
     return data
 
 
-def generate_noisey_heaviside(n_train, scaling=1., seed=1337):
+def generate_noisy_heaviside(n_train, scaling=1., seed=1337):
     # set random seed
     np.random.seed(seed=seed)
 
@@ -262,6 +311,68 @@ def generate_barrett(n_train, n_test, input_dim, output_dim,
 
     return data
 
+def generate_ball():
+    from math import sqrt
+    import matplotlib.pyplot as plt
+
+    h0 = 5  # m
+    v = 0  # m/s, current velocity
+    g = 10  # m/s/s
+    t = 0  # starting time
+    dt = 0.001  # time step
+    rho = 0.75  # coefficient of restitution
+    tau = 0#0.1  # contact time for bounce
+    hmax = h0  # keep track of the maximum height
+    h = h0
+    hstop = 0.001  # stop when bounce is less than 1 cm
+    freefall = True  # state: freefall or in contact
+    t_last = -sqrt(2 * h0 / g)  # time we would have launched to get to h0 at t=0
+    vmax = sqrt(2 * hmax * g)
+    H = []
+    T = []
+    while (hmax > hstop):
+        if (freefall):
+            hnew = h + v * dt - 0.5 * g * dt * dt
+            if (hnew < 0):
+                t = t_last + 2 * sqrt(2 * hmax / g)
+                freefall = False
+                t_last = t + tau
+                h = 0
+            else:
+                t = t + dt
+                v = v - g * dt
+                h = hnew
+        else:
+            t = t + tau
+            vmax = vmax * rho
+            v = vmax
+            freefall = True
+            h = 0
+        hmax = 0.5 * vmax * vmax / g
+        H.append(h)
+        T.append(t)
+
+    data = np.zeros((len(T), 2))
+    data[:, 0] = T
+    data[:, 1] = H
+
+    print("stopped bouncing at t=%.3f\n" % (t))
+
+    plt.figure()
+    plt.plot(T, H)
+    plt.xlabel('time')
+    plt.ylabel('height')
+    plt.title('bouncing ball')
+    plt.show()
+    print(len(T))
+    print(len(H))
+
+    with open('ball.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
+    return data
 
 def normalize_data(data, scaling):
     # Normalize data to 0 mean, 1 std_deviation, optionally scale data
