@@ -84,7 +84,7 @@ def create_job(kwargs):
                                                     progprint=False))
 
     # marginal prediction
-    mean, var = meanfield_traj_prediction(dpglm, test_data, input_dim, output_dim, args.traj_step, args.mode_prediction, prior=args.prior)
+    mean, var, test_mse, test_evar = meanfield_traj_prediction(dpglm, test_data, input_dim, output_dim, args.traj_step, args.mode_prediction, prior=args.prior)
     # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, args.mode_prediction, prior=args.prior)
     # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
     # mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
@@ -92,18 +92,39 @@ def create_job(kwargs):
 
     # # demo plots for 2-dim datasets
     if args.trajectory:
+
+        # plot single prediction on training data
         single_trajectory_prediction(dpglm, train_data, train_data_saved)
 
-        plt.scatter(test_data_saved[: , 0], test_data[:, 0], s=1)
+        # plot mean or mode prediction on test data
+        plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1)
         plt.plot(test_data_saved[:, 0], mean, color='red')
         # timestep = np.arange(len(test_data))
         # plt.scatter(timestep, test_data[:, 0], s=1)
         # plt.plot(timestep, mean, color='red')
         plt.show()
 
+        # plot test_evar over prediction horizon
+        plt.plot(np.arange(len(test_evar))+1, test_evar, '-o')
+        plt.title('Explained variance score over prediction horizon')
+        plt.xlabel('prediction horizon')
+        plt.ylabel('explained variance score')
+        plt.show()
+
+        # plot test_mse over prediction horizon
+        plt.show()
+        plt.plot(np.arange(len(test_mse))+1, test_mse, '-o')
+        plt.title('MSE over prediction horizon')
+        plt.xlabel('prediction horizon')
+        plt.ylabel('MSE')
+        plt.show()
+
     else:
+
+        # plot single prediction on training data
         single_prediction(dpglm, train_data)  # show prediction for a single sample from posterior
 
+        # plot mean or mode prediction on test data
         sorting = np.argsort(test_data, axis=0)  # sort based on input values
         sorted_data = np.take_along_axis(test_data, sorting, axis=0)
         sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
@@ -115,10 +136,11 @@ def create_job(kwargs):
         plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
         plt.show()
 
-    if args.trajectory:
-        test_mse = mean_squared_error(test_data[:, :input_dim], mean)
-        test_evar = explained_variance_score(test_data[:, :input_dim], mean, multioutput='variance_weighted')
-    else:
+    # if args.trajectory:
+    #     test_mse = mean_squared_error(test_data[:, :input_dim], mean)
+    #     test_evar = explained_variance_score(test_data[:, :input_dim], mean, multioutput='variance_weighted')
+    if not args.trajectory:
+    # else:
         test_mse = mean_squared_error(test_data[:, input_dim:], mean)
         test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
 
@@ -152,10 +174,10 @@ if __name__ == "__main__":
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
     parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=5, type=int)
     parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
-    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=False, type=bool)
-    parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
-    parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
+    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=True, type=bool)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
+    parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=50, type=int)
 
     args = parser.parse_args()
 
@@ -267,13 +289,13 @@ if __name__ == "__main__":
         #     writer.writerows(zip(test_evars, used_labels))
         #
         # # write explained variance stats data to file
-        _test_evars = np.asarray(test_evars)
-        _test_evars_mean = np.mean(_test_evars, axis=0)
-        _test_evars_std = np.std(_test_evars, axis=0)
-        _test_evars_var = np.var(_test_evars, axis=0)
-        _test_evars_median = np.median(_test_evars, axis=0)
-        _test_evars_q1 = np.quantile(_test_evars, 0.25, axis=0)
-        _test_evars_q3 = np.quantile(_test_evars, 0.75, axis=0)
+        # _test_evars = np.asarray(test_evars)
+        # _test_evars_mean = np.mean(_test_evars, axis=0)
+        # _test_evars_std = np.std(_test_evars, axis=0)
+        # _test_evars_var = np.var(_test_evars, axis=0)
+        # _test_evars_median = np.median(_test_evars, axis=0)
+        # _test_evars_q1 = np.quantile(_test_evars, 0.25, axis=0)
+        # _test_evars_q3 = np.quantile(_test_evars, 0.75, axis=0)
         #
         # file = open(scores_stats_path, 'w+')
         # file.write('mean' + ' ' + str(_test_evars_mean) + '\n')
@@ -283,11 +305,11 @@ if __name__ == "__main__":
         # file.write('q1' + ' ' + str(_test_evars_q1) + '\n')
         # file.write('q3' + ' ' + str(_test_evars_q3) + '\n')
         # file.close()
-
-        if itr == 0:
-            violin_data_scores = _test_evars
-        else:
-            violin_data_scores = np.column_stack((violin_data_scores, _test_evars))
+        #
+        # if itr == 0:
+        #     violin_data_scores = _test_evars
+        # else:
+        #     violin_data_scores = np.column_stack((violin_data_scores, _test_evars))
 
         # write label stats data to file
         _used_labels = np.asarray(used_labels)
