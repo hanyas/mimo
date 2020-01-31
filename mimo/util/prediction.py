@@ -1,6 +1,7 @@
 import numpy as np
 from mimo import distributions
 from tqdm import tqdm
+from sklearn.metrics import explained_variance_score, mean_squared_error
 
 # Marginalize prediction under posterior for trajectory datasets
 def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mode_prediction, prior='stick-breaking'):
@@ -9,6 +10,7 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
 
     # initialize variables
     mean, var, = np.zeros((nb_data, output_dim)), np.zeros((nb_data, output_dim)),
+    test_mse, test_evar = [], []
 
     # compute posterior mixing weights
     weights = None
@@ -24,103 +26,100 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
                 product[idx] = product[idx] * (1. - gammas[j] / (gammas[j] + deltas[j]))
         weights = product
 
-        # iterate over t step trajectory predictions
-        pbar = tqdm(range(traj_step))
-        for t in pbar:
+    # iterate over t step trajectory predictions
+    pbar = tqdm(range(traj_step))
+    for t in pbar:
 
-            # pbar.set_description('wasd{}'.format(mean[i, :]))
+        # pbar.set_description('wasd{}'.format(mean[i, :]))
 
-            # save mean from t-1 step prediction
-            mean_cached = np.copy(mean)
+        # save mean from t-1 step prediction
+        mean_cached = np.copy(mean)
 
-            # re-initialize variables
-            mean, var, = np.zeros((nb_data, output_dim)), np.zeros((nb_data, output_dim)),
+        # re-initialize variables
+        mean, var, = np.zeros((nb_data, output_dim)), np.zeros((nb_data, output_dim)),
+
+        # prediction / mean function for xhat
+        for i in range(nb_data):
+
+            if i == 0:
+                # first point on trajectory is set to first test datum
+                xhat = data[i, :input_dim]
+            # if i <= t:
+            #     # first t points on trajectory are always set to first test data input
+            #     xhat = data[i, :input_dim]
+            else:
+                if t == 0:
+                    # 1 step prediction: plug in test data inputs into function approximator
+                    xhat = data[i, :input_dim]
+                else:
+                    # t step prediction: plug in t-1 step prediction into function approximator
+                    xhat = mean_cached[i-1, :]
 
             if mode_prediction:
 
-                # prediction / mean function for xhat
-                for i in range(nb_data):
-                    if i == 0:
-                        # first point on trajectory is set to first test datum
-                        xhat = data[i, :input_dim]
-                    # if i <= t:
-                    #     # first t points on trajectory are always set to first test data input
-                    #     xhat = data[i, :input_dim]
-                    else:
-                        if t == 0:
-                            # 1 step prediction: plug in test data inputs into function approximator
-                            xhat = data[i, :input_dim]
-                        else:
-                            # t step prediction: plug in t-1 step prediction into function approximator
-                            xhat = mean_cached[i, :]
+                # calculate the marginal likelihood of test data xhat for each cluster
+                # calculate the normalization term for mean function for xhat
+                mlkhd = np.zeros((nb_models,))
+                normalizer = 0.
+                mode_idx = np.zeros((nb_models,))
+                for idx, c in enumerate(dpglm.components):
+                    if idx in dpglm.used_labels:
+                        mlkhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
+                        mode_idx[idx] = weights[idx] * mlkhd[idx]
+                        normalizer = normalizer + weights[idx] * mlkhd[idx]
 
-                    # calculate the marginal likelihood of test data xhat for each cluster
-                    # calculate the normalization term for mean function for xhat
-                    mlkhd = np.zeros((nb_models,))
-                    normalizer = 0.
-                    mode_idx = np.zeros((nb_models,))
-                    for idx, c in enumerate(dpglm.components):
-                        if idx in dpglm.used_labels:
-                            mlkhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
-                            mode_idx[idx] = weights[idx] * mlkhd[idx]
-                            normalizer = normalizer + weights[idx] * mlkhd[idx]
+                mode_idx = np.argmax(mode_idx)
+                c = dpglm.components[mode_idx]
 
-                    mode_idx = np.argmax(mode_idx)
-                    c = dpglm.components[mode_idx]
+                t_mean, t_var, _ = matrix_t(xhat, c.posterior)
+                t_var = np.diag(t_var)
 
-                    t_mean, t_var, _ = matrix_t(xhat, c.posterior)
-                    t_var = np.diag(t_var)
+                # alternative way of doing mode prediction (instead of matrix_t function)
+                # Mk = c.posterior.matnorm.M
+                # Mk, b = Mk[:, :-1], Mk[:, -1]
+                # y = xhat.dot(Mk.T) + b.T
 
-                    # alternative way of doing mode prediction (instead of matrix_t function)
-                    # Mk = c.posterior.matnorm.M
-                    # Mk, b = Mk[:, :-1], Mk[:, -1]
-                    # y = xhat.dot(Mk.T) + b.T
+                mean[i, :] = t_mean
+                var[i, :] = t_var
 
-                    mean[i, :] = t_mean
-                    var[i, :] = t_var
+                # make prediction more robust by adding x_t: x_t+1 = x_t + f(x_t)
+                mean[i, :] += xhat
 
-                    # make prediction more robust by adding x_t: x_t+1 = x_t + f(x_t)
-                    mean[i, :] += xhat
             else:
-                # prediction / mean function xhat
-                for i in range(nb_data):
-                    if i == 0:
-                        # first point on trajectory is always set to first test data input
-                        xhat = data[i, :input_dim]
-                    else:
-                        if t == 0:
-                            # 1 step prediction: plug in test data inputs into function approximator
-                            xhat = data[i, :input_dim]
-                        else:
-                            # t step prediction: plug in t-1 step prediction into function approximator
-                            xhat = mean_cached[i, :]
 
-                    # calculate the marginal likelihood of test data xhat for each cluster
-                    # calculate the normalization term for mean function for xhat
-                    mlkhd = np.zeros((nb_models,))
-                    normalizer = 0.
-                    for idx, c in enumerate(dpglm.components):
-                        if idx in dpglm.used_labels:
-                            mlkhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
-                            normalizer = normalizer + weights[idx] * mlkhd[idx]
+                # calculate the marginal likelihood of test data xhat for each cluster
+                # calculate the normalization term for mean function for xhat
+                mlkhd = np.zeros((nb_models,))
+                normalizer = 0.
+                for idx, c in enumerate(dpglm.components):
+                    if idx in dpglm.used_labels:
+                        mlkhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
+                        normalizer = normalizer + weights[idx] * mlkhd[idx]
 
-                    # calculate contribution of each cluster to mean function
-                    for idx, c in enumerate(dpglm.components):
-                        if idx in dpglm.used_labels:
-                            t_mean, t_var, _ = matrix_t(xhat, c.posterior)
-                            t_var = np.diag(t_var)  # consider only diagonal variances for plots
+                # calculate contribution of each cluster to mean function
+                for idx, c in enumerate(dpglm.components):
+                    if idx in dpglm.used_labels:
+                        t_mean, t_var, _ = matrix_t(xhat, c.posterior)
+                        t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
-                            # Mean of a mixture = sum of weighted means
-                            mean[i, :] += t_mean * mlkhd[idx] * weights[idx] / normalizer
+                        # Mean of a mixture = sum of weighted means
+                        mean[i, :] += t_mean * mlkhd[idx] * weights[idx] / normalizer
 
-                            # Variance of a mixture = sum of weighted variances + ...
-                            # ... + sum of weighted squared means - squared sum of weighted means
-                            var[i, :] += (t_var + t_mean ** 2) * mlkhd[idx] * weights[idx] / normalizer
-                    var[i, :] -= mean[i, :] ** 2
+                        # Variance of a mixture = sum of weighted variances + ...
+                        # ... + sum of weighted squared means - squared sum of weighted means
+                        var[i, :] += (t_var + t_mean ** 2) * mlkhd[idx] * weights[idx] / normalizer
+                var[i, :] -= mean[i, :] ** 2
 
-                    # make prediction more robust by adding x_t: x_t+1 = x_t + f(x_t)
-                    mean[i, :] += xhat
-    return mean, var
+                # make prediction more robust by adding x_t: x_t+1 = x_t + f(x_t)
+                mean[i, :] += xhat
+
+        _test_mse = mean_squared_error(data[:, :input_dim], mean)
+        _test_evar = explained_variance_score(data[:, :input_dim], mean, multioutput='variance_weighted')
+
+        test_mse.append(_test_mse)
+        test_evar.append(_test_evar)
+
+    return mean, var, test_mse, test_evar
 
 # Marginalize prediction under posterior
 def meanfield_prediction(dpglm, data, input_dim, output_dim, mode_prediction, prior='stick-breaking'):
