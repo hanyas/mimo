@@ -37,14 +37,14 @@ def create_job(kwargs):
     if args.affine:
         n_params = n_params + 1
 
-    # initilaize Normal-Inverse-Wishart of input
+    # initialize Normal-Inverse-Wishart of input
     mu_low = np.amin(train_data[:, :-output_dim])
     mu_high = np.amax(train_data[:, :-output_dim])
 
     psi_niw = npr.uniform(0, 10)
     kappa = npr.uniform(0, 0.1)
 
-    # initilaize Matrix-Normal-Inverse-Wishart of output
+    # initialize Matrix-Normal-Inverse-Wishart of output
     psi_mniw = npr.uniform(0, 0.1)
 
     V = np.eye(n_params) * np.diag(npr.uniform(0, 10, size=n_params))
