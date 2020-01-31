@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 from joblib import Parallel, delayed
 
-from sklearn.metrics import explained_variance_score
+from sklearn.metrics import explained_variance_score, mean_squared_error
 import csv
 
 import multiprocessing
@@ -92,11 +92,11 @@ def create_job(kwargs):
 
     # # demo plots for 2-dim datasets
     if args.trajectory:
-        # single_trajectory_prediction(dpglm, train_data, train_data_noTraj)
+        single_trajectory_prediction(dpglm, train_data, train_data_saved)
 
-        plt.scatter(test_data_noTraj[: , 0], test_data[:, 0], s=1)
-        plt.plot(test_data_noTraj[:, 0], mean, color='red')
-        timestep = np.arange(len(test_data))
+        plt.scatter(test_data_saved[: , 0], test_data[:, 0], s=1)
+        plt.plot(test_data_saved[:, 0], mean, color='red')
+        # timestep = np.arange(len(test_data))
         # plt.scatter(timestep, test_data[:, 0], s=1)
         # plt.plot(timestep, mean, color='red')
         plt.show()
@@ -116,9 +116,14 @@ def create_job(kwargs):
         plt.show()
 
     if args.trajectory:
-        test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
-    else:
+        test_mse = mean_squared_error(test_data[:, :input_dim], mean)
         test_evar = explained_variance_score(test_data[:, :input_dim], mean, multioutput='variance_weighted')
+    else:
+        test_mse = mean_squared_error(test_data[:, input_dim:], mean)
+        test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
+
+    print(test_evar)
+    print(test_mse)
 
     return dpglm, score, test_evar
 
@@ -141,13 +146,13 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=1000, type=float)
-    parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='Set max number of models', default=15, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
-    parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=3, type=int)
+    parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=5, type=int)
     parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
-    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or Bayesian avg.', default=True, type=bool)
+    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=False, type=bool)
     parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
     parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
@@ -222,15 +227,13 @@ if __name__ == "__main__":
                                           args.dataset == 'sarcos',
                                           seed=1337)
 
-
         # convert to trajectory dataset
-        train_data_noTraj = train_data
-        test_data_noTraj = test_data
+        train_data_saved = np.copy(train_data)
+        test_data_saved = np.copy(test_data)
         if args.trajectory:
             train_data = trajectory_data(train_data, output_dim, input_dim)
             test_data = trajectory_data(test_data, output_dim, input_dim)
             input_dim = output_dim
-
 
         # set working directory
         os.chdir(args.evalpath)
@@ -252,8 +255,8 @@ if __name__ == "__main__":
                                                               test_data=test_data,
                                                               input_dim=input_dim,
                                                               output_dim=output_dim,
-                                                              train_data_old=train_data_noTraj,
-                                                              test_data_old=test_data_noTraj,
+                                                              # train_data_saved=train_data_saved,
+                                                              # test_data_saved=test_data_saved,
                                                               arguments=args)
 
         # # write raw data to file

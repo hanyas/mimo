@@ -26,6 +26,7 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
     train_data = np.asarray(train_data)
     test_data = np.asarray(test_data)
 
+    # this is for traing and test sets with random ordering
     # np.random.shuffle(data)
     # generate subset of training_data points
     # train_data = data[:n_train, :]
@@ -50,6 +51,7 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
 
     return train_data, test_data
 
+# transform dataset to trajectory dataset: tuples (t_i,y_i) -> (y_t, y_t+1 - y_t)
 def trajectory_data(data, output_dim, input_dim):
 
     n_train = len(data[:,0])
@@ -330,6 +332,7 @@ def generate_ball():
     vmax = sqrt(2 * hmax * g)
     H = []
     T = []
+    V = []
     while (hmax > hstop):
         if (freefall):
             hnew = h + v * dt - 0.5 * g * dt * dt
@@ -349,12 +352,14 @@ def generate_ball():
             freefall = True
             h = 0
         hmax = 0.5 * vmax * vmax / g
+        V.append(v)
         H.append(h)
         T.append(t)
 
-    data = np.zeros((len(T), 2))
+    data = np.zeros((len(T), 3))
     data[:, 0] = T
     data[:, 1] = H
+    data[:, 1] = V
 
     print("stopped bouncing at t=%.3f\n" % (t))
 
