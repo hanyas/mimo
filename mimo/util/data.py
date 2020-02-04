@@ -52,15 +52,17 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
     return train_data, test_data
 
 # transform dataset to trajectory dataset: tuples (t_i,y_i) -> (y_t, y_t+1 - y_t)
-def trajectory_data(data, output_dim, input_dim):
+def trajectory_data(data, output_dim, input_dim, traj_trick):
 
     n_train = len(data[:,0])
     data_new = np.zeros((n_train, output_dim + output_dim))
 
     X = data[:,:-output_dim]
     Y = data[:,input_dim:]
-    Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
-
+    if traj_trick:
+        Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
+    else:
+        Y_diff = data[1:, input_dim:]
     Y_diff = np.append(Y_diff,np.array(Y[-1], ndmin=2),axis=0)
     data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
 
@@ -122,31 +124,103 @@ def generate_sine(n_train, input_dim, output_dim, freq,
 
     return data
 
-def generate_noisy_sine(n_train,in_dim_niw, out_dim, freq, shuffle=False, seed=None):
-    # set seed
-    np.random.seed(seed=seed)
+def generate_noisy_sine(n_train, input_dim, output_dim):
 
-    # create sin data
-    data = np.zeros((n_train, in_dim_niw + out_dim))
-    step = freq * np.pi / n_train
+    data = np.zeros((n_train, input_dim + output_dim))
+    xvals = np.linspace(-6 * np.pi, 6*np.pi, n_train)
+
+    def sigmoid_func(x):
+        f = 1 / (1 + np.exp(-x))
+        return f
+
+    def sigmoid_func_plus1(x):
+        f = 1 / (1 + np.exp(-x))
+        f = f + 0.5
+        return f
+
+    noise_std = np.zeros(data.shape[0])
+
     for i in range(data.shape[0]):
-        x = i * step
-        data[i, 0] = x#(x + npr.normal(0, 0))
-        if data[i, 0] < np.pi / 2:
-            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.5)))
-        if data[i, 0] >= np.pi / 2 and data[i, 0] < np.pi:
-            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.1)))
-        if data[i, 0] >= np.pi and data[i, 0] < 3/2 * np.pi:
-            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.5)))
-        if data[i, 0] >= 3/2 * np.pi and data[i, 0] <= 2 * np.pi:
-            data[i, 1] = (3. * (np.sin(x) + npr.normal(0, 0.1)))
-    with open('sine_noise.csv', 'w', newline='') as csvFile:
+        x = xvals[i]
+        data[i, 0] = x
+
+        noise_std[i] = (0.75 * sigmoid_func_plus1(x - 8) + 0.25 - 0.40 * sigmoid_func(x + 10))
+
+        # noise_std = 0.5 * np.exp(0.5 * np.sin(2*np.pi*x))
+        # noise_std = 0.1*x
+
+        w = npr.normal(0, noise_std[i])
+        data[i, 1] = np.sin(0.3*x) + w
+
+    # plt.scatter(xvals, noise_std)
+    # plt.show()
+
+        # if data[i, 0] < np.pi / 2:
+        #     data[i, 1] = np.sin(x) + npr.normal(0, 0.3)
+        #
+        # if data[i, 0] >= np.pi / 2 and data[i, 0] <  np.pi:
+        #     data[i, 1] = np.sin(x) + npr.normal(0, 0.1)
+        #
+        # if data[i, 0] >= np.pi and data[i, 0] < 3/2 * np.pi:
+        #     data[i, 1] = np.sin(x) + npr.normal(0, 0.3)
+        #
+        # if data[i, 0] >= 3 / 2 * np.pi and data[i, 0] <= 2 * np.pi:
+        #     data[i, 1] = np.sin(x) + npr.normal(0, 0.1)
+
+    with open('sine_noise_sigmoids.csv', 'w', newline='') as csvFile:
         writer = csv.writer(csvFile)
         writer.writerows(data)
     csvFile.close()
 
     return data
 
+def noise_function(n_train, noise_std1, noise_std2, xrange):
+
+    xvals = np.linspace(xrange[0], xrange[1], n_train)
+    # xvals = np.linspace(-10 * np.pi, 10 * np.pi, n_train)
+    noise = np.zeros((n_train, 2))
+    # noise = np.zeros(n_train)
+
+    for i in range(noise.shape[0]):
+        x = xvals[i]
+        noise[i, 0] = x
+
+        noise[i, 1] = 0.1
+
+        # # FOR SINE_NOISE_SIGMOID
+        # def sigmoid_func(x):
+        #     f = 1 / (1 + np.exp(-x))
+        #     return f
+        # def sigmoid_func_plus1(x):
+        #     f = 1 / (1 + np.exp(-x))
+        #     f = f + 0.5
+        #     return f
+        # noise[i, 1] = (0.75 * sigmoid_func_plus1(x - 8) + 0.25 - 0.40 * sigmoid_func(x + 10))
+
+        # FOR SINE_NOISE_LINEAR
+        # noise[i, 1] = 0.1 * x
+
+        # FOR SINE_NOISE_EXPSIN
+        # noise[i, 1] = 0.5 * np.exp(0.5 * np.sin(np.pi * x))
+
+        # FOR SINE STEP
+        # if noise[i, 0] < np.pi / 2:
+        #     noise[i, 1] = noise_std2
+        #
+        # if noise[i, 0] >= np.pi / 2 and x < 3/2 * np.pi:
+        #     noise[i, 1] = noise_std1
+        #
+        # # if data[i, 0] >= np.pi and data[i, 0] < 3/2 * np.pi:
+        # #     data[i, 1] = np.sin(x) + npr.normal(0, 0.3)
+        #
+        # if noise[i, 0] >= 3 / 2 * np.pi and x <= 2 * np.pi:
+        #     noise[i, 1] = noise_std2
+
+    sorting = np.argsort(noise, axis=0)  # sort based on input values
+    sorted_xvals = np.take_along_axis(noise[:, 0], sorting[:, 0], axis=0)
+    sorted_noise = np.take_along_axis(noise[:, 1], sorting[:, 0], axis=0)
+
+    return sorted_xvals, sorted_noise
 
 def generate_kinematics(n_train=None, output_dim=2, num_joints=None,
                         loc_noise=None, scale_noise=None,
@@ -243,6 +317,37 @@ def generate_noisy_heaviside(n_train, scaling=1., seed=1337):
 
     return data
 
+def generate_noisy_step(n_train, scaling=1., seed=1337):
+    # set random seed
+    np.random.seed(seed=seed)
+
+    # create data from heaviside function
+    def f(x, w):
+        y = np.zeros(len(x))
+        for i in range(len(x)):
+            if x[i] < 0:
+                # y = 0.5 * (np.sign(x) + 1) + w
+                y[i] = 0.5 * x[i] ** 3 + 0 * x[i] ** 2 + 0 * x[i] ** 1 + w[i]
+            elif x[i] > 0:
+                y[i] = 0.5 * x[i] ** 3 + 0 * x[i] ** 2 + 0 * x[i] ** 1 + w[i] + 15
+        return y
+
+    # xvals = npr.uniform(-1, 1, n_train) * scaling
+    xvals = np.linspace(-4,4,n_train)
+    w = npr.normal(0, 1, n_train) * scaling
+    yvals = f(xvals, w)
+
+    data = np.zeros((len(xvals), 2))
+    for i in range(len(xvals)):
+        data[i, 0] = xvals[i]
+        data[i, 1] = yvals[i]
+
+    with open('step_polynomial.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
+    return data
 
 def generate_gaussian(n_train, output_dim, input_dim, seed=1337):
     # set random seed
@@ -317,13 +422,13 @@ def generate_ball():
     from math import sqrt
     import matplotlib.pyplot as plt
 
-    h0 = 5  # m
+    h0 = 1  # m
     v = 0  # m/s, current velocity
-    g = 10  # m/s/s
+    g = 9.81      # m/s/s
     t = 0  # starting time
-    dt = 0.001  # time step
+    dt = 0.01  # time step
     rho = 0.75  # coefficient of restitution
-    tau = 0#0.1  # contact time for bounce
+    tau = 0 #0.1  # contact time for bounce
     hmax = h0  # keep track of the maximum height
     h = h0
     hstop = 0.001  # stop when bounce is less than 1 cm
@@ -336,6 +441,8 @@ def generate_ball():
     while (hmax > hstop):
         if (freefall):
             hnew = h + v * dt - 0.5 * g * dt * dt
+            # add noise to h:
+            hnew += npr.normal(0, 1e-8)
             if (hnew < 0):
                 t = t_last + 2 * sqrt(2 * hmax / g)
                 freefall = False
@@ -359,7 +466,7 @@ def generate_ball():
     data = np.zeros((len(T), 3))
     data[:, 0] = T
     data[:, 1] = H
-    data[:, 1] = V
+    data[:, 2] = V
 
     print("stopped bouncing at t=%.3f\n" % (t))
 
@@ -372,12 +479,37 @@ def generate_ball():
     print(len(T))
     print(len(H))
 
-    with open('ball.csv', 'w', newline='') as csvFile:
+    with open('ball_vel_v5.csv', 'w', newline='') as csvFile:
         writer = csv.writer(csvFile)
         writer.writerows(data)
     csvFile.close()
 
     return data
+
+
+def generate_goldberg(n_train, input_dim, output_dim):
+
+    data = np.zeros((n_train, input_dim + output_dim))
+
+    xvals = np.linspace(0, 1, n_train)
+
+    for i in range(n_train):
+
+        scale = 0.5 + xvals[i]
+        noise = npr.normal(0, scale, 1)
+
+        yval = 2 * np.sin (2 * np.pi * (xvals[i])) + noise
+
+        data[i, 0] = xvals[i]
+        data[i, 1] = yval
+
+    with open('goldberg.csv', 'w', newline='') as csvFile:
+        writer = csv.writer(csvFile)
+        writer.writerows(data)
+    csvFile.close()
+
+    return data
+
 
 def normalize_data(data, scaling):
     # Normalize data to 0 mean, 1 std_deviation, optionally scale data
