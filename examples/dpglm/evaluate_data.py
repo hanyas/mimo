@@ -1,9 +1,10 @@
 import numpy as np
 import numpy.random as npr
+import scipy.stats as stats
 
 import mimo
 from mimo import distributions, models
-from mimo.util.data import load_data, trajectory_data
+from mimo.util.data import load_data, trajectory_data, noise_function
 from mimo.util.prediction import sample_prediction, single_prediction, single_trajectory_prediction
 from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights, \
     meanfield_traj_prediction
@@ -13,13 +14,15 @@ import os
 import timeit
 import datetime
 import argparse
-import matplotlib.pyplot as plt
-
-from joblib import Parallel, delayed
-
-from sklearn.metrics import explained_variance_score, mean_squared_error
 import csv
 
+import matplotlib.pyplot as plt
+from matplotlib import gridspec
+import seaborn as sns
+
+from sklearn.metrics import explained_variance_score, mean_squared_error
+
+from joblib import Parallel, delayed
 import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
@@ -83,69 +86,115 @@ def create_job(kwargs):
                                                     maxiter=args.meanfield_iters,
                                                     progprint=False))
 
-    # marginal prediction
-    mean, var, test_mse, test_evar = meanfield_traj_prediction(dpglm, test_data, input_dim, output_dim, args.traj_step, args.mode_prediction, prior=args.prior)
-    # mean, var = meanfield_prediction(dpglm, test_data, input_dim, output_dim, args.mode_prediction, prior=args.prior)
-    # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
-    # mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
-    # mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+    # set plot style to seaborn
+    sns.set()
 
-    # # demo plots for 2-dim datasets
+    # marginal prediction
     if args.trajectory:
 
+        # marginal prediction
+        mean, var, test_mse, test_evar = meanfield_traj_prediction(dpglm, test_data, input_dim, output_dim,
+                                                                   args.traj_step, args.mode_prediction,
+                                                                   args.traj_trick, prior=args.prior)
         # plot single prediction on training data
-        single_trajectory_prediction(dpglm, train_data, train_data_saved)
+        single_trajectory_prediction(dpglm, train_data, train_data_saved, args.traj_trick, output_dim, input_dim)
 
-        # plot mean or mode prediction on test data
-        plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1)
-        plt.plot(test_data_saved[:, 0], mean, color='red')
-        # timestep = np.arange(len(test_data))
-        # plt.scatter(timestep, test_data[:, 0], s=1)
-        # plt.plot(timestep, mean, color='red')
-        plt.show()
-
-        # plot test_evar over prediction horizon
-        plt.plot(np.arange(len(test_evar))+1, test_evar, '-o')
-        plt.title('Explained variance score over prediction horizon')
-        plt.xlabel('prediction horizon')
-        plt.ylabel('explained variance score')
+        # plot mean / mode prediction on test data
+        if output_dim == 1:
+            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1) # plot true position
+            plt.plot(test_data_saved[:, 0], mean[:, 0], color='red') # plot estimated position
+        else:
+            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1)  # plot true position
+            plt.scatter(test_data_saved[:, 0], test_data[:, 1], s=1) # plot true velocity
+            plt.plot(test_data_saved[:, 0], mean, color='red') # plot estimated velocity and position
         plt.show()
 
-        # plot test_mse over prediction horizon
-        plt.show()
-        plt.plot(np.arange(len(test_mse))+1, test_mse, '-o')
-        plt.title('MSE over prediction horizon')
-        plt.xlabel('prediction horizon')
-        plt.ylabel('MSE')
-        plt.show()
+        # # plot test_evar over prediction horizon
+        # plt.plot(np.arange(len(test_evar))+1, test_evar, '-o')
+        # plt.title('Explained variance score over prediction horizon')
+        # plt.xlabel('prediction horizon')
+        # plt.ylabel('explained variance score')
+        # plt.show()
+        #
+        # # plot test_mse over prediction horizon
+        # plt.show()
+        # plt.plot(np.arange(len(test_mse))+1, test_mse, '-o')
+        # plt.title('MSE over prediction horizon')
+        # plt.xlabel('prediction horizon')
+        # plt.ylabel('MSE')
+        # plt.show()
 
     else:
 
+        # marginal prediction
+        mean, var, noise_std = meanfield_prediction(dpglm, test_data, input_dim, output_dim, args.mode_prediction, prior=args.prior)
+        # mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
+        # mean, var = gibbs_prediction(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+        # mean, var = gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_dim, args.gibbs_samples, args.prior, args.affine)
+
         # plot single prediction on training data
-        single_prediction(dpglm, train_data)  # show prediction for a single sample from posterior
+        single_prediction(dpglm, train_data, input_dim, output_dim)  # show prediction for a single sample from posterior
 
         # plot mean or mode prediction on test data
         sorting = np.argsort(test_data, axis=0)  # sort based on input values
         sorted_data = np.take_along_axis(test_data, sorting, axis=0)
         sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
         sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
-
         plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
-        plt.plot(sorted_data[:, 0], sorted_mean, color='red')
-        plt.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
-        plt.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
+        plt.plot(sorted_data[:, 0], sorted_mean[:, 0], color='red')
+        plt.plot(sorted_data[:, 0], sorted_mean[:, 0] + 2. * np.sqrt(sorted_var[:, 0]), color='green')
+        plt.plot(sorted_data[:, 0], sorted_mean[:, 0] - 2. * np.sqrt(sorted_var[:, 0]), color='green')
         plt.show()
 
-    # if args.trajectory:
-    #     test_mse = mean_squared_error(test_data[:, :input_dim], mean)
-    #     test_evar = explained_variance_score(test_data[:, :input_dim], mean, multioutput='variance_weighted')
+        # # create subplots
+        # fig = plt.figure()
+        # gs = gridspec.GridSpec(3, 1, height_ratios=[6, 1, 1])
+        # xrange = [np.amin(test_data[:, 0]), np.amax(test_data[:, 0])] # set range for plot of noise level and activations
+        #
+        # # plot data generation noise level and estimated noise level
+        # ax0 = plt.subplot(gs[0])
+        # true_xvals, true_noise = noise_function(n_train, 0.1, 0.3, xrange)
+        # ax0.plot(true_xvals, true_noise, color='red')
+        # sorting = np.argsort(test_data, axis=0)  # sort based on input values
+        # sorted_data = np.take_along_axis(test_data, sorting, axis=0)
+        # sorting = np.atleast_2d(sorting)
+        # sorted_noise_std = np.take_along_axis(noise_std, sorting[:, [0]], axis=0)
+        # ax0.plot(sorted_data[:, 0], sorted_noise_std, color='green')
+        #
+        # # plot mean or mode prediction on test data
+        # ax1 = plt.subplot(gs[1])
+        # sorting = np.argsort(test_data, axis=0)  # sort based on input values
+        # sorted_data = np.take_along_axis(test_data, sorting, axis=0)
+        # sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
+        # sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
+        # ax1.scatter(test_data[:, 0], test_data[:, 1], s=1)
+        # ax1.plot(sorted_data[:, 0], sorted_mean, color='red')
+        # ax1.plot(sorted_data[:, 0], sorted_mean + 2. * np.sqrt(sorted_var), color='green')
+        # ax1.plot(sorted_data[:, 0], sorted_mean - 2. * np.sqrt(sorted_var), color='green')
+        #
+        # # plot gaussian activations
+        # ax2 = plt.subplot(gs[2])
+        # x_mu, x_sigma = [], []
+        # for idx, c in enumerate(dpglm.components):
+        #     if idx in dpglm.used_labels:
+        #         mu, kappa, psi_niw, nu_niw, Mk, Vk, psi_mniw, nu_mniw = c.posterior.params
+        #         sigma = np.sqrt(1 / kappa * psi_niw)
+        #         x_mu.append(mu[0])
+        #         x_sigma.append(sigma[0])
+        # # x_mu, x_sigma = np.asarray(x_mu), np.asarray(x_sigma)
+        # for i in range(len(dpglm.used_labels)):
+        #     x = np.linspace(xrange[0], xrange[1], 100)
+        #     ax2.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+        #
+        # # plt.tight_layout()
+        # plt.show()
+
     if not args.trajectory:
-    # else:
         test_mse = mean_squared_error(test_data[:, input_dim:], mean)
         test_evar = explained_variance_score(test_data[:, input_dim:], mean, multioutput='variance_weighted')
 
-    print(test_evar)
-    print(test_mse)
+    print('test_evar', test_evar)
+    print('test_mse', test_mse)
 
     return dpglm, score, test_evar
 
@@ -164,20 +213,22 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--dataset', help='Choose dataset', default='ball')
+    parser.add_argument('--traintest_ratio', help='Set ratio of training to test data', default=5, type=float)
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='Set max number of models', default=15, type=int)
+    parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=300, type=int)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=250, type=int)
     parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=5, type=int)
-    parser.add_argument('--meanfield_iters', help='Set VI iterations', default=500, type=int)
+    parser.add_argument('--meanfield_iters', help='Set max. VI iterations', default=500, type=int)
     parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=True, type=bool)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
-    parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=50, type=int)
+    parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
+    parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=True, type=bool)
 
     args = parser.parse_args()
 
@@ -218,12 +269,84 @@ if __name__ == "__main__":
         nb_samples = [300]
         input_dim = 1
         output_dim = 1
-    elif args.dataset == 'sine_noise':
+    elif args.dataset == 'step_polynomial_deg3':
         nb_samples = [1000]
         input_dim = 1
         output_dim = 1
-    elif args.dataset == 'ball': # 6900
+    elif args.dataset == 'step_polynomial_deg3_v2':
         nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'step_polynomial_deg3_v3':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'step_polynomial_deg3_v4':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'step_polynomial_deg3_v5':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'step_polynomial_deg3_v6':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_step_a0':
+        nb_samples = [500]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_step_a1':
+        nb_samples = [500]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_step_b1':
+        nb_samples = [500]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_expsin':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_linear':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'sine_noise_sigmoids':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'ball':
+        nb_samples = [2000]  # 6900 total samples
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'ball_vel':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_vel_v2':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_vel_v3':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_vel_v4':
+        nb_samples = [900]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'silverman':
+        nb_samples = [94] # 94 total samples
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'goldberg':
+        nb_samples = [100]
+        input_dim = 1
+        output_dim = 1
+    elif args.dataset == 'yuan':
+        nb_samples = [2000]
         input_dim = 1
         output_dim = 1
     else:
@@ -242,7 +365,7 @@ if __name__ == "__main__":
         print('Current size of dataset', n_train)
 
         # load dataset
-        n_test = int(n_train / 5)
+        n_test = int(n_train / args.traintest_ratio)
         train_data, test_data = load_data(n_train, n_test,
                                           data_file, args.datapath,
                                           output_dim, input_dim,
@@ -253,8 +376,8 @@ if __name__ == "__main__":
         train_data_saved = np.copy(train_data)
         test_data_saved = np.copy(test_data)
         if args.trajectory:
-            train_data = trajectory_data(train_data, output_dim, input_dim)
-            test_data = trajectory_data(test_data, output_dim, input_dim)
+            train_data = trajectory_data(train_data, output_dim, input_dim, args.traj_trick)
+            test_data = trajectory_data(test_data, output_dim, input_dim, args.traj_trick)
             input_dim = output_dim
 
         # set working directory
@@ -277,8 +400,6 @@ if __name__ == "__main__":
                                                               test_data=test_data,
                                                               input_dim=input_dim,
                                                               output_dim=output_dim,
-                                                              # train_data_saved=train_data_saved,
-                                                              # test_data_saved=test_data_saved,
                                                               arguments=args)
 
         # # write raw data to file
