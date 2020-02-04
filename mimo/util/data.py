@@ -63,7 +63,9 @@ def trajectory_data(data, output_dim, input_dim, traj_trick):
         Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
     else:
         Y_diff = data[1:, input_dim:]
+
     Y_diff = np.append(Y_diff,np.array(Y[-1], ndmin=2),axis=0)
+
     data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
 
     return data_new

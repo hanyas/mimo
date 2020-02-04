@@ -42,7 +42,7 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
 
         for t in range(traj_step):
 
-            if i < t: #t <= i:
+            if i < t:
                 mean[i, :] = mean_saved
                 break;
             else:

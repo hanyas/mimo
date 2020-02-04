@@ -212,7 +212,7 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='ball')
+    parser.add_argument('--dataset', help='Choose dataset', default='ball_vel')
     parser.add_argument('--traintest_ratio', help='Set ratio of training to test data', default=5, type=float)
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
     parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
-    parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=True, type=bool)
+    parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=False, type=bool)
 
     args = parser.parse_args()
 
