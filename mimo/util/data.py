@@ -55,18 +55,16 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
 def trajectory_data(data, output_dim, input_dim, traj_trick):
 
     n_train = len(data[:,0])
-    data_new = np.zeros((n_train, output_dim + output_dim))
+    data_new = np.zeros((n_train-1, output_dim + output_dim))
 
-    X = data[:,:-output_dim]
-    Y = data[:,input_dim:]
+    X = data[:, :-output_dim]
+    Y = data[:, input_dim:]
     if traj_trick:
-        Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
+        Y_diff = data[1:, input_dim:] - data[:-1, input_dim:]
     else:
         Y_diff = data[1:, input_dim:]
 
-    Y_diff = np.append(Y_diff,np.array(Y[-1], ndmin=2),axis=0)
-
-    data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
+    data_new[:, :output_dim], data_new[:, output_dim:] = Y[:-1, :], Y_diff[:, :]
 
     return data_new
 
@@ -424,51 +422,59 @@ def generate_ball():
     from math import sqrt
     import matplotlib.pyplot as plt
 
-    h0 = 1  # m
-    v = 0  # m/s, current velocity
-    g = 9.81      # m/s/s
-    t = 0  # starting time
-    dt = 0.01  # time step
-    rho = 0.75  # coefficient of restitution
-    tau = 0 #0.1  # contact time for bounce
-    hmax = h0  # keep track of the maximum height
-    h = h0
-    hstop = 0.001  # stop when bounce is less than 1 cm
-    freefall = True  # state: freefall or in contact
-    t_last = -sqrt(2 * h0 / g)  # time we would have launched to get to h0 at t=0
-    vmax = sqrt(2 * hmax * g)
     H = []
     T = []
     V = []
-    while (hmax > hstop):
-        if (freefall):
-            hnew = h + v * dt - 0.5 * g * dt * dt
-            # add noise to h:
-            hnew += npr.normal(0, 1e-8)
-            if (hnew < 0):
-                t = t_last + 2 * sqrt(2 * hmax / g)
-                freefall = False
-                t_last = t + tau
-                h = 0
-            else:
-                t = t + dt
-                v = v - g * dt
-                h = hnew
-        else:
-            t = t + tau
-            vmax = vmax * rho
-            v = vmax
-            freefall = True
-            h = 0
-        hmax = 0.5 * vmax * vmax / g
-        V.append(v)
-        H.append(h)
-        T.append(t)
+    for i in range(1):
+        delta_height = 0.1 * 5
+        # delta_height = npr.uniform(0, 0.5, 1)
 
-    data = np.zeros((len(T), 3))
+        h0 = 5 + delta_height  # m
+        v = 0  # m/s, current velocity
+        g = 9.81      # m/s/s
+        t = 0  # starting time
+        dt = 0.01  # time step
+        rho = 0.75  # coefficient of restitution
+        tau = 0 #0.1  # contact time for bounce
+        hmax = h0  # keep track of the maximum height
+        h = h0
+        hstop = 0.05 # stop when bounce is less than 1 cm
+        freefall = True  # state: freefall or in contact
+        t_last = -sqrt(2 * h0 / g)  # time we would have launched to get to h0 at t=0
+        vmax = sqrt(2 * hmax * g)
+
+        counter = 0
+        while (hmax > hstop) and counter < 500:
+            counter += 1
+
+            if (freefall):
+                hnew = h + v * dt - 0.5 * g * dt * dt
+                # add noise to h:
+                hnew += npr.normal(0, 1e-8)
+                if (hnew < 0):
+                    t = t_last + 2 * sqrt(2 * hmax / g)
+                    freefall = False
+                    t_last = t + tau
+                    h = 0
+                else:
+                    t = t + dt
+                    v = v - g * dt
+                    h = hnew
+            else:
+                t = t + tau
+                vmax = vmax * rho
+                v = vmax
+                freefall = True
+                h = 0
+            hmax = 0.5 * vmax * vmax / g
+            V.append(v)
+            H.append(h)
+            T.append(t)
+
+    data = np.zeros((len(T), 2))
     data[:, 0] = T
     data[:, 1] = H
-    data[:, 2] = V
+    # data[:, 2] = V
 
     print("stopped bouncing at t=%.3f\n" % (t))
 
@@ -478,10 +484,8 @@ def generate_ball():
     plt.ylabel('height')
     plt.title('bouncing ball')
     plt.show()
-    print(len(T))
-    print(len(H))
 
-    with open('ball_vel_v5.csv', 'w', newline='') as csvFile:
+    with open('ball_traj5.csv', 'w', newline='') as csvFile:
         writer = csv.writer(csvFile)
         writer.writerows(data)
     csvFile.close()
