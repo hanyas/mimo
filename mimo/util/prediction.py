@@ -33,7 +33,7 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
         # choose test_input to plug into function approximator
         idx_test_input = i - traj_step
         if idx_test_input > 0:
-            test_input = data[idx_test_input, :input_dim] # fixme plus 1?
+            test_input = data[idx_test_input, :input_dim]
         else:
             test_input = data[i, :input_dim]
 
@@ -90,7 +90,6 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
 
     # pbar = tqdm(range(traj_step))
     # for t in pbar:
-    #
     #     # pbar.set_description('wasd{}'.format(mean[i, :]))
     #
     #     # save mean from t-1 step prediction
@@ -102,28 +101,16 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
     #     # prediction / mean function for xhat
     #     for i in range(nb_data):
     #
-    #         # if t == 0:
-    #         #     xhat = data[i, :input_dim]
-    #         # else:
-    #         #     if i % t == 0:
-    #         #         xhat = data[i, :input_dim]
-    #         #     else:
-    #         #         xhat = mean_saved[i - 1, :]
-    #
-    #
     #         if i == 0:
     #             # first point on trajectory is set to first test datum
     #             xhat = data[i, :input_dim]
-    #         # # if i <= t:
-    #         # #     # first t points on trajectory are always set to first test data input
-    #         # #     xhat = data[i, :input_dim]
     #         else:
     #             if t == 0:
     #                 # 1 step prediction: plug in test data inputs into function approximator
-    #                 xhat = data[i, :input_dim] #fixme is this correct?
+    #                 xhat = data[i-1, :input_dim]
     #             else:
     #                 # t step prediction: plug in t-1 step prediction into function approximator
-    #                 xhat = mean_saved[i-1, :] # fixme to i-1
+    #                 xhat = mean_saved[i-1, :]
     #
     #         if mode_prediction:
     #
@@ -511,7 +498,8 @@ def single_prediction(dpglm, data, input_dim, output_dim):
 # assume single input and output
 def single_trajectory_prediction(dpglm, data, data_old, traj_trick, output_dim, input_dim):
     nb_data = len(data)
-    _time = data_old[:, :1]
+    _time = data_old[1:, :1]
+
     _train_inputs = data[:, :output_dim]
     _prediction = np.zeros((nb_data, output_dim))
 
@@ -524,6 +512,8 @@ def single_trajectory_prediction(dpglm, data, data_old, traj_trick, output_dim, 
                 _prediction[i, :] = dpglm.components[idx].predict(_train_inputs[i-1, :]) + _train_inputs[i-1, :] #Fixme
             else:
                 _prediction[i, :] = dpglm.components[idx].predict(_train_inputs[i-1, :])  #Fixme
+
+    # _time = np.arange(len(_prediction[:, 0]))
 
     import matplotlib.pyplot as plt
     if input_dim == 1:

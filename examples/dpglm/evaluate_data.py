@@ -101,12 +101,12 @@ def create_job(kwargs):
 
         # plot mean / mode prediction on test data
         if output_dim == 1:
-            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1) # plot true position
-            plt.plot(test_data_saved[:, 0], mean[:, 0], color='red') # plot estimated position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 0], s=1)  # plot true position
+            plt.plot(test_data_saved[1:, 0], mean[:, 0], color='red')  # plot estimated position
         else:
-            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1)  # plot true position
-            plt.scatter(test_data_saved[:, 0], test_data[:, 1], s=1) # plot true velocity
-            plt.plot(test_data_saved[:, 0], mean, color='red') # plot estimated velocity and position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 0], s=1)  # plot true position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 1], s=1)  # plot true velocity
+            plt.plot(test_data_saved[1:, 0], mean, color='red')  # plot estimated velocity and position
         plt.show()
 
         # # plot test_evar over prediction horizon
@@ -212,7 +212,7 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='ball_vel')
+    parser.add_argument('--dataset', help='Choose dataset', default='ball')
     parser.add_argument('--traintest_ratio', help='Set ratio of training to test data', default=5, type=float)
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
     parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
-    parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=False, type=bool)
+    parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=True, type=bool)
 
     args = parser.parse_args()
 
@@ -321,8 +321,16 @@ if __name__ == "__main__":
         nb_samples = [2000]  # 6900 total samples
         input_dim = 1
         output_dim = 1
+    elif args.dataset == 'ball_traj1_vel':
+        nb_samples = [400]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_traj1':
+        nb_samples = [400]
+        input_dim = 1
+        output_dim = 1
     elif args.dataset == 'ball_vel':
-        nb_samples = [2000]
+        nb_samples = [6000]
         input_dim = 1
         output_dim = 2
     elif args.dataset == 'ball_vel_v2':
@@ -337,6 +345,18 @@ if __name__ == "__main__":
         nb_samples = [900]
         input_dim = 1
         output_dim = 2
+    elif args.dataset == 'ball_vel_v5_cut':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_vel_v6_noisy': #600 data points per trajectory, 10 trajectories
+        nb_samples = [6000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_only_vel':
+        nb_samples = [600]
+        input_dim = 1
+        output_dim = 1
     elif args.dataset == 'silverman':
         nb_samples = [94] # 94 total samples
         input_dim = 1
@@ -375,10 +395,48 @@ if __name__ == "__main__":
         # convert to trajectory dataset
         train_data_saved = np.copy(train_data)
         test_data_saved = np.copy(test_data)
+
+        # data from single trajectory
         if args.trajectory:
             train_data = trajectory_data(train_data, output_dim, input_dim, args.traj_trick)
             test_data = trajectory_data(test_data, output_dim, input_dim, args.traj_trick)
             input_dim = output_dim
+            n_train = len(train_data[:,0])
+            n_test = len(test_data[:,0])
+
+        # # data from multiple trajectories
+        # num_traj = 1
+        # if args.trajectory:
+        #     for i in range(num_traj):
+        #
+        #         if i == 0:
+        #             data_file = 'ball_traj1.csv'
+        #         if i == 1:
+        #             data_file = 'ball_traj2.csv'
+        #         if i == 2:
+        #             data_file = 'ball_traj3.csv'
+        #         if i == 3:
+        #             data_file = 'ball_traj4.csv'
+        #         if i == 4:
+        #             data_file = 'ball_traj5.csv'
+        #
+        #         # load dataset
+        #         train_data_load, test_data_load = load_data(n_train, n_test,
+        #                                           data_file, args.datapath,
+        #                                           output_dim, input_dim,
+        #                                           args.dataset == 'sarcos',
+        #                                           seed=1337)
+        #         if i == 0:
+        #             train_data = trajectory_data(train_data_load, output_dim, input_dim, args.traj_trick)
+        #             test_data = trajectory_data(test_data_load, output_dim, input_dim, args.traj_trick)
+        #         else:
+        #             train_data_new = trajectory_data(train_data_load, output_dim, input_dim, args.traj_trick)
+        #             test_data_new = trajectory_data(test_data_load, output_dim, input_dim, args.traj_trick)
+        #             train_data = np.append(train_data, train_data_new, axis=0)
+        #             test_data = np.append(test_data, test_data_new, axis=0)
+        #     input_dim = output_dim
+        #     n_train = len(train_data[:,0])
+        #     n_test -= len(test_data[:,0])
 
         # set working directory
         os.chdir(args.evalpath)
