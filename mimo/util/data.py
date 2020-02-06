@@ -334,7 +334,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
 
     # xvals = npr.uniform(-1, 1, n_train) * scaling
     xvals = np.linspace(-4,4,n_train)
-    w = npr.normal(0, 1, n_train) * scaling
+    w = 0 #npr.normal(0, 1, n_train) * scaling
     yvals = f(xvals, w)
 
     data = np.zeros((len(xvals), 2))
@@ -342,7 +342,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
         data[i, 0] = xvals[i]
         data[i, 1] = yvals[i]
 
-    with open('step_polynomial.csv', 'w', newline='') as csvFile:
+    with open('step_polynomial_deg3_v7_nonoise.csv', 'w', newline='') as csvFile:
         writer = csv.writer(csvFile)
         writer.writerows(data)
     csvFile.close()
