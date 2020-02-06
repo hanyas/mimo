@@ -82,6 +82,36 @@ def meanfield_traj_prediction(dpglm, data, input_dim, output_dim, traj_step, mod
 
                 mean_saved = np.copy(mean[i, :])
 
+            else:
+
+                # calculate the marginal likelihood of test data xhat for each cluster
+                # calculate the normalization term for mean function for xhat
+                mlkhd = np.zeros((nb_models,))
+                normalizer = 0.
+                for idx, c in enumerate(dpglm.components):
+                    if idx in dpglm.used_labels:
+                        mlkhd[idx] = niw_marginal_likelihood(xhat, c.posterior)
+                        normalizer = normalizer + weights[idx] * mlkhd[idx]
+
+                # calculate contribution of each cluster to mean function
+                for idx, c in enumerate(dpglm.components):
+                    if idx in dpglm.used_labels:
+                        t_mean, t_var, _ = matrix_t(xhat, c.posterior)
+                        t_var = np.diag(t_var)  # consider only diagonal variances for plots
+
+                        # Mean of a mixture = sum of weighted means
+                        mean[i, :] += t_mean * mlkhd[idx] * weights[idx] / normalizer
+
+                        # Variance of a mixture = sum of weighted variances + ...
+                        # ... + sum of weighted squared means - squared sum of weighted means
+                        var[i, :] += (t_var + t_mean ** 2) * mlkhd[idx] * weights[idx] / normalizer
+                var[i, :] -= mean[i, :] ** 2
+
+                # make prediction more robust by adding x_t: x_t+1 = x_t + f(x_t)
+                if traj_trick:
+                    mean[i, :] += xhat
+
+
     _test_mse = mean_squared_error(data[:, :input_dim], mean)
     _test_evar = explained_variance_score(data[:, :input_dim], mean, multioutput='variance_weighted')
 
@@ -249,7 +279,7 @@ def meanfield_prediction(dpglm, data, input_dim, output_dim, mode_prediction, pr
             # calculate contribution of each cluster to mean function
             for idx, c in enumerate(dpglm.components):
                 if idx in dpglm.used_labels:
-                    t_mean, t_var, _, x_mean , x_var = matrix_t(xhat, c.posterior)
+                    t_mean, t_var, _ = matrix_t(xhat, c.posterior)
                     t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
                     # Mean of a mixture = sum of weighted means
@@ -480,7 +510,7 @@ def gibbs_prediction_noWeights(dpglm, test_data, train_data, input_dim, output_d
 def single_prediction(dpglm, data, input_dim, output_dim):
     nb_data = len(data)
 
-    _train_inputs = data[:, :1]
+    _train_inputs = data[:, :input_dim]
     _train_outputs = data[:, input_dim:]
     _prediction = np.zeros((nb_data, output_dim))
 
@@ -489,8 +519,8 @@ def single_prediction(dpglm, data, input_dim, output_dim):
         _prediction[i, :] = dpglm.components[idx].predict(_train_inputs[i, :])
 
     import matplotlib.pyplot as plt
-    plt.scatter(_train_inputs, _train_outputs[:, 0], s=1)
-    plt.scatter(_train_inputs, _prediction[:, 0], color='red', s=1)
+    plt.scatter(_train_inputs[:,0], _train_outputs[:, 0], s=1)
+    plt.scatter(_train_inputs[:,0], _prediction[:, 0], color='red', s=1)
     plt.show()
 
 
