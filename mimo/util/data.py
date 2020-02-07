@@ -1,10 +1,49 @@
 import numpy as np
 import numpy.random as npr
 
-from mimo import distributions
-import csv
 import os
 import random
+import csv
+
+from mimo import distributions
+
+
+def sample_env(env, nb_rollouts, nb_steps,
+               ctl=None, noise_std=0.1,
+               apply_limit=True):
+    obs, act = [], []
+
+    dm_obs = env.observation_space.shape[0]
+    dm_act = env.action_space.shape[0]
+
+    ulim = env.action_space.high
+
+    for n in range(nb_rollouts):
+        _obs = np.zeros((nb_steps, dm_obs))
+        _act = np.zeros((nb_steps, dm_act))
+
+        x = env.reset()
+
+        for t in range(nb_steps):
+            if ctl is None:
+                # unifrom distribution
+                u = np.random.uniform(-ulim, ulim)
+            else:
+                u = ctl(x)
+                u = u + noise_std * npr.randn(1, )
+
+            if apply_limit:
+                u = np.clip(u, -ulim, ulim)
+
+            _obs[t, :] = x
+            _act[t, :] = u
+
+            x, r, _, _ = env.step(u)
+
+        obs.append(_obs)
+        act.append(_act)
+
+    return obs, act
 
 
 def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed=1337):
@@ -16,13 +55,9 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
 
     # randomly create a training and a test set from the data, but keep ordering of data
     sample_size = n_train
-    train_data = [
-        data[i] for i in sorted(random.sample(range(len(data)), sample_size))
-    ]
+    train_data = [data[i] for i in sorted(random.sample(range(len(data)), sample_size))]
     sample_size = n_test
-    test_data = [
-        data[i] for i in sorted(random.sample(range(len(data)), sample_size))
-    ]
+    test_data = [data[i] for i in sorted(random.sample(range(len(data)), sample_size))]
     train_data = np.asarray(train_data)
     test_data = np.asarray(test_data)
 
@@ -51,6 +86,7 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
 
     return train_data, test_data
 
+
 # transform dataset to trajectory dataset: tuples (t_i,y_i) -> (y_t, y_t+1 - y_t)
 def trajectory_data(data, output_dim, input_dim, traj_trick):
 
@@ -69,6 +105,7 @@ def trajectory_data(data, output_dim, input_dim, traj_trick):
     data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
 
     return data_new
+
 
 def generate_linear(n_train, input_dim, output_dim, shuffle=False, seed=1337):
     # set random seed
@@ -126,6 +163,7 @@ def generate_sine(n_train, input_dim, output_dim, freq,
 
     return data
 
+
 def generate_noisy_sine(n_train, input_dim, output_dim):
 
     data = np.zeros((n_train, input_dim + output_dim))
@@ -176,6 +214,7 @@ def generate_noisy_sine(n_train, input_dim, output_dim):
 
     return data
 
+
 def noise_function(n_train, noise_std1, noise_std2, xrange):
 
     xvals = np.linspace(xrange[0], xrange[1], n_train)
@@ -223,6 +262,7 @@ def noise_function(n_train, noise_std1, noise_std2, xrange):
     sorted_noise = np.take_along_axis(noise[:, 1], sorting[:, 0], axis=0)
 
     return sorted_xvals, sorted_noise
+
 
 def generate_kinematics(n_train=None, output_dim=2, num_joints=None,
                         loc_noise=None, scale_noise=None,
@@ -351,6 +391,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
 
     return data
 
+
 def generate_gaussian(n_train, output_dim, input_dim, seed=1337):
     # set random seed
     np.random.seed(seed=seed)
@@ -417,74 +458,6 @@ def generate_barrett(n_train, n_test, input_dim, output_dim,
 
     if shuffle:
         np.random.shuffle(data)
-
-    return data
-
-def generate_ball():
-    from math import sqrt
-    import matplotlib.pyplot as plt
-
-    h0 = 1  # m
-    v = 0  # m/s, current velocity
-    g = 9.81      # m/s/s
-    t = 0  # starting time
-    dt = 0.01  # time step
-    rho = 0.75  # coefficient of restitution
-    tau = 0 #0.1  # contact time for bounce
-    hmax = h0  # keep track of the maximum height
-    h = h0
-    hstop = 0.001  # stop when bounce is less than 1 cm
-    freefall = True  # state: freefall or in contact
-    t_last = -sqrt(2 * h0 / g)  # time we would have launched to get to h0 at t=0
-    vmax = sqrt(2 * hmax * g)
-    H = []
-    T = []
-    V = []
-    while (hmax > hstop):
-        if (freefall):
-            hnew = h + v * dt - 0.5 * g * dt * dt
-            # add noise to h:
-            hnew += npr.normal(0, 1e-8)
-            if (hnew < 0):
-                t = t_last + 2 * sqrt(2 * hmax / g)
-                freefall = False
-                t_last = t + tau
-                h = 0
-            else:
-                t = t + dt
-                v = v - g * dt
-                h = hnew
-        else:
-            t = t + tau
-            vmax = vmax * rho
-            v = vmax
-            freefall = True
-            h = 0
-        hmax = 0.5 * vmax * vmax / g
-        V.append(v)
-        H.append(h)
-        T.append(t)
-
-    data = np.zeros((len(T), 3))
-    data[:, 0] = T
-    data[:, 1] = H
-    data[:, 2] = V
-
-    print("stopped bouncing at t=%.3f\n" % (t))
-
-    plt.figure()
-    plt.plot(T, H)
-    plt.xlabel('time')
-    plt.ylabel('height')
-    plt.title('bouncing ball')
-    plt.show()
-    print(len(T))
-    print(len(H))
-
-    with open('ball_vel_v5.csv', 'w', newline='') as csvFile:
-        writer = csv.writer(csvFile)
-        writer.writerows(data)
-    csvFile.close()
 
     return data
 
