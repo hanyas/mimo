@@ -91,18 +91,16 @@ def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed
 def trajectory_data(data, output_dim, input_dim, traj_trick):
 
     n_train = len(data[:,0])
-    data_new = np.zeros((n_train, output_dim + output_dim))
+    data_new = np.zeros((n_train-1, output_dim + output_dim))
 
-    X = data[:,:-output_dim]
-    Y = data[:,input_dim:]
+    X = data[:, :-output_dim]
+    Y = data[:, input_dim:]
     if traj_trick:
-        Y_diff = data[1:,input_dim:] - data[:-1,input_dim:]
+        Y_diff = data[1:, input_dim:] - data[:-1, input_dim:]
     else:
         Y_diff = data[1:, input_dim:]
 
-    Y_diff = np.append(Y_diff,np.array(Y[-1], ndmin=2),axis=0)
-
-    data_new[:,:output_dim], data_new[:,output_dim:] = Y, Y_diff
+    data_new[:, :output_dim], data_new[:, output_dim:] = Y[:-1, :], Y_diff[:, :]
 
     return data_new
 
@@ -376,7 +374,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
 
     # xvals = npr.uniform(-1, 1, n_train) * scaling
     xvals = np.linspace(-4,4,n_train)
-    w = npr.normal(0, 1, n_train) * scaling
+    w = 0 #npr.normal(0, 1, n_train) * scaling
     yvals = f(xvals, w)
 
     data = np.zeros((len(xvals), 2))
@@ -384,7 +382,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
         data[i, 0] = xvals[i]
         data[i, 1] = yvals[i]
 
-    with open('step_polynomial.csv', 'w', newline='') as csvFile:
+    with open('step_polynomial_deg3_v7_nonoise.csv', 'w', newline='') as csvFile:
         writer = csv.writer(csvFile)
         writer.writerows(data)
     csvFile.close()
@@ -460,7 +458,6 @@ def generate_barrett(n_train, n_test, input_dim, output_dim,
         np.random.shuffle(data)
 
     return data
-
 
 def generate_goldberg(n_train, input_dim, output_dim):
 
