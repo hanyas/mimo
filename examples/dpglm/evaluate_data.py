@@ -21,6 +21,7 @@ from matplotlib import gridspec
 import seaborn as sns
 
 from sklearn.metrics import explained_variance_score, mean_squared_error
+from sklearn.preprocessing import PolynomialFeatures
 
 from joblib import Parallel, delayed
 import multiprocessing
@@ -101,12 +102,12 @@ def create_job(kwargs):
 
         # plot mean / mode prediction on test data
         if output_dim == 1:
-            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1) # plot true position
-            plt.plot(test_data_saved[:, 0], mean[:, 0], color='red') # plot estimated position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 0], s=1)  # plot true position
+            plt.plot(test_data_saved[1:, 0], mean[:, 0], color='red')  # plot estimated position
         else:
-            plt.scatter(test_data_saved[:, 0], test_data[:, 0], s=1)  # plot true position
-            plt.scatter(test_data_saved[:, 0], test_data[:, 1], s=1) # plot true velocity
-            plt.plot(test_data_saved[:, 0], mean, color='red') # plot estimated velocity and position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 0], s=1)  # plot true position
+            plt.scatter(test_data_saved[1:, 0], test_data[:, 1], s=1)  # plot true velocity
+            plt.plot(test_data_saved[1:, 0], mean, color='red')  # plot estimated velocity and position
         plt.show()
 
         # # plot test_evar over prediction horizon
@@ -140,7 +141,7 @@ def create_job(kwargs):
         sorted_data = np.take_along_axis(test_data, sorting, axis=0)
         sorted_mean = np.take_along_axis(mean, sorting[:, [0]], axis=0)
         sorted_var = np.take_along_axis(var, sorting[:, [0]], axis=0)
-        plt.scatter(test_data[:, 0], test_data[:, 1], s=1)
+        plt.scatter(test_data[:, 0], test_data[:, -1], s=1)
         plt.plot(sorted_data[:, 0], sorted_mean[:, 0], color='red')
         plt.plot(sorted_data[:, 0], sorted_mean[:, 0] + 2. * np.sqrt(sorted_var[:, 0]), color='green')
         plt.plot(sorted_data[:, 0], sorted_mean[:, 0] - 2. * np.sqrt(sorted_var[:, 0]), color='green')
@@ -212,23 +213,24 @@ if __name__ == "__main__":
     start = timeit.default_timer()
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--dataset', help='Choose dataset', default='ball_vel')
+    parser.add_argument('--dataset', help='Choose dataset', default='step_polynomial_deg3')
     parser.add_argument('--traintest_ratio', help='Set ratio of training to test data', default=5, type=float)
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=10000, type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=10, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=250, type=int)
     parser.add_argument('--gibbs_samples', help='Set number of Gibbs samples', default=5, type=int)
     parser.add_argument('--meanfield_iters', help='Set max. VI iterations', default=500, type=int)
-    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=True, type=bool)
+    parser.add_argument('--mode_prediction', help='Set VI prediction to mode or not (=mean)', default=False, type=bool)
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=True, type=bool)
+    parser.add_argument('--trajectory', help='Set dataset and prediction to trajectory', default=False, type=bool)
     parser.add_argument('--traj_step', help='Set step for trajectory prediction', default=1, type=int)
     parser.add_argument('--traj_trick', help='Force trajectory prediction to stay close to previous input', default=False, type=bool)
+    parser.add_argument('--features', help='Set degree of polynomial features (0= no transformation)', default=3, type=int)
 
     args = parser.parse_args()
 
@@ -293,6 +295,10 @@ if __name__ == "__main__":
         nb_samples = [1000]
         input_dim = 1
         output_dim = 1
+    elif args.dataset == 'step_polynomial_deg3_v7_nonoise':
+        nb_samples = [1000]
+        input_dim = 1
+        output_dim = 1
     elif args.dataset == 'sine_noise_step_a0':
         nb_samples = [500]
         input_dim = 1
@@ -321,6 +327,14 @@ if __name__ == "__main__":
         nb_samples = [2000]  # 6900 total samples
         input_dim = 1
         output_dim = 1
+    elif args.dataset == 'ball_traj1_vel':
+        nb_samples = [400]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_traj1':
+        nb_samples = [400]
+        input_dim = 1
+        output_dim = 1
     elif args.dataset == 'ball_vel':
         nb_samples = [2000]
         input_dim = 1
@@ -337,6 +351,18 @@ if __name__ == "__main__":
         nb_samples = [900]
         input_dim = 1
         output_dim = 2
+    elif args.dataset == 'ball_vel_v5_cut':
+        nb_samples = [2000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_vel_v6_noisy': #600 data points per trajectory, 10 trajectories
+        nb_samples = [6000]
+        input_dim = 1
+        output_dim = 2
+    elif args.dataset == 'ball_only_vel':
+        nb_samples = [600]
+        input_dim = 1
+        output_dim = 1
     elif args.dataset == 'silverman':
         nb_samples = [94] # 94 total samples
         input_dim = 1
@@ -372,13 +398,63 @@ if __name__ == "__main__":
                                           args.dataset == 'sarcos',
                                           seed=1337)
 
-        # convert to trajectory dataset
-        train_data_saved = np.copy(train_data)
-        test_data_saved = np.copy(test_data)
+        # polynomial features
+        if args.features != 0:
+            poly = PolynomialFeatures(degree=3, interaction_only=False, include_bias=False)
+            train_data_inputs = poly.fit_transform(np.atleast_2d(train_data[:, :-output_dim]).reshape(n_train, input_dim))
+            test_data_inputs = poly.fit_transform(np.atleast_2d(test_data[:, :-output_dim].reshape(n_test, input_dim)))
+            input_dim_saved = np.copy(input_dim)
+            input_dim = len(test_data_inputs[0, :])
+
+            train_data = np.concatenate((train_data_inputs, np.atleast_2d(train_data[:, input_dim_saved:])), axis=1)
+            test_data = np.concatenate((test_data_inputs, np.atleast_2d(test_data[:, input_dim_saved:])), axis=1)
+
+        # data from single trajectory
         if args.trajectory:
+
+            # convert to trajectory dataset
+            train_data_saved = np.copy(train_data)
+            test_data_saved = np.copy(test_data)
+
             train_data = trajectory_data(train_data, output_dim, input_dim, args.traj_trick)
             test_data = trajectory_data(test_data, output_dim, input_dim, args.traj_trick)
             input_dim = output_dim
+            n_train = len(train_data[:,0])
+            n_test = len(test_data[:,0])
+
+        # # data from multiple trajectories
+        # num_traj = 1
+        # if args.trajectory:
+        #     for i in range(num_traj):
+        #
+        #         if i == 0:
+        #             data_file = 'ball_traj1.csv'
+        #         if i == 1:
+        #             data_file = 'ball_traj2.csv'
+        #         if i == 2:
+        #             data_file = 'ball_traj3.csv'
+        #         if i == 3:
+        #             data_file = 'ball_traj4.csv'
+        #         if i == 4:
+        #             data_file = 'ball_traj5.csv'
+        #
+        #         # load dataset
+        #         train_data_load, test_data_load = load_data(n_train, n_test,
+        #                                           data_file, args.datapath,
+        #                                           output_dim, input_dim,
+        #                                           args.dataset == 'sarcos',
+        #                                           seed=1337)
+        #         if i == 0:
+        #             train_data = trajectory_data(train_data_load, output_dim, input_dim, args.traj_trick)
+        #             test_data = trajectory_data(test_data_load, output_dim, input_dim, args.traj_trick)
+        #         else:
+        #             train_data_new = trajectory_data(train_data_load, output_dim, input_dim, args.traj_trick)
+        #             test_data_new = trajectory_data(test_data_load, output_dim, input_dim, args.traj_trick)
+        #             train_data = np.append(train_data, train_data_new, axis=0)
+        #             test_data = np.append(test_data, test_data_new, axis=0)
+        #     input_dim = output_dim
+        #     n_train = len(train_data[:,0])
+        #     n_test -= len(test_data[:,0])
 
         # set working directory
         os.chdir(args.evalpath)
