@@ -3,7 +3,7 @@ import numpy.random as npr
 
 from mimo import distributions
 
-in_dim = 1
+in_dim = 2
 out_dim = 1
 
 _A = 1. * npr.randn(out_dim, in_dim)
@@ -26,19 +26,18 @@ else:
 hypparams = dict(mu=np.zeros((in_dim,)),
                  kappa=0.05,
                  psi_niw=np.eye(in_dim),
-                 nu_niw=2 * in_dim + 1,
+                 nu_niw=in_dim + 1,
                  M=np.zeros((out_dim, n_params)),
                  V=1. * np.eye(n_params),
                  affine=affine_model,
                  psi_mniw=np.eye(out_dim),
-                 nu_mniw=2 * out_dim + 1)
+                 nu_mniw=out_dim + 1)
 
 prior = distributions.NormalInverseWishartMatrixNormalInverseWishart(**hypparams)
 model = distributions.BayesianLinearGaussianWithNoisyInputs(prior)
-model = model.max_likelihood(data)
+model = model.meanfield_update(data)
 
-print("True transf. x"+"\n", input_dist.mu, "\n"+"True covariance x"+"\n", input_dist.sigma)
-print("ML transf. x"+"\n", model.mu, "\n"+"ML covariance x"+"\n", model.sigma_niw)
-print("------------------------------------------------------------------------------------------------")
-print("True transf. y"+"\n", output_dist.A, "\n"+"True covariance y"+"\n", output_dist.sigma)
+print("\n ML transf. x"+"\n", model.mu, "\n"+"ML covariance x"+"\n", model.sigma_niw)
+print("True transf. x"+"\n", input_dist.mu, "\n"+"True covariance x"+"\n", input_dist.sigma, "\n")
 print("ML transf. y"+"\n", model.A, "\n"+"ML covariance y"+"\n", model.sigma)
+print("True transf. y"+"\n", output_dist.A, "\n"+"True covariance y"+"\n", output_dist.sigma)
