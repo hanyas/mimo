@@ -107,7 +107,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param
-                                               + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
+                                                 + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
         self.mu, self.sigma = self.posterior.rvs()
         return self

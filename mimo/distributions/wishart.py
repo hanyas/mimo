@@ -6,6 +6,7 @@ from scipy import stats
 from scipy.special import multigammaln, digamma
 
 from mimo.abstractions import Distribution
+from mimo.util.general import near_pd
 
 
 class Wishart(Distribution):
@@ -40,7 +41,7 @@ class Wishart(Distribution):
     @property
     def psi_chol(self):
         if self._psi_chol is None:
-            self._psi_chol = np.linalg.cholesky(self.psi)
+            self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
         return self._psi_chol
 
     def rvs(self, size=None):
@@ -117,7 +118,7 @@ class InverseWishart(Distribution):
     @property
     def psi_chol(self):
         if self._psi_chol is None:
-            self._psi_chol = np.linalg.cholesky(self.psi)
+            self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
         return self._psi_chol
 
     def rvs(self, size=None):

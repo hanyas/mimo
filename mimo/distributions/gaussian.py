@@ -6,6 +6,7 @@ from scipy import linalg
 
 from mimo.abstractions import Distribution
 from mimo.util.general import flattendata
+from mimo.util.general import near_pd
 
 
 class Gaussian(Distribution):
@@ -15,6 +16,9 @@ class Gaussian(Distribution):
 
         self._sigma = sigma
         self._sigma_chol = None
+
+        self._parameterplot = None
+        self._scatterplot = None
 
     @property
     def params(self):
@@ -40,7 +44,7 @@ class Gaussian(Distribution):
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, size=None):
@@ -76,9 +80,6 @@ class Gaussian(Distribution):
     def entropy(self):
         return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim
                       + 2. * np.sum(np.log(np.diag(self.sigma_chol))))
-
-    _parameterplot = None
-    _scatterplot = None
 
     def plot(self, ax=None, data=None, color='b', label='', alpha=1., update=False, draw=True):
 

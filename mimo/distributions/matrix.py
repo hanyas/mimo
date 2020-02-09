@@ -5,6 +5,7 @@ from scipy import linalg
 from numpy.core.umath_tests import inner1d
 
 from mimo.abstractions import Distribution
+from mimo.util.general import near_pd
 
 
 class MatrixNormal(Distribution):
@@ -64,19 +65,19 @@ class MatrixNormal(Distribution):
     @property
     def U_chol(self):
         if self._U_chol is None:
-            self._U_chol = np.linalg.cholesky(self.U)
+            self._U_chol = np.linalg.cholesky(near_pd(self.U))
         return self._U_chol
 
     @property
     def V_chol(self):
         if self._V_chol is None:
-            self._V_chol = np.linalg.cholesky(self.V)
+            self._V_chol = np.linalg.cholesky(near_pd(self.V))
         return self._V_chol
 
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, size=None):

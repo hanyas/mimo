@@ -5,6 +5,7 @@ from scipy import linalg
 
 from mimo.abstractions import Distribution
 from mimo.util.general import inv_psd, blockarray
+from mimo.util.general import near_pd
 
 
 class LinearGaussian(Distribution):
@@ -53,7 +54,7 @@ class LinearGaussian(Distribution):
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, x=None, size=None):
@@ -189,13 +190,13 @@ class LinearGaussianWithNoisyInputs(Distribution):
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     @property
     def sigma_niw_chol(self):
         if self._sigma_niw_chol is None:
-            self._sigma_niw_chol = np.linalg.cholesky(self.sigma_niw)
+            self._sigma_niw_chol = np.linalg.cholesky(near_pd(self.sigma_niw))
         return self._sigma_niw_chol
 
     def rvs(self, x=None, size=None):
