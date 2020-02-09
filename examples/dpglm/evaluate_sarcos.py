@@ -102,12 +102,12 @@ def create_job(kwargs):
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
-        iter = range(args.gibbs_iters) if not args.verbose\
+        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
         print("Gibbs Sampling")
-        for _ in iter:
+        for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
@@ -149,8 +149,8 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
-    parser.add_argument('--nb_models', help='Set max number of models', default=50, type=int)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='Set max number of models', default=500, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--super_iters', help='Set interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=100, type=int)
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument('--meanfield_iters', help='Set max VI iterations', default=500, type=int)
     parser.add_argument('--svi_iters', help='Set stochastic VI iterations', default=2500, type=int)
     parser.add_argument('--svi_stepsize', help='Set SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='Set SVI batch size', default=1024, type=int)
+    parser.add_argument('--svi_batchsize', help='Set SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='Set prediction to mode or average', default='average')
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--init_kmeans', help='Set initialization with KMEANS', default=True, type=float)
@@ -166,48 +166,29 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    import gym
-
-    from mimo.util.data import sample_env
-
     np.random.seed(1337)
 
-    env = gym.make('BouncingBall-DPGLM-v0')
-    env._max_episode_steps = 5000
-    env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-16
-    env.seed(1337)
+    import scipy as sc
+    from scipy import io
 
-    dm_obs = env.observation_space.shape[0]
+    # training data
+    train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
 
-    nb_train_rollouts, nb_train_steps = 10, 500
-    nb_test_rollouts, nb_test_steps = 5, 500
+    train_choice = np.random.choice(len(train_data), 40000)
+    train_input, train_target = train_data[train_choice, :21], train_data[train_choice, 21:22]
 
-    train_obs, _ = sample_env(env, nb_train_rollouts, nb_train_steps)
-    test_obs, _ = sample_env(env, nb_test_rollouts, nb_test_steps)
+    train_data = {'input': train_input, 'target': train_target}
 
-    train_input = np.vstack([_x[:-1, :] for _x in train_obs])
-    train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
+    # test data
+    test_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
-    # train_data = {'input': train_input,
-    #               'target': train_target}
-    #
-    # dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-    #                                   train_data=train_data,
-    #                                   arguments=args)
-    #
-    # from mimo.util.prediction import meanfield_forcast
-    #
-    # prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
-    #                                horizon=500, incremental=True)
-    #
-    # plt.figure()
-    # plt.plot(test_obs[0])
-    # plt.plot(prediction)
+    test_choice = np.random.choice(len(test_data), len(test_data))
+    test_input, test_target = test_data[test_choice, :21], test_data[test_choice, 21:22]
 
+    # scale training data
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=dm_obs, whiten=True)
-    target_scaler = PCA(n_components=dm_obs, whiten=True)
+    input_scaler = PCA(n_components=21, whiten=True)
+    target_scaler = PCA(n_components=1, whiten=True)
 
     input_scaler.fit(train_input)
     target_scaler.fit(train_target)
@@ -218,17 +199,27 @@ if __name__ == "__main__":
     scaled_train_data = {'input': scaled_input,
                          'target': scaled_target}
 
+    # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                       train_data=scaled_train_data,
                                       arguments=args)
 
-    from mimo.util.prediction import scaled_meanfield_forcast
+    # predict
+    from mimo.util.prediction import meanfield_prediction
 
-    prediction = scaled_meanfield_forcast(dpglms[0], test_obs[0][0, :],
-                                          horizon=500, incremental=True,
-                                          input_scaler=input_scaler,
-                                          target_scaler=target_scaler)
+    for dpglm in dpglms:
+        mu_predict = []
+        for t in range(len(test_input)):
+            _input = input_scaler.transform(np.atleast_2d(test_input[t, :])).squeeze()
+            _mean, _, _ = meanfield_prediction(dpglm, _input)
+            mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
 
-    plt.figure()
-    plt.plot(test_obs[0])
-    plt.plot(prediction)
+        mu_predict = np.vstack(mu_predict)
+
+        from sklearn.metrics import explained_variance_score, mean_squared_error
+        evar = explained_variance_score(mu_predict, test_target)
+        mse = mean_squared_error(mu_predict, test_target)
+
+        smse = mean_squared_error(mu_predict, test_target) / np.var(test_target, axis=0)
+
+        print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
