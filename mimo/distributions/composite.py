@@ -557,15 +557,15 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             E_J = self.invwishart_niw.nu * np.linalg.inv(self.invwishart_niw.psi)
             E_h = self.invwishart_niw.nu * np.linalg.solve(self.invwishart_niw.psi, self.gaussian.mu)
             E_muJmuT = self.dim / self.kappa + self.gaussian.mu.dot(E_h)
-            E_logdetSigmainv_niw = np.sum(digamma((self.invwishart_niw.nu - np.arange(self.dim)) / 2.)) + \
-                               self.dim * np.log(2.) - np.linalg.slogdet(self.invwishart_niw.psi)[1]
+            E_logdetSigmainv_niw = np.sum(digamma((self.invwishart_niw.nu - np.arange(self.dim)) / 2.))\
+                                   + self.dim * np.log(2.) - np.linalg.slogdet(self.invwishart_niw.psi)[1]
 
             E_Sigmainv = self.invwishart_mniw.nu * np.linalg.inv(self.invwishart_mniw.psi)
             E_Sigmainv_A = self.invwishart_mniw.nu * np.linalg.solve(self.invwishart_mniw.psi, self.matnorm.M)
-            E_AT_Sigmainv_A = self.dout * self.matnorm.V + self.invwishart_mniw.nu * \
-                              self.matnorm.M.T.dot(np.linalg.solve(self.invwishart_mniw.psi, self.matnorm.M))
-            E_logdetSigmainv_mniw = digamma((self.invwishart_mniw.nu - np.arange(self.dout)) / 2.).sum() + \
-                               self.dout * np.log(2) - np.linalg.slogdet(self.invwishart_mniw.psi)[1]
+            E_AT_Sigmainv_A = self.dout * self.matnorm.V + self.invwishart_mniw.nu\
+                              * self.matnorm.M.T.dot(np.linalg.solve(self.invwishart_mniw.psi, self.matnorm.M))
+            E_logdetSigmainv_mniw = digamma((self.invwishart_mniw.nu - np.arange(self.dout)) / 2.).sum()\
+                                    + self.dout * np.log(2) - np.linalg.slogdet(self.invwishart_mniw.psi)[1]
 
             return E_J, E_h, E_muJmuT, E_logdetSigmainv_niw, E_Sigmainv, \
                    E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv_mniw

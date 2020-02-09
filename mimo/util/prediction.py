@@ -32,7 +32,7 @@ def meanfield_forcast(dpglm, query, horizon=1,
 
 def scaled_meanfield_forcast(dpglm, query, horizon=1,
                              exogenous=None, incremental=True,
-                             input_scaler=None, output_scaler=None):
+                             input_scaler=None, target_scaler=None):
 
     if exogenous is not None:
         assert horizon <= len(exogenous)
@@ -48,10 +48,10 @@ def scaled_meanfield_forcast(dpglm, query, horizon=1,
         _scaled_input = np.squeeze(input_scaler.transform(np.atleast_2d(_input)))
         _scaled_prediction, _, _ = meanfield_prediction(dpglm, _scaled_input)
         if incremental:
-            _unscaled_prediction = output_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
+            _unscaled_prediction = target_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
             _output = _output + np.squeeze(_unscaled_prediction)
         else:
-            _unscaled_prediction = output_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
+            _unscaled_prediction = target_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
             _output = np.squeeze(_unscaled_prediction)
 
         output.append(_output)
@@ -60,7 +60,7 @@ def scaled_meanfield_forcast(dpglm, query, horizon=1,
 
 
 # Marginalize prediction under posterior
-def meanfield_prediction(dpglm, query, prediction='mode'):
+def meanfield_prediction(dpglm, query, prediction='average'):
     nb_models = len(dpglm.components)
     nb_dim = dpglm.components[0].dout
 
@@ -116,46 +116,43 @@ def meanfield_prediction(dpglm, query, prediction='mode'):
 
 
 # Weighted EM predictions over all models
-def em_prediction(dpglm, data):
-    nb_data = len(data['input'])
+def em_prediction(dpglm, query):
     nb_models = len(dpglm.components)
+    nb_dim = dpglm.components[0].dout
 
     # initialize variables
-    mean, var, = np.zeros_like(data['target']), np.zeros_like(data['target'])
+    mean, var, std = np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, ))
 
     # mixing weights
     weights = dpglm.gating.probs
 
-    # prediction / mean function of yhat for all test data xhat
-    for i in range(nb_data):
-        query = data['input'][i, :]
+    # calculate the marginal likelihood of test data query for each cluster
+    # calculate the normalization term for mean function for query
+    normalizer = 0.
+    lklhd = np.zeros((nb_models,))
+    effective_weight = np.zeros((nb_models,))
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            lklhd[idx] = gaussian_likelihood(query, c)
+            effective_weight[idx] = weights[idx] * lklhd[idx]
+            normalizer = normalizer + weights[idx] * lklhd[idx]
 
-        # calculate the marginal likelihood of test data query for each cluster
-        # calculate the normalization term for mean function for query
-        normalizer = 0.
-        lklhd = np.zeros((nb_models,))
-        effective_weight = np.zeros((nb_models,))
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                lklhd[idx] = gaussian_likelihood(query, c)
-                effective_weight[idx] = weights[idx] * lklhd[idx]
-                normalizer = normalizer + weights[idx] * lklhd[idx]
+    # calculate contribution of each cluster to mean function
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            t_mean = c.predict(query)
+            t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
 
-        # calculate contribution of each cluster to mean function
-        for idx, c in enumerate(dpglm.components):
-            if idx in dpglm.used_labels:
-                t_mean = c.predict(query)
-                t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
+            # Mean of a mixture = sum of weighted means
+            mean += t_mean * effective_weight[idx] / normalizer
 
-                # Mean of a mixture = sum of weighted means
-                mean[i, :] += t_mean * effective_weight[idx] / normalizer
+            # Variance of a mixture = sum of weighted variances + ...
+            # ... + sum of weighted squared means - squared sum of weighted means
+            var += (t_var + t_mean ** 2) * effective_weight[idx] / normalizer
+    var -= mean ** 2
+    std = np.sqrt(var)
 
-                # Variance of a mixture = sum of weighted variances + ...
-                # ... + sum of weighted squared means - squared sum of weighted means
-                var[i, :] += (t_var + t_mean ** 2) * effective_weight[idx] / normalizer
-        var[i, :] -= mean[i, :] ** 2
-
-    return mean, var
+    return mean, var, std
 
 
 # Prediction using posterior samples of the Gibbs sampler;
@@ -386,7 +383,7 @@ def gaussian_likelihood(data, distribution):
 
 
 def predictive_matrix_t(query, posterior):
-    mu, kappa, psi_niw, nu_niw, Mk, Vk, psi_mniw, nu_mniw = posterior.params
+    mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw = posterior.params
 
     q = query
     if posterior.affine:
@@ -395,8 +392,8 @@ def predictive_matrix_t(query, posterior):
     qqT = np.outer(q, q)
 
     df = nu_mniw + 1
-    c = 1. - q.T @ np.linalg.inv(np.linalg.inv(Vk) + qqT) @ q
-    mean = Mk @ q
+    mean = M @ q
+    c = 1. - q.T @ np.linalg.inv(np.linalg.inv(V) + qqT) @ q
     var = 1. / c * psi_mniw / (df - 2)
 
     return mean, var, df
