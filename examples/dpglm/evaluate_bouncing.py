@@ -226,12 +226,12 @@ if __name__ == "__main__":
                                       train_data=scaled_train_data,
                                       arguments=args)
 
-    from mimo.util.prediction import scaled_meanfield_forcast
+    from mimo.util.prediction import meanfield_forcast
 
-    prediction = scaled_meanfield_forcast(dpglms[0], test_obs[0][0, :],
-                                          horizon=500, incremental=True,
-                                          input_scaler=input_scaler,
-                                          target_scaler=target_scaler)
+    prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
+                                   horizon=500, incremental=True,
+                                   input_scaler=input_scaler,
+                                   target_scaler=target_scaler)
 
     plt.figure()
     plt.plot(test_obs[0])
