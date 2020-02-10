@@ -36,7 +36,7 @@ def create_job(kwargs):
         nb_params += 1
 
     components_prior = []
-    if args.init_kmeans:
+    if args.kmeans:
         from sklearn.cluster import KMeans
         km = KMeans(args.nb_models).fit(np.hstack((input, target)))
 
@@ -50,7 +50,7 @@ def create_job(kwargs):
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
-            psi_mniw = 1e-1
+            psi_mniw = 1e0
             V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
@@ -69,7 +69,7 @@ def create_job(kwargs):
         kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e-1
+        psi_mniw = 1e0
         V = 1e3 * np.eye(nb_params)
 
         for n in range(args.nb_models):
@@ -167,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default='True')
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--nb_train', help='show no output', dest='verbose', action='store_false')
 
     args = parser.parse_args()
 
@@ -178,7 +179,8 @@ if __name__ == "__main__":
     # training data
     train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
 
-    train_choice = np.random.choice(len(train_data), 40000)
+    nb_train = args.nb_train
+    train_choice = np.random.choice(len(train_data), nb_train)
     train_input, train_target = train_data[train_choice, :21], train_data[train_choice, 21:22]
 
     train_data = {'input': train_input, 'target': train_target}
@@ -208,22 +210,30 @@ if __name__ == "__main__":
                                       train_data=scaled_train_data,
                                       arguments=args)
 
-    # predict
-    from mimo.util.prediction import meanfield_prediction
+    from mimo.util.prediction import parallel_meanfield_prediction
+    from sklearn.metrics import explained_variance_score, mean_squared_error
 
-    for dpglm in dpglms:
-        mu_predict = []
-        for t in range(len(test_input)):
-            _input = input_scaler.transform(np.atleast_2d(test_input[t, :])).squeeze()
-            _mean, _, _ = meanfield_prediction(dpglm, _input)
-            mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
+    # predict on train data
+    train_predict, _, _ = parallel_meanfield_prediction(dpglms[0], train_input,
+                                                        prediction=args.prediction,
+                                                        input_scaler=input_scaler,
+                                                        target_scaler=target_scaler)
 
-        mu_predict = np.vstack(mu_predict)
+    train_evar = explained_variance_score(train_predict, train_target)
+    train_mse = mean_squared_error(train_predict, train_target)
+    train_smse = train_mse / np.var(train_target, axis=0)
 
-        from sklearn.metrics import explained_variance_score, mean_squared_error
-        evar = explained_variance_score(mu_predict, test_target)
-        mse = mean_squared_error(mu_predict, test_target)
+    print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse, 'SMSE:', train_smse, 'Compnents:', len(dpglms[0].used_labels))
 
-        smse = mean_squared_error(mu_predict, test_target) / np.var(test_target, axis=0)
+    # predict on test data
+    test_predict, _, _ = parallel_meanfield_prediction(dpglms[0], test_input,
+                                                       prediction=args.prediction,
+                                                       input_scaler=input_scaler,
+                                                       target_scaler=target_scaler)
 
-        print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+    test_evar = explained_variance_score(test_predict, test_target)
+    test_mse = mean_squared_error(test_predict, test_target)
+    test_smse = test_mse / np.var(test_target, axis=0)
+
+    print('TEST - EVAR:', test_evar, 'MSE:', test_mse, 'SMSE:', test_smse, 'Compnents:', len(dpglms[0].used_labels))
+
