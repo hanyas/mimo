@@ -7,8 +7,9 @@ from mimo.distributions.dirichlet import StickBreaking
 from pathos.multiprocessing import ProcessingPool as Pool
 
 
-def meanfield_forcast(dpglm, query, horizon=1,
-                      exogenous=None, incremental=True):
+def meanfield_forcast(dpglm, query, horizon=1, exogenous=None,
+                      prediction='average', incremental=True,
+                      input_scaler=None, target_scaler=None):
 
     if exogenous is not None:
         assert horizon <= len(exogenous)
@@ -17,51 +18,20 @@ def meanfield_forcast(dpglm, query, horizon=1,
     output = [query]
     for h in range(horizon):
         if exogenous is not None:
-            _input = np.hstack((output[-1], exogenous[h, :]))
+            _query = np.hstack((output[-1], exogenous[h, :]))
         else:
-            _input = _output
+            _query = _output
 
-        _prediction, _, _ = meanfield_prediction(dpglm, _input)
-        if incremental:
-            _output = _output + _prediction
-        else:
-            _output = _prediction
-
+        _output, _, _ = meanfield_prediction(dpglm, _query,
+                                             prediction, incremental,
+                                             input_scaler, target_scaler)
         output.append(_output)
 
     return np.vstack(output)
 
 
-def scaled_meanfield_forcast(dpglm, query, horizon=1,
-                             exogenous=None, incremental=True,
-                             input_scaler=None, target_scaler=None):
-
-    if exogenous is not None:
-        assert horizon <= len(exogenous)
-
-    _output = query
-    output = [query]
-    for h in range(horizon):
-        if exogenous is not None:
-            _input = np.hstack((output[-1], exogenous[h, :]))
-        else:
-            _input = _output
-
-        _scaled_input = np.squeeze(input_scaler.transform(np.atleast_2d(_input)))
-        _scaled_prediction, _, _ = meanfield_prediction(dpglm, _scaled_input)
-        if incremental:
-            _unscaled_prediction = target_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
-            _output = _output + np.squeeze(_unscaled_prediction)
-        else:
-            _unscaled_prediction = target_scaler.inverse_transform(np.atleast_2d(_scaled_prediction))
-            _output = np.squeeze(_unscaled_prediction)
-
-        output.append(_output)
-
-    return np.vstack(output)
-
-
-def parallel_meanfield_prediction(dpglm, query, prediction,
+def parallel_meanfield_prediction(dpglm, query,
+                                  prediction='average', incremental=False,
                                   input_scaler=None, target_scaler=None):
     query = np.atleast_2d(query)
 
@@ -69,11 +39,9 @@ def parallel_meanfield_prediction(dpglm, query, prediction,
     nb_dim = dpglm.components[0].dout
 
     def _loop(n):
-        if input_scaler is None or target_scaler is None:
-            return meanfield_prediction(dpglm, query[n, :], prediction)
-        else:
-            return scaled_meanfield_prediction(dpglm, query[n, :], prediction,
-                                               input_scaler, target_scaler)
+        return meanfield_prediction(dpglm, query[n, :],
+                                    prediction, incremental,
+                                    input_scaler, target_scaler)
 
     _pool = Pool(processes=-1)
     res = _pool.map(_loop, range(nb_data))
@@ -84,25 +52,21 @@ def parallel_meanfield_prediction(dpglm, query, prediction,
     return mean, var, std
 
 
-def scaled_meanfield_prediction(dpglm, query, prediction='average',
-                                input_scaler=None, target_scaler=None):
-
-    # scale query
-    scaled_query = input_scaler.transform(np.atleast_2d(query)).squeeze()
-
-    # predict in scaled space
-    scaled_mean, scaled_var, _ = meanfield_prediction(dpglm, scaled_query, prediction)
-
-    # unscale mean and var
-    mean = target_scaler.inverse_transform(np.atleast_2d(scaled_mean))
-    trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
-    var = trans.T @ scaled_var @ trans
-
-    return mean, var, np.sqrt(var)
-
-
 # Marginalize prediction under posterior
-def meanfield_prediction(dpglm, query, prediction='average'):
+def meanfield_prediction(dpglm, query,
+                         prediction='average', incremental=False,
+                         input_scaler=None, target_scaler=None):
+
+    if input_scaler is not None:
+        assert target_scaler is not None
+    if target_scaler is not None:
+        assert input_scaler is not None
+
+    if input_scaler is not None:
+        _input = input_scaler.transform(np.atleast_2d(query)).squeeze()
+    else:
+        _input = query.copy()
+
     nb_models = len(dpglm.components)
     nb_dim = dpglm.components[0].dout
 
@@ -119,42 +83,53 @@ def meanfield_prediction(dpglm, query, prediction='average'):
 
     # calculate the marginal likelihood of query for each cluster
     # calculate the normalization term for mean function for xhat
-    normalizer = 0.
     marginal_likelihood = np.zeros((nb_models,))
     effective_weight = np.zeros((nb_models,))
     for idx, c in enumerate(dpglm.components):
         if idx in dpglm.used_labels:
-            marginal_likelihood[idx] = niw_marginal_likelihood(query, c.posterior)
+            marginal_likelihood[idx] = niw_marginal_likelihood(_input, c.posterior)
             effective_weight[idx] = weights[idx] * marginal_likelihood[idx]
-            normalizer = normalizer + weights[idx] * marginal_likelihood[idx]
 
+    effective_weight = effective_weight / effective_weight.sum()
     if prediction == 'mode':
         mode = np.argmax(effective_weight)
-        t_mean, t_var, _ = predictive_matrix_t(query, dpglm.components[mode].posterior)
+        t_mean, t_var, _ = predictive_matrix_t(_input, dpglm.components[mode].posterior)
+
         t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
-        mean, var, std = t_mean, t_var, np.sqrt(t_var)
+        mean, var = t_mean, t_var
 
     elif prediction == 'average':
         for idx, c in enumerate(dpglm.components):
             if idx in dpglm.used_labels:
-                t_mean, t_var, _ = predictive_matrix_t(query, c.posterior)
+                t_mean, t_var, _ = predictive_matrix_t(_input, c.posterior)
                 t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
                 # Mean of a mixture = sum of weighted means
-                mean += t_mean * effective_weight[idx] / normalizer
+                mean += t_mean * effective_weight[idx]
 
                 # Variance of a mixture = sum of weighted variances + ...
                 # ... + sum of weighted squared means - squared sum of weighted means
-                # var[i, :] += (t_var) * mlkhd[idx] * weights[idx] / normalizer
-                var += (t_var + t_mean ** 2) * effective_weight[idx] / normalizer
+                var += (t_var + t_mean ** 2) * effective_weight[idx]
         var -= mean ** 2
-        std = np.sqrt(var)
 
     else:
         raise NotImplementedError
 
-    return mean, var, std
+    if target_scaler is not None:
+        mean = target_scaler.inverse_transform(np.atleast_2d(mean)).squeeze()
+        trans = (np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_).T
+        var = np.diag(trans.T @ np.diag(var) @ trans)
+
+        try:
+            np.linalg.cholesky(np.diag(var))
+        except np.linalg.LinAlgError:
+            print('Variance is not PSD')
+
+    if incremental:
+        return query[:nb_dim] + mean, var, np.sqrt(var)
+    else:
+        return mean, var, np.sqrt(var)
 
 
 # Weighted EM predictions over all models
