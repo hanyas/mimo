@@ -140,8 +140,8 @@ class MatrixNormal(Distribution):
 
     def log_partition(self):
         return 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
-               + self.drow * np.sum(np.log(np.diag(self.V_chol)))\
-               + self.dcol * np.sum(np.log(np.diag(self.U_chol)))
+               + self.drow * np.trace(np.log(self.V_chol))\
+               + self.dcol * np.trace(np.log(self.U_chol))
 
     def entropy(self):
         return NotImplementedError
