@@ -36,7 +36,7 @@ def create_job(kwargs):
         nb_params += 1
 
     components_prior = []
-    if args.init_kmeans:
+    if args.kmeans:
         from sklearn.cluster import KMeans
         km = KMeans(args.nb_models).fit(np.hstack((input, target)))
 
@@ -50,7 +50,7 @@ def create_job(kwargs):
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
-            psi_mniw = 1e-1
+            psi_mniw = 1e0
             V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
@@ -69,7 +69,7 @@ def create_job(kwargs):
         kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e-1
+        psi_mniw = 1e0
         V = 1e3 * np.eye(nb_params)
 
         for n in range(args.nb_models):
@@ -236,3 +236,5 @@ if __name__ == "__main__":
     plt.figure()
     plt.plot(test_obs[0])
     plt.plot(prediction)
+
+    plt.show()
