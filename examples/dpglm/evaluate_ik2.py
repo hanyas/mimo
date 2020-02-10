@@ -16,6 +16,24 @@ import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
 
+def generate_2d_kinematics(grid=(10, 10), l1=1., l2=1., seed=1337):
+
+    # set random seed
+    np.random.seed(seed=seed)
+
+    # joint angles
+    q1 = np.linspace(0., np.pi, grid[0])
+    q2 = np.linspace(0., np.pi, grid[1])
+
+    q1, q2 = np.meshgrid(q1, q2)
+
+    x = l1 * np.cos(q1) + l2 * np.cos(q1 + q2)
+    y = l1 * np.sin(q1) + l2 * np.sin(q1 + q2)
+
+    return np.vstack((q1.flatten(), q2.flatten(),
+                      x.flatten(), y.flatten())).T
+
+
 def create_job(kwargs):
     train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
@@ -36,7 +54,7 @@ def create_job(kwargs):
         nb_params += 1
 
     components_prior = []
-    if args.kmeans:
+    if args.init_kmeans:
         from sklearn.cluster import KMeans
         km = KMeans(args.nb_models).fit(np.hstack((input, target)))
 
@@ -51,7 +69,7 @@ def create_job(kwargs):
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+            V = 1e12 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=psi_input, nu_niw=input_dim + 1,
@@ -70,7 +88,7 @@ def create_job(kwargs):
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        V = 1e12 * np.eye(nb_params)
 
         for n in range(args.nb_models):
             components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
@@ -149,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default='True')
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -172,17 +190,11 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    nb_samples = 5000
-    input = np.linspace(-10., 10., nb_samples).reshape(nb_samples, 1)
-    noise = lambda x: 0.05 + 0.2 * (1. + np.sin(2. * x)) / (1. + np.exp(-0.2 * x))
-    target = np.sinc(input) + noise(input) * np.random.randn(len(input), 1)
-    mean = np.sinc(input)
+    data = generate_2d_kinematics(grid=(50, 50))
+    input, target = data[:, 2:], data[:, :2]
 
     plt.figure()
-    plt.plot(input, mean, '--b')
-    plt.plot(input, mean + 2 * noise(input), '--g')
-    plt.plot(input, mean - 2 * noise(input), '--g')
-    plt.scatter(input, target, s=0.75, c='k')
+    plt.scatter(input[:, 0], input[:, 1], s=1)
 
     # # Original Data
     # train_data = {'input': input, 'target': target}
@@ -193,27 +205,31 @@ if __name__ == "__main__":
     #
     # from mimo.util.prediction import meanfield_prediction
     #
-    # mu_predic, std_predict = [], []
+    # mu_predict = []
     # for t in range(len(input)):
-    #     _mu, _, _std = meanfield_prediction(dpglms[0], input[t, :])
-    #     mu_predic.append(_mu)
-    #     std_predict.append(_std)
+    #     _mu, _, _ = meanfield_prediction(dpglms[0], input[t, :])
+    #     mu_predict.append(_mu)
     #
-    # mu_predic = np.vstack(mu_predic)
-    # std_predict = np.vstack(std_predict)
+    # mu_predict = np.vstack(mu_predict)
     #
-    # plt.plot(train_data['input'], mu_predic, '-c')
-    # plt.plot(train_data['input'], mu_predic + 2 * std_predict, '-r')
-    # plt.plot(train_data['input'], mu_predic - 2 * std_predict, '-r')
+    # plt.plot(train_data['input'], mu_predict, '-c')
+    #
+    # from sklearn.metrics import explained_variance_score, mean_squared_error
+    # evar = explained_variance_score(mu_predict, target)
+    # mse = mean_squared_error(mu_predict, target)
+    #
+    # smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
+    #
+    # print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
     #
     # plt.figure()
-    # plt.plot(std_predict)
-    # plt.plot(noise(input))
+    # plt.scatter(target[:, 0], target[:, 1], s=1)
+    # plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
 
     # Scaled Data
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=1, whiten=True)
-    target_scaler = PCA(n_components=1, whiten=True)
+    input_scaler = PCA(n_components=2, whiten=True)
+    target_scaler = PCA(n_components=2, whiten=True)
 
     input_scaler.fit(input)
     target_scaler.fit(target)
@@ -231,20 +247,12 @@ if __name__ == "__main__":
     # predict
     from mimo.util.prediction import meanfield_prediction
 
-    mu_predict, var_predict, std_predict = [], [], []
+    mu_predict = []
     for t in range(len(scaled_input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], scaled_input[t, :])
+        _mean, _, _ = meanfield_prediction(dpglms[0], scaled_input[t, :], prediction='mode')
         mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
 
-        trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
-        _var = trans.T @ _var @ trans
-
-        var_predict.append(_var)
-        std_predict.append(np.sqrt(_var))
-
     mu_predict = np.vstack(mu_predict)
-    var_predict = np.vstack(var_predict)
-    std_predict = np.vstack(std_predict)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
@@ -254,12 +262,6 @@ if __name__ == "__main__":
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 
-    plt.plot(input, mu_predict, '-m')
-    plt.plot(input, mu_predict + 2 * std_predict, '-r')
-    plt.plot(input, mu_predict - 2 * std_predict, '-r')
-
     plt.figure()
-    plt.plot(std_predict)
-    plt.plot(noise(input))
-
-    plt.show()
+    plt.scatter(target[:, 0], target[:, 1], s=1)
+    plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
