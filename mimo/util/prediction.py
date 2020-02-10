@@ -4,6 +4,8 @@ from mimo import distributions
 from mimo.distributions.dirichlet import Dirichlet
 from mimo.distributions.dirichlet import StickBreaking
 
+from pathos.multiprocessing import ProcessingPool as Pool
+
 
 def meanfield_forcast(dpglm, query, horizon=1,
                       exogenous=None, incremental=True):
@@ -57,6 +59,46 @@ def scaled_meanfield_forcast(dpglm, query, horizon=1,
         output.append(_output)
 
     return np.vstack(output)
+
+
+def parallel_meanfield_prediction(dpglm, query, prediction,
+                                  input_scaler=None, target_scaler=None):
+    query = np.atleast_2d(query)
+
+    nb_data = len(query)
+    nb_dim = dpglm.components[0].dout
+
+    def _loop(n):
+        if input_scaler is None or target_scaler is None:
+            return meanfield_prediction(dpglm, query[n, :], prediction)
+        else:
+            return scaled_meanfield_prediction(dpglm, query[n, :], prediction,
+                                               input_scaler, target_scaler)
+
+    _pool = Pool(processes=-1)
+    res = _pool.map(_loop, range(nb_data))
+
+    res = np.asarray(res).squeeze()
+    mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
+
+    return mean, var, std
+
+
+def scaled_meanfield_prediction(dpglm, query, prediction='average',
+                                input_scaler=None, target_scaler=None):
+
+    # scale query
+    scaled_query = input_scaler.transform(np.atleast_2d(query)).squeeze()
+
+    # predict in scaled space
+    scaled_mean, scaled_var, _ = meanfield_prediction(dpglm, scaled_query, prediction)
+
+    # unscale mean and var
+    mean = target_scaler.inverse_transform(np.atleast_2d(scaled_mean))
+    trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
+    var = trans.T @ scaled_var @ trans
+
+    return mean, var, np.sqrt(var)
 
 
 # Marginalize prediction under posterior
@@ -414,7 +456,7 @@ def niw_marginal_likelihood(data, posterior):
 
     log_partition_prior = model.prior.log_partition()
     log_partition_posterior = model.posterior.log_partition()
-    const = np.log(1. / (2. * np.pi) ** (1 * prior.dim / 2))
+    const = np.log(1. / (2. * np.pi) ** (1. * prior.dim / 2.))
 
     log_marginal_likelihood = const + log_partition_posterior - log_partition_prior
     marginal_likelihood = np.exp(log_marginal_likelihood)

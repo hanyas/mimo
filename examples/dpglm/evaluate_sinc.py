@@ -229,22 +229,11 @@ if __name__ == "__main__":
                                       arguments=args)
 
     # predict
-    from mimo.util.prediction import meanfield_prediction
-
-    mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(scaled_input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], scaled_input[t, :])
-        mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
-
-        trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
-        _var = trans.T @ _var @ trans
-
-        var_predict.append(_var)
-        std_predict.append(np.sqrt(_var))
-
-    mu_predict = np.vstack(mu_predict)
-    var_predict = np.vstack(var_predict)
-    std_predict = np.vstack(std_predict)
+    from mimo.util.prediction import parallel_meanfield_prediction
+    mu_predict, var_predict, std_predict = parallel_meanfield_prediction(dpglms[0], input,
+                                                                         prediction=args.prediction,
+                                                                         input_scaler=input_scaler,
+                                                                         target_scaler=target_scaler)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
