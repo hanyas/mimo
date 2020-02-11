@@ -310,8 +310,8 @@ class MatrixNormalInverseWishart(Distribution):
         psi = natparam[2] - M.dot(natparam[0].T)
 
         # numerical padding here...
-        V = near_pd(V)
-        psi = near_pd(psi)
+        V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
+        psi = near_pd(psi + 1e-8 * np.eye(psi.shape[0]))
         assert np.all(0 < np.linalg.eigvalsh(psi))
         assert np.all(0 < np.linalg.eigvalsh(V))
 
@@ -491,9 +491,9 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             psi_mniw = natparam[6] - M.dot(natparam[4].T)
 
             # numerical padding here...
-            psi_niw = near_pd(psi_niw)
-            V = near_pd(V)
-            psi_mniw = near_pd(psi_mniw)
+            psi_niw = near_pd(psi_niw + 1e-8 * np.eye(psi_niw.shape[0]))
+            V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
+            psi_mniw = near_pd(psi_mniw + 1e-8 * np.eye(psi_mniw.shape[0]))
             assert np.all(0 < np.linalg.eigvalsh(psi_niw))
             assert np.all(0 < np.linalg.eigvalsh(psi_mniw))
             assert np.all(0 < np.linalg.eigvalsh(V))
