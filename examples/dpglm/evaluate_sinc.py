@@ -251,3 +251,52 @@ if __name__ == "__main__":
     plt.plot(noise(input))
 
     plt.show()
+
+
+    # plot prediction, gaussian activations and noise levels in one plot
+    from matplotlib import gridspec
+    import scipy.stats as stats
+
+    fig = plt.figure()
+    gs = gridspec.GridSpec(3, 1, height_ratios=[6, 2, 2])
+
+
+    # plot data and prediction
+    ax0 = plt.subplot(gs[0])
+
+    ax0.plot(input, mean, '--b')
+    ax0.plot(input, mean + 2 * noise(input), '--g')
+    ax0.plot(input, mean - 2 * noise(input), '--g')
+    ax0.scatter(input, target, s=0.75, c='k')
+
+    ax0.plot(input, mu_predict, '-m')
+    ax0.plot(input, mu_predict + 2 * std_predict, '-r')
+    ax0.plot(input, mu_predict - 2 * std_predict, '-r')
+
+
+    # plot gaussian activations
+    ax1 = plt.subplot(gs[1])
+    x_mu, x_sigma = [], []
+    for idx, c in enumerate(dpglms[0].components):
+        if idx in dpglms[0].used_labels:
+            mu, kappa, psi_niw, _, _, _, _, _ = c.posterior.params
+
+            mu = input_scaler.inverse_transform(np.atleast_2d(mu))
+            trans = np.sqrt(input_scaler.explained_variance_[:, None])
+            psi_niw = trans.T @ psi_niw @ trans
+
+            sigma = np.sqrt(1 / kappa * psi_niw)
+            x_mu.append(mu[0])
+            x_sigma.append(sigma[0])
+
+    for i in range(len(dpglms[0].used_labels)):
+        x = np.linspace(-10, 10, 200)
+        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+
+
+    # plot data generation noise level and estimated noise level
+    ax2 = plt.subplot(gs[2])
+    ax2.plot(std_predict)
+    ax2.plot(noise(input))
+
+    plt.show()
