@@ -4,10 +4,68 @@ from mimo import distributions
 from mimo.distributions.dirichlet import Dirichlet
 from mimo.distributions.dirichlet import StickBreaking
 
-from pathos.multiprocessing import ProcessingPool as Pool
+from pathos.pools import ProcessPool as Pool
 
 
-def meanfield_forcast(dpglm, query, horizon=1, exogenous=None,
+def kstep_error(dpglm, query, exogenous, horizon=1,
+                prediction='average', incremental=True,
+                input_scaler=None, target_scaler=None):
+
+    from sklearn.metrics import mean_squared_error, explained_variance_score
+
+    mse, evar = [], []
+    for _query, _exo in zip(query, exogenous):
+
+        _query_list, _exo_list = [], []
+        target, output = [], []
+
+        nb_steps = _query.shape[0] - horizon
+        for t in range(nb_steps):
+            _query_list.append(_query[t, :])
+            _exo_list.append(_exo[t: t + horizon, :])
+
+        hr = [horizon for _ in range(nb_steps)]
+        _output = parallel_meanfield_forcast(dpglm, _query_list, _exo_list,
+                                             hr, prediction, incremental,
+                                             input_scaler, target_scaler)
+
+        for t in range(nb_steps):
+            target.append(_query[t + horizon, :])
+            output.append(_output[t][-1, :])
+
+        target = np.vstack(target)
+        output = np.vstack(output)
+
+        _mse = mean_squared_error(target, output)
+        _evar = explained_variance_score(target, output, multioutput='variance_weighted')
+
+        mse.append(_mse)
+        evar.append(_evar)
+
+    return np.mean(mse), np.mean(evar)
+
+
+def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
+                               prediction='average', incremental=True,
+                               input_scaler=None, target_scaler=None):
+
+    assert isinstance(query, list)
+
+    nb_traj = len(query)
+
+    def _loop(n):
+        return meanfield_forcast(dpglm, query[n],
+                                 exogenous[n], horizon[n],
+                                 prediction, incremental,
+                                 input_scaler, target_scaler)
+
+    pool = Pool(processes=-1)
+    res = pool.map(_loop, range(nb_traj))
+
+    return res
+
+
+def meanfield_forcast(dpglm, query, exogenous=None, horizon=1,
                       prediction='average', incremental=True,
                       input_scaler=None, target_scaler=None):
 
@@ -43,8 +101,8 @@ def parallel_meanfield_prediction(dpglm, query,
                                     prediction, incremental,
                                     input_scaler, target_scaler)
 
-    _pool = Pool(processes=-1)
-    res = _pool.map(_loop, range(nb_data))
+    pool = Pool(processes=-1)
+    res = pool.map(_loop, range(nb_data))
 
     res = np.asarray(res).squeeze()
     mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
