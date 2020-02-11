@@ -488,7 +488,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -513,7 +513,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -663,7 +663,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -691,7 +691,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
