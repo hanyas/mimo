@@ -75,7 +75,7 @@ def create_job(kwargs):
     if args.inference == 'em':
         # Expectation Maximizaiton
         for _ in range(args.em_iters):
-            dpglm.EM_step()
+            dpglm.em_step()
 
         # EM testing prediction
         mean, var = em_prediction(dpglm, test_data, input_dim, output_dim)
