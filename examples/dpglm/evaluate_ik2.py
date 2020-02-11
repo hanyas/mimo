@@ -1,3 +1,6 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy as np
 import numpy.random as npr
 
@@ -6,7 +9,6 @@ from mimo import distributions, models
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd
 
-import os
 import argparse
 
 import matplotlib.pyplot as plt
@@ -245,14 +247,11 @@ if __name__ == "__main__":
                                       arguments=args)
 
     # predict
-    from mimo.util.prediction import meanfield_prediction
-
-    mu_predict = []
-    for t in range(len(scaled_input)):
-        _mean, _, _ = meanfield_prediction(dpglms[0], scaled_input[t, :], prediction='mode')
-        mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
-
-    mu_predict = np.vstack(mu_predict)
+    from mimo.util.prediction import parallel_meanfield_prediction
+    mu_predict, var_predict, std_predict = parallel_meanfield_prediction(dpglms[0], input,
+                                                                         prediction=args.prediction,
+                                                                         input_scaler=input_scaler,
+                                                                         target_scaler=target_scaler)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
