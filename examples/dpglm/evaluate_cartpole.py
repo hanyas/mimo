@@ -157,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default='True')
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=250, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default='True')
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
@@ -229,15 +229,16 @@ if __name__ == "__main__":
 
     from mimo.util.prediction import meanfield_forcast
 
-    prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
-                                   exogenous=test_act[0],
-                                   horizon=len(test_act[0]),
+    idx = np.random.choice(len(test_obs))
+    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
+                                   exogenous=test_act[idx],
+                                   horizon=len(test_act[idx]),
                                    incremental=True,
                                    input_scaler=input_scaler,
                                    target_scaler=target_scaler)
 
     plt.figure()
-    plt.plot(test_obs[0])
+    plt.plot(test_obs[idx])
     plt.plot(prediction)
 
     plt.show()
