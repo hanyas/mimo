@@ -1,3 +1,6 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy as np
 import numpy.random as npr
 
@@ -6,7 +9,6 @@ from mimo import distributions, models
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd
 
-import os
 import argparse
 
 import matplotlib.pyplot as plt
@@ -167,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default='True')
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--nb_train', help='size of dataset', default=10000, type=int)
 
     args = parser.parse_args()
 
@@ -199,11 +201,8 @@ if __name__ == "__main__":
     input_scaler.fit(train_input)
     target_scaler.fit(train_target)
 
-    scaled_input = input_scaler.transform(train_input)
-    scaled_target = target_scaler.transform(train_target)
-
-    scaled_train_data = {'input': scaled_input,
-                         'target': scaled_target}
+    scaled_train_data = {'input': input_scaler.transform(train_input),
+                         'target': target_scaler.transform(train_target)}
 
     # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,

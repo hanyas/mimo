@@ -152,8 +152,8 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=250, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default='True')
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default='True')
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=2500, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    env = gym.make('Pendulum-DPGLM-v1')
+    env = gym.make('Cartpole-DPGLM-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-16
@@ -188,8 +188,8 @@ if __name__ == "__main__":
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 25, 250
-    nb_test_rollouts, nb_test_steps = 10, 250
+    nb_train_rollouts, nb_train_steps = 50, 500
+    nb_test_rollouts, nb_test_steps = 10, 500
 
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
