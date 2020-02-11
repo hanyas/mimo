@@ -166,171 +166,29 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    np.random.seed(1337)
+    cwd = os.path.abspath(mimo.__file__ + '/../../datasets/')
 
-    noise = npr.normal(0, 1, 200) * 0.05
-    target = npr.uniform(0, 1, 200)
-    input = target + 0.3 * np.sin(2. * np.pi * target) + noise
-    noise, target, input = noise.reshape(-1, 1), target.reshape(-1, 1), input.reshape(-1, 1)
+    import pickle
+    import pandas as pd
+    data = pickle.load(open("C:/Users/pistl/Dropbox/MA/mimo/datasets/juggling.p", "rb"))
+    df = pd.DataFrame(data)
 
-    # plot data
-    from matplotlib import gridspec
-    fig = plt.figure()
-    gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
-    ax0 = plt.subplot(gs[0])
-    ax0.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k')
+    is_success = df['success'] == True
+    df_success = df[is_success]
 
+    df_joint_pos = df_success[['joint_pos_des']]
+    df_joint_vel = df_success[['joint_vel_des']]
 
-    # # Scaled Data
-    # from sklearn.decomposition import PCA
-    # input_scaler = PCA(n_components=1, whiten=True)
-    # target_scaler = PCA(n_components=1, whiten=True)
-    #
-    # input_scaler.fit(input)
-    # target_scaler.fit(target)
-    #
-    # scaled_input = input_scaler.transform(input)
-    # scaled_target = target_scaler.transform(target)
-    #
-    # scaled_train_data = {'input': scaled_input,
-    #                      'target': scaled_target}
+    len_trajectory = len(df_joint_pos.iloc[0, :][0][:, 0])
+    num_trajectory = len(df_joint_pos.iloc[:, 0])
+    print(num_trajectory)
 
-    train_data = {'input': input,
-                         'target': target}
+    # len_trajectory = int(len_trajectory / 10)
+    time = np.arange(len_trajectory)
 
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=train_data,
-                                      arguments=args)
-
-    # mean prediction
-    from mimo.util.prediction import meanfield_prediction
-
-    # mu_predict, var_predict, std_predict = [], [], []
-    # for t in range(len(scaled_input)):
-    #     _mean, _var, _ = meanfield_prediction(dpglms[0], scaled_input[t, :])
-    #     mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
-    #
-    #     trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
-    #     _var = trans.T @ _var @ trans
-    #
-    #     var_predict.append(_var)
-    #     std_predict.append(np.sqrt(_var))
-
-    mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], input[t, :], 'average')
-        mu_predict.append(np.atleast_2d(_mean))
-
-        var_predict.append(_var)
-        std_predict.append(np.sqrt(_var))
-
-    mu_predict = np.vstack(mu_predict)
-    var_predict = np.vstack(var_predict)
-    std_predict = np.vstack(std_predict)
-
-    from sklearn.metrics import explained_variance_score, mean_squared_error
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
-    print('MEAN PREDICTION')
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglms[0].used_labels))
-
-    # plot mean prediction
-    ax0.scatter(input, mu_predict, marker='x', c='m')
-    # plt.scatter(input, mu_predict + 2 * std_predict)
-    # plt.scatter(input, mu_predict - 2 * std_predict)
-
-
-
-
-
-    # mode prediction
-    from mimo.util.prediction import meanfield_prediction
-
-    mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], input[t, :], 'mode')
-        mu_predict.append(np.atleast_2d(_mean))
-
-        var_predict.append(_var)
-        std_predict.append(np.sqrt(_var))
-
-    mu_predict = np.vstack(mu_predict)
-    var_predict = np.vstack(var_predict)
-    std_predict = np.vstack(std_predict)
-
-    from sklearn.metrics import explained_variance_score, mean_squared_error
-
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
-    print('Mode PREDICTION')
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglms[0].used_labels))
-
-    # plot mode prediction
-    ax0.scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r')
-    # plt.scatter(input, mu_predict + 2 * std_predict)
-    # plt.scatter(input, mu_predict - 2 * std_predict)
-
-    # plot gaussian activations
-    import scipy.stats as stats
-    ax1 = plt.subplot(gs[1])
-    x_mu, x_sigma = [], []
-    for idx, c in enumerate(dpglms[0].components):
-        if idx in dpglms[0].used_labels:
-            mu, kappa, psi_niw, _, _, _, _, _ = c.posterior.params
-
-            sigma = np.sqrt(1 / kappa * psi_niw)
-            x_mu.append(mu[0])
-            x_sigma.append(sigma[0])
-
-    for i in range(len(dpglms[0].used_labels)):
-        x = np.linspace(0, 1, 200)
-        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
-
+    select_joint = 3
+    for i in range(int(num_trajectory)):
+        iter_joint_pos = df_joint_pos.iloc[i, :][0][:len_trajectory, select_joint]
+        plt.plot(time, iter_joint_pos)
     plt.show()
 
-
-
-
-    # get mean of matrix-normal for plotting experts
-    x_mu, x_sigma, regcoeff = [], [], []
-    for idx, c in enumerate(dpglms[0].components):
-        if idx in dpglms[0].used_labels:
-            _,_, _ , _, M, _, _, _ = c.posterior.params
-            regcoeff.append(M)
-
-    axis = np.linspace(0, 1, 500).reshape(-1, 1)
-
-    # plot three experts
-    plt.figure()
-    mu_predict = []
-    for t in range(len(axis)):
-        q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[0] @ q).tolist()
-        mu_predict.append(_mu_predict )
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='y')
-
-    mu_predict = []
-    for t in range(len(axis)):
-        q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[1] @ q).tolist()
-        mu_predict.append(_mu_predict )
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='b')
-
-    mu_predict = []
-    for t in range(len(axis)):
-        q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[2] @ q).tolist()
-        mu_predict.append(_mu_predict )
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='g')
-
-    # plot data
-    plt.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k')
-
-    plt.show()
