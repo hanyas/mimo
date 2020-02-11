@@ -61,15 +61,18 @@ class Wishart(Distribution):
         return self.nu * self.psi
 
     def mode(self):
-        return (self.nu - self.dim - 1) * self.psi
+        if self.nu >= (self.dim + 1):
+            return (self.nu - self.dim - 1) * self.psi
+        else:
+            return NotImplementedError
 
     def log_likelihood(self, x):
-        x_det = np.linalg.det(x)
+        xdet = np.linalg.det(x)
 
         loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
                  - 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
                  - multigammaln(self.nu / 2., self.dim)\
-                 + 0.5 * (self.nu - self.dim - 1) * np.log(x_det)\
+                 + 0.5 * (self.nu - self.dim - 1) * np.log(xdet)\
                  - 0.5 * np.trace(sc.linalg.solve(self.psi, x))
 
         return loglik
@@ -132,18 +135,21 @@ class InverseWishart(Distribution):
         return np.dot(T, T.T)
 
     def mean(self):
-        return self.psi / (self.nu - self.dim - 1.)
+        if self.nu > (self.dim + 1):
+            return self.psi / (self.nu - self.dim - 1.)
+        else:
+            return NotImplementedError
 
     def mode(self):
         return self.psi / (self.nu + self.dim + 1.)
 
     def log_likelihood(self, x):
-        x_det = np.linalg.det(x)
+        xdet = np.linalg.det(x)
 
         loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
                  + 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
                  - multigammaln(self.nu / 2., self.dim)\
-                 - 0.5 * (self.nu + self.dim + 1) * np.log(x_det)\
+                 - 0.5 * (self.nu + self.dim + 1) * np.log(xdet)\
                  - 0.5 * np.trace(self.psi @ np.linalg.inv(x))
 
         return loglik
