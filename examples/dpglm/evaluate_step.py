@@ -167,7 +167,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     np.random.seed(1337)
-    
+
     # create data
     n_train = 160
     noise_std = 0.02
@@ -230,17 +230,16 @@ if __name__ == "__main__":
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
     mse = mean_squared_error(mu_predict, target)
-
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 
     # plot prediction
-    ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=0)
-    ax0.plot(input, mu_predict - 2 * std_predict, '-b', zorder=0)
-    ax0.plot(input, mu_predict, '-r', zorder=5)
+    ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
+    ax0.plot(input, mu_predict - 2 * std_predict, '-b', zorder=5)
+    ax0.plot(input, mu_predict, '-r', zorder=10)
     # plt.scatter(input, target, marker="o", facecolors='none', edgecolors='grey', zorder=10)
-    plt.scatter(input, target, s=0.75, color="black", zorder=10)
+    plt.scatter(input, target, s=0.75, color="black", zorder=0)
 
     # plot gaussian activations
     import scipy.stats as stats
@@ -263,7 +262,7 @@ if __name__ == "__main__":
 
     for i in range(len(dpglms[0].used_labels)):
         x = np.linspace(-2, 2, 100)
-        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]), '-k')
+        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
 
     # set working directory
     os.chdir(args.evalpath)
