@@ -15,6 +15,8 @@ from joblib import Parallel, delayed
 import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
+# import seaborn as sns
+# sns.set()
 
 def create_job(kwargs):
     train_data = kwargs.pop('train_data')
