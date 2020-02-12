@@ -15,8 +15,6 @@ from joblib import Parallel, delayed
 import multiprocessing
 nb_cores = multiprocessing.cpu_count()
 
-# import seaborn as sns
-# sns.set()
 
 def create_job(kwargs):
     train_data = kwargs.pop('train_data')
@@ -148,10 +146,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation_uai2020'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=25000, type=float)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=20, type=int)
     parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
     parser.add_argument('--super_iters', help='Set interleaving Gibbs/VI iterations', default=1, type=int)
@@ -168,10 +166,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    np.random.seed(2)
-
-    n_train = 200
-    noise_std = 0.01
+    np.random.seed(1337)
+    
+    # create data
+    n_train = 160
+    noise_std = 0.02
     input1 = np.linspace(-2., -1, int(n_train / 4)).reshape(int(n_train / 4), 1)
     input2 = np.linspace(-1., 0, int(n_train / 4)).reshape(int(n_train / 4), 1)
     input3 = np.linspace(0, 1., int(n_train / 4)).reshape(int(n_train / 4), 1)
@@ -184,14 +183,12 @@ if __name__ == "__main__":
     noise = npr.normal(0, noise_std, n_train).reshape(n_train, 1)
     target = mean + noise
 
+    # create gridspec plot
     from matplotlib import gridspec
     fig = plt.figure()
     gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
     ax0 = plt.subplot(gs[0])
-    ax0.plot(input, mean, '--b')
-    # plt.plot(input, mean + 2 * noise, '--g')
-    # plt.plot(input, mean - 2 * noise, '--g')
-    ax0.scatter(input, target, s=0.75, c='k')
+    plt.ylabel('y')
 
     # Scaled Data
     from sklearn.decomposition import PCA
@@ -229,6 +226,7 @@ if __name__ == "__main__":
     var_predict = np.vstack(var_predict)
     std_predict = np.vstack(std_predict)
 
+    # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
     mse = mean_squared_error(mu_predict, target)
@@ -237,13 +235,19 @@ if __name__ == "__main__":
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 
-    ax0.plot(input, mu_predict, '-m')
-    ax0.plot(input, mu_predict + 2 * std_predict, '-r')
-    ax0.plot(input, mu_predict - 2 * std_predict, '-r')
+    # plot prediction
+    ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=0)
+    ax0.plot(input, mu_predict - 2 * std_predict, '-b', zorder=0)
+    ax0.plot(input, mu_predict, '-r', zorder=5)
+    # plt.scatter(input, target, marker="o", facecolors='none', edgecolors='grey', zorder=10)
+    plt.scatter(input, target, s=0.75, color="black", zorder=10)
 
     # plot gaussian activations
     import scipy.stats as stats
-    ax2 = plt.subplot(gs[1])
+    ax1 = plt.subplot(gs[1])
+    plt.xlabel('x')
+    plt.ylabel('p(x)')
+
     x_mu, x_sigma = [], []
     for idx, c in enumerate(dpglms[0].components):
         if idx in dpglms[0].used_labels:
@@ -259,10 +263,16 @@ if __name__ == "__main__":
 
     for i in range(len(dpglms[0].used_labels)):
         x = np.linspace(-2, 2, 100)
-        ax2.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]), '-k')
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'step'
+
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '.tex')
+    plt.savefig(path + dataset + '.pdf')
+
     plt.show()
-    #
-    # plt.figure()
-    # plt.plot(std_predict)
-    # plt.plot(noise)
-    # plt.show()
