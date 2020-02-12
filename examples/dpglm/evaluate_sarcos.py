@@ -23,15 +23,19 @@ def create_job(kwargs):
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
 
-    input = train_data['input']
-    target = train_data['target']
-    data = np.hstack((input, target))
+    total_input, total_target = [], []
+    for _data in train_data:
+        total_input.append(_data['input'])
+        total_target.append(_data['target'])
 
-    input_dim = input.shape[-1]
-    target_dim = target.shape[-1]
+    total_input = np.vstack(total_input)
+    total_target = np.vstack(total_target)
+
+    input_dim = total_input.shape[-1]
+    target_dim = total_target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
@@ -40,12 +44,12 @@ def create_job(kwargs):
     components_prior = []
     if args.kmeans:
         from sklearn.cluster import KMeans
-        km = KMeans(args.nb_models).fit(np.hstack((input, target)))
+        km = KMeans(args.nb_models).fit(np.hstack((total_input, total_target)))
 
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            _psi_input = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            _psi_input = np.cov(total_input[km.labels_ == n], bias=False, rowvar=False)
             psi_input = near_pd(np.atleast_2d(_psi_input))
             kappa = 1e-2
 
@@ -65,8 +69,8 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
+        mu_low = np.min(total_input, axis=0)
+        mu_high = np.max(total_input, axis=0)
         psi_niw = 1e0
         kappa = 1e-2
 
@@ -101,35 +105,41 @@ def create_job(kwargs):
     else:
         dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
-    dpglm.add_data(data)
 
-    for _ in range(args.super_iters):
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
+    for n in range(len(train_data)):
+        data = np.hstack((train_data[n]['input'], train_data[n]['target']))
+        dpglm.add_data(data)
 
-        # Gibbs sampling
-        print("Gibbs Sampling")
-        for _ in gibbs_iter:
-            dpglm.resample_model()
+        for _ in range(args.super_iters):
+            gibbs_iter = range(args.gibbs_iters) if not args.verbose\
+                else progprint_xrange(args.gibbs_iters)
 
-        if not args.stochastic:
-            # Meanfield VI
-            print("Variational Inference")
-            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
-        else:
-            svi_iters = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
+            # Gibbs sampling
+            if args.verbose:
+                print("Gibbs Sampling")
+            for _ in gibbs_iter:
+                dpglm.resample_model()
 
-            # Stochastic meanfield VI
-            print('Stochastic Variational Inference')
-            batch_size = args.svi_batchsize
-            prob = batch_size / float(len(data))
-            for _ in svi_iters:
-                minibatch = npr.permutation(len(data))[:batch_size]
-                dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
-                                        prob=prob, stepsize=args.svi_stepsize)
+            if not args.stochastic:
+                # Meanfield VI
+                if args.verbose:
+                    print("Variational Inference")
+                dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+                                                   maxiter=args.meanfield_iters,
+                                                   progprint=args.verbose)
+            else:
+                svi_iters = range(args.gibbs_iters) if not args.verbose\
+                    else progprint_xrange(args.svi_iters)
+
+                # Stochastic meanfield VI
+                if args.verbose:
+                    print('Stochastic Variational Inference')
+                batch_size = args.svi_batchsize
+                prob = batch_size / float(len(data))
+                for _ in svi_iters:
+                    minibatch = npr.permutation(len(data))[:batch_size]
+                    dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
+                                            prob=prob, stepsize=args.svi_stepsize)
 
     return dpglm
 
@@ -153,23 +163,24 @@ if __name__ == "__main__":
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=500, type=int)
-    parser.add_argument('--affine', help='affine functions', action='store_true', default='True')
+    parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=500, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default='True')
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=5000, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
+    parser.add_argument('--svi_batchsize', help='svi batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default='True')
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default='True')
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of dataset', default=10000, type=int)
+    parser.add_argument('--nb_train', help='size of dataset', default=40000, type=int)
+    parser.add_argument('--nb_splits', help='number of data splits', default=8, type=int)
 
     args = parser.parse_args()
 
@@ -179,19 +190,21 @@ if __name__ == "__main__":
     from scipy import io
 
     # training data
-    train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
-
     nb_train = args.nb_train
-    train_choice = np.random.choice(len(train_data), nb_train)
-    train_input, train_target = train_data[train_choice, :21], train_data[train_choice, 21:22]
 
-    train_data = {'input': train_input, 'target': train_target}
+    train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
+    train_input, train_target = train_data[:nb_train, :21], train_data[:nb_train, 21:22]
+
+    nb_subset = int(args.nb_train / args.nb_splits)
+
+    train_input_sets, train_target_sets = [], []
+    for i in range(args.nb_splits):
+        train_input_sets.append(train_input[i * nb_subset: (i + 1) * nb_subset, :])
+        train_target_sets.append(train_target[i * nb_subset: (i + 1) * nb_subset, :])
 
     # test data
     test_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
-
-    test_choice = np.random.choice(len(test_data), len(test_data))
-    test_input, test_target = test_data[test_choice, :21], test_data[test_choice, 21:22]
+    test_input, test_target = test_data[:1000, :21], test_data[:1000, 21:22]
 
     # scale training data
     from sklearn.decomposition import PCA
@@ -201,38 +214,39 @@ if __name__ == "__main__":
     input_scaler.fit(train_input)
     target_scaler.fit(train_target)
 
-    scaled_train_data = {'input': input_scaler.transform(train_input),
-                         'target': target_scaler.transform(train_target)}
+    scaled_train_datasets = []
+    for n in range(args.nb_splits):
+        scaled_train_datasets.append({'input': input_scaler.transform(train_input_sets[n]),
+                                      'target': target_scaler.transform(train_target_sets[n])})
 
     # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=scaled_train_data,
+                                      train_data=scaled_train_datasets,
                                       arguments=args)
 
     from mimo.util.prediction import parallel_meanfield_prediction
     from sklearn.metrics import explained_variance_score, mean_squared_error
 
-    # predict on train data
-    train_predict, _, _ = parallel_meanfield_prediction(dpglms[0], train_input,
-                                                        prediction=args.prediction,
-                                                        input_scaler=input_scaler,
-                                                        target_scaler=target_scaler)
+    # # predict on train data
+    # train_predict, _, _ = parallel_meanfield_prediction(dpglms[0], train_input,
+    #                                                     prediction=args.prediction,
+    #                                                     input_scaler=input_scaler,
+    #                                                     target_scaler=target_scaler)
+    #
+    # train_evar = explained_variance_score(train_predict, train_target)
+    # train_mse = mean_squared_error(train_predict, train_target)
+    # train_smse = train_mse / np.var(train_target, axis=0)
+    #
+    # print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse, 'SMSE:', train_smse, 'Compnents:', len(dpglms[0].used_labels))
 
-    train_evar = explained_variance_score(train_predict, train_target)
-    train_mse = mean_squared_error(train_predict, train_target)
-    train_smse = train_mse / np.var(train_target, axis=0)
-
-    print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse, 'SMSE:', train_smse, 'Compnents:', len(dpglms[0].used_labels))
-
-    # predict on test data
-    test_predict, _, _ = parallel_meanfield_prediction(dpglms[0], test_input,
-                                                       prediction=args.prediction,
-                                                       input_scaler=input_scaler,
-                                                       target_scaler=target_scaler)
-
-    test_evar = explained_variance_score(test_predict, test_target)
-    test_mse = mean_squared_error(test_predict, test_target)
-    test_smse = test_mse / np.var(test_target, axis=0)
-
-    print('TEST - EVAR:', test_evar, 'MSE:', test_mse, 'SMSE:', test_smse, 'Compnents:', len(dpglms[0].used_labels))
-
+    # # predict on test data
+    # test_predict, _, _ = parallel_meanfield_prediction(dpglms[0], test_input,
+    #                                                    prediction=args.prediction,
+    #                                                    input_scaler=input_scaler,
+    #                                                    target_scaler=target_scaler)
+    #
+    # test_evar = explained_variance_score(test_predict, test_target)
+    # test_mse = mean_squared_error(test_predict, test_target)
+    # test_smse = test_mse / np.var(test_target, axis=0)
+    #
+    # print('TEST - EVAR:', test_evar, 'MSE:', test_mse, 'SMSE:', test_smse, 'Compnents:', len(dpglms[0].used_labels))
