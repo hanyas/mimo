@@ -332,8 +332,6 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
 
     @property
     def num_parameters(self):
-        # NOTE: scikit.learn's gmm.py doesn't count the weights in the number of
-        # parameters, but I don't know why they wouldn't. Some convention?
         return sum(c.num_parameters for c in self.components) + self.gating.num_parameters
 
     def bic(self, data=None):
@@ -345,8 +343,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         # maximum likelihood parameters (or, of course, an EM fixed-point as an
         # approximation!)
         if data is None:
-            assert len(self.labels_list) > 0,\
-                "If not passing in data, the class must already have it. Use the method add_data()"
+            assert len(self.labels_list) > 0, "No data available"
             return -2 * sum(self.log_likelihood(l.data) for l in self.labels_list)\
                    + self.num_parameters * np.log(sum(l.data.shape[0] for l in self.labels_list))
         else:

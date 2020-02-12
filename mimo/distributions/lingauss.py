@@ -159,6 +159,15 @@ class LinearGaussianWithNoisyInputs(Distribution):
         self.mu, self.sigma_niw, self.A, self.sigma = values
 
     @property
+    def num_parameters(self):
+        _num_out = self.dout + self.dout * (self.dout + 1) / 2
+        _num_in = self.din + self.din * (self.din + 1) / 2
+        _num = _num_out + _num_in
+        if self.affine:
+            _num += self.dout
+        return _num
+
+    @property
     def din(self):
         # input dimension, intercept excluded
         if self.affine:
