@@ -48,7 +48,7 @@ def sample_env(env, nb_rollouts, nb_steps,
 
 def load_data(n_train, n_test, keyword, dir, output_dim, input_dim, sarcos, seed=1337):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     os.chdir(dir)
     data = np.genfromtxt(keyword, dtype=None, encoding=None, delimiter=",")
@@ -107,7 +107,7 @@ def trajectory_data(data, output_dim, input_dim, traj_trick):
 
 def generate_linear(n_train, input_dim, output_dim, shuffle=False, seed=1337):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     data = np.zeros((n_train, input_dim + output_dim))
     step = 1 / n_train
@@ -122,7 +122,7 @@ def generate_linear(n_train, input_dim, output_dim, shuffle=False, seed=1337):
 
 def generate_cmb(seed=1337, shuffle=True, csv=False):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
     data = np.genfromtxt("datasets/cmb.csv", dtype=None, encoding=None, usecols=(0, 1))
@@ -141,7 +141,7 @@ def generate_cmb(seed=1337, shuffle=True, csv=False):
 def generate_sine(n_train, input_dim, output_dim, freq,
                   shuffle=False, seed=1337, csv=False):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # create sin data
     data = np.zeros((n_train, input_dim + output_dim))
@@ -269,7 +269,7 @@ def generate_kinematics(n_train=None, output_dim=2, num_joints=None,
     assert output_dim >= 2
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # transform degree to rad
     scale_noise = scale_noise * 2. * np.pi / 360.
@@ -339,7 +339,7 @@ def generate_heaviside(n_train):
 
 def generate_noisy_heaviside(n_train, scaling=1., seed=1337):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # create data from heaviside function
     def f(x, w):
@@ -359,7 +359,7 @@ def generate_noisy_heaviside(n_train, scaling=1., seed=1337):
 
 def generate_noisy_step(n_train, scaling=1., seed=1337):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # create data from heaviside function
     def f(x, w):
@@ -392,7 +392,7 @@ def generate_noisy_step(n_train, scaling=1., seed=1337):
 
 def generate_gaussian(n_train, output_dim, input_dim, seed=1337):
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     _A = 1. * npr.randn(output_dim, input_dim)
     dist = distributions.LinearGaussian(A=_A, sigma=25e-2 * np.eye(output_dim), affine=False)
@@ -403,7 +403,7 @@ def generate_gaussian(n_train, output_dim, input_dim, seed=1337):
 def generate_sarcos(n_train, n_test, input_dim, output_dim,
                     seed=None, all=False, shuffle=False):
     # set seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # load Sarcos data from https://www.ias.informatik.tu-darmstadt.de/Miscellaneous/Miscellaneous
     if not all:
@@ -433,7 +433,7 @@ def generate_sarcos(n_train, n_test, input_dim, output_dim,
 def generate_barrett(n_train, n_test, input_dim, output_dim,
                     seed=None, all=False, shuffle=False):
     # set seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # load Sarcos data from https://www.ias.informatik.tu-darmstadt.de/Miscellaneous/Miscellaneous
     if not all:
@@ -470,7 +470,7 @@ def generate_goldberg(n_train, input_dim, output_dim):
         scale = 0.5 + xvals[i]
         noise = npr.normal(0, scale, 1)
 
-        yval = 2 * np.sin (2 * np.pi * (xvals[i])) + noise
+        yval = 2 * np.sin(2 * np.pi * (xvals[i])) + noise
 
         data[i, 0] = xvals[i]
         data[i, 1] = yval
