@@ -75,11 +75,11 @@ class Gaussian(Distribution):
 
     def log_partition(self):
         return 0.5 * self.dim * np.log(2. * np.pi)\
-               + np.trace(np.log(self.sigma_chol))
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def entropy(self):
-        return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim
-                      + 2. * np.sum(np.log(np.diag(self.sigma_chol))))
+        return 0.5 * self.dim * np.log(2. * np.pi) + self.dim\
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def plot(self, ax=None, data=None, color='b', label='', alpha=1., update=False, draw=True):
 

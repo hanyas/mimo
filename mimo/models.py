@@ -313,7 +313,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         self.gating.meanfield_sgdstep(None, [l.r for l in mb_labels_list], prob, stepsize)
 
     # EM
-    def EM_step(self):
+    def em_step(self):
         # assert all(isinstance(c,MaxLikelihood) for c in self.components), \
         #         'Components must implement MaxLikelihood'
         assert len(self.labels_list) > 0, 'Must have data to run EM'
@@ -336,7 +336,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         # parameters, but I don't know why they wouldn't. Some convention?
         return sum(c.num_parameters for c in self.components) + self.gating.num_parameters
 
-    def BIC(self, data=None):
+    def bic(self, data=None):
         """
         BIC on the passed data.
         If passed data is None (default), calculates BIC on the model's assigned data.
@@ -352,7 +352,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         else:
             return -2 * self.log_likelihood(data) + self.num_parameters * np.log(data.shape[0])
 
-    def AIC(self):
+    def aic(self):
         # NOTE: in principle this method computes the AIC only after finding the
         # maximum likelihood parameters (or, of course, an EM fixed-point as an
         # approximation!)
