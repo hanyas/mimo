@@ -14,6 +14,7 @@ from mimo.distributions import LinearGaussian, LinearGaussianWithNoisyInputs
 from scipy.special import digamma, gammaln, betaln
 from numpy.core.umath_tests import inner1d
 from mimo.util.general import blockarray
+from mimo.util.general import near_pd
 
 
 class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
@@ -487,7 +488,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -512,7 +513,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -643,9 +644,9 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
         # this SVD is necessary to check if the max likelihood solution is
         # degenerate, which can happen in the EM algorithm
-        if n_niw < self.dim or np.sum(np.linalg.svd(xxT_niw, compute_uv=False) > 1e-6) < self.dim:
-            self.mu = 99999999 * np.ones(self.dim)
-            self.sigma_niw = np.eye(self.dim)
+        if n_niw < self.din or np.sum(np.linalg.svd(xxT_niw, compute_uv=False) > 1e-6) < self.din:
+            self.mu = 99999999 * np.ones(self.din)
+            self.sigma_niw = np.eye(self.din)
         else:
             self.mu = x_niw / n_niw
             self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
@@ -662,7 +663,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-8 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -690,7 +691,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -739,8 +740,8 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
     def _loglmbdatilde(self):
         # see Eq. 10.65 in Bishop
-        return np.sum(digamma((self.posterior.invwishart_niw.nu - np.arange(self.dim)) / 2.)) \
-               + self.dim * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart_niw.psi_chol)))
+        return np.sum(digamma((self.posterior.invwishart_niw.nu - np.arange(self.din)) / 2.)) \
+               + self.din * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart_niw.psi_chol)))
 
     def get_vlb(self):
         _, _, _, _, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
@@ -754,18 +755,18 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         loglmbdatilde = self._loglmbdatilde()
 
         # see Eq. 10.77 in Bishop
-        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.))
+        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.din * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.))
                             - self.posterior.invwishart_niw.entropy())
 
         # see Eq. 10.74 in Bishop, we aren't summing over K
-        p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
-                           - self.dim * self.prior.kappa / self.posterior.kappa
+        p_avgengy = 0.5 * (self.din * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
+                           - self.din * self.prior.kappa / self.posterior.kappa
                            - self.prior.kappa * self.posterior.invwishart_niw.nu
                            * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
                                     np.linalg.solve(self.posterior.invwishart_niw.psi,
                                                     self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
                     - self.prior.invwishart_niw.log_partition() \
-                    + (self.prior.invwishart_niw.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart_niw.nu \
+                    + (self.prior.invwishart_niw.nu - self.din - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart_niw.nu \
                     * np.linalg.solve(self.posterior.invwishart_niw.psi, self.prior.invwishart_niw.psi).trace()
 
         return aux - logpart_diff + q_entropy + p_avgengy
@@ -801,13 +802,13 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             out -= x.dot(E_AT_Sigmainv_b)
             out -= 1. / 2 * E_bT_Sigmainv_b
 
-        x = np.reshape(x, (-1, self.dim)) - self.posterior.gaussian.mu
+        x = np.reshape(x, (-1, self.din)) - self.posterior.gaussian.mu
         xs = np.linalg.solve(self.posterior.invwishart_niw.psi_chol, x.T)
 
         # see Eqs. 10.64, 10.67, and 10.71 in Bishop
         # sneaky gaussian/quadratic identity hidden here
-        out2 = 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa)\
+        out2 = 0.5 * self._loglmbdatilde() - self.din / (2. * self.posterior.kappa)\
                - self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T)\
-               - self.dim / 2. * np.log(2. * np.pi)
+               - self.din / 2. * np.log(2. * np.pi)
 
         return out + out2
