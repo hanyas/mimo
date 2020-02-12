@@ -31,7 +31,7 @@ def create_job(kwargs):
     target_dim = target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    nb_samples = 5000
+    nb_samples = 500
     input = np.linspace(-10., 10., nb_samples).reshape(nb_samples, 1)
     noise = lambda x: 0.05 + 0.2 * (1. + np.sin(2. * x)) / (1. + np.exp(-0.2 * x))
     target = np.sinc(input) + noise(input) * np.random.randn(len(input), 1)
@@ -252,14 +252,12 @@ if __name__ == "__main__":
 
     plt.show()
 
-
     # plot prediction, gaussian activations and noise levels in one plot
     from matplotlib import gridspec
     import scipy.stats as stats
 
     fig = plt.figure()
     gs = gridspec.GridSpec(3, 1, height_ratios=[6, 2, 2])
-
 
     # plot data and prediction
     ax0 = plt.subplot(gs[0])
@@ -272,7 +270,6 @@ if __name__ == "__main__":
     ax0.plot(input, mu_predict, '-m')
     ax0.plot(input, mu_predict + 2 * std_predict, '-r')
     ax0.plot(input, mu_predict - 2 * std_predict, '-r')
-
 
     # plot gaussian activations
     ax1 = plt.subplot(gs[1])
@@ -292,7 +289,6 @@ if __name__ == "__main__":
     for i in range(len(dpglms[0].used_labels)):
         x = np.linspace(-10, 10, 200)
         ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
-
 
     # plot data generation noise level and estimated noise level
     ax2 = plt.subplot(gs[2])
