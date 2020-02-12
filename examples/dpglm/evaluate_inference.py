@@ -23,7 +23,7 @@ from pathlib import Path
 start = timeit.default_timer()
 # set random seed
 seed = None
-np.random.seed(seed=seed)
+np.random.seed(seed)
 # set repo path
 dir = str(Path(os.path.abspath(os.path.dirname(__file__))).parent.parent)
 

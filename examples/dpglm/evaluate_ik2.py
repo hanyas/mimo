@@ -21,7 +21,7 @@ nb_cores = multiprocessing.cpu_count()
 def generate_2d_kinematics(grid=(10, 10), l1=1., l2=1., seed=1337):
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     # joint angles
     q1 = np.linspace(0., np.pi, grid[0])
@@ -49,7 +49,7 @@ def create_job(kwargs):
     target_dim = target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:

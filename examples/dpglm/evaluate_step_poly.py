@@ -1,3 +1,6 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy as np
 import numpy.random as npr
 
@@ -6,7 +9,6 @@ from mimo import distributions, models
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd
 
-import os
 import argparse
 
 import matplotlib.pyplot as plt
@@ -29,7 +31,7 @@ def create_job(kwargs):
     target_dim = target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:

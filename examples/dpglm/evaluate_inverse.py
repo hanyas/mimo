@@ -29,7 +29,7 @@ def create_job(kwargs):
     target_dim = target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
