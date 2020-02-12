@@ -29,6 +29,10 @@ class Gaussian(Distribution):
         self.mu, self.sigma = values
 
     @property
+    def num_parameters(self):
+        return self.dim + self.dim * (self.dim + 1) / 2
+
+    @property
     def dim(self):
         return self.mu.shape[0]
 
@@ -108,6 +112,10 @@ class DiagonalGaussian(Gaussian):
         self._sigma_chol = None
 
         super(DiagonalGaussian, self).__init__(mu=mu, sigma=self.sigma)
+
+    @property
+    def num_parameters(self):
+        return self.dim + self.dim
 
     @property
     def sigma(self):

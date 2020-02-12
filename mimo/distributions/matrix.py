@@ -29,6 +29,11 @@ class MatrixNormal(Distribution):
         self.M, self.U, self.V = values
 
     @property
+    def num_parameters(self):
+        _num = self.dcol * self.drow
+        return _num + _num * (_num + 1) / 2
+
+    @property
     def dcol(self):
         return self.M.shape[1]
 
