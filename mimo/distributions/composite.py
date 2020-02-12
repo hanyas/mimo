@@ -8,7 +8,7 @@ from mimo.distributions import MatrixNormal
 
 from scipy.special import multigammaln, digamma, gammaln
 
-from mimo.util.general import blockarray, inv_psd
+from mimo.util.general import blockarray, inv_psd, near_pd
 
 
 class NormalInverseWishart(Distribution):
@@ -310,8 +310,8 @@ class MatrixNormalInverseWishart(Distribution):
         psi = natparam[2] - M.dot(natparam[0].T)
 
         # numerical padding here...
-        V += 1e-8 * np.eye(V.shape[0])
-        psi += 1e-8 * np.eye(psi.shape[0])
+        V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
+        psi = near_pd(psi + 1e-8 * np.eye(psi.shape[0]))
         assert np.all(0 < np.linalg.eigvalsh(psi))
         assert np.all(0 < np.linalg.eigvalsh(V))
 
@@ -428,10 +428,12 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
                    + self.invwishart_mniw.log_likelihood(sigma_mniw)
 
         def mean(self):
-            return tuple([self.gaussian.mean(), self.invwishart_niw.mean(), self.matnorm.mean(), self.invwishart_mniw.mean()])
+            return tuple([self.gaussian.mean(), self.invwishart_niw.mean(),
+                          self.matnorm.mean(), self.invwishart_mniw.mean()])
 
         def mode(self):
-            return tuple([self.gaussian.mode(), self.invwishart_niw.mode(), self.matnorm.mode(), self.invwishart_mniw.mode()])
+            return tuple([self.gaussian.mode(), self.invwishart_niw.mode(),
+                          self.matnorm.mode(), self.invwishart_mniw.mode()])
 
         def log_partition(self):
             return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2)\
@@ -451,6 +453,7 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         def nat_param(self):
             return self._standard_to_nat(self.gaussian.mu, self.kappa, self.invwishart_niw.psi, self.invwishart_niw.nu,
                                          self.matnorm.M, self.matnorm.V, self.invwishart_mniw.psi, self.invwishart_mniw.nu)
+
         @nat_param.setter
         def nat_param(self, natparam):
             self.gaussian.mu, self.kappa, \
@@ -488,8 +491,10 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
             psi_mniw = natparam[6] - M.dot(natparam[4].T)
 
             # numerical padding here...
-            V += 1e-8 * np.eye(V.shape[0])
-            psi_mniw += 1e-8 * np.eye(psi_mniw.shape[0])
+            psi_niw = near_pd(psi_niw + 1e-8 * np.eye(psi_niw.shape[0]))
+            V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
+            psi_mniw = near_pd(psi_mniw + 1e-8 * np.eye(psi_mniw.shape[0]))
+            assert np.all(0 < np.linalg.eigvalsh(psi_niw))
             assert np.all(0 < np.linalg.eigvalsh(psi_mniw))
             assert np.all(0 < np.linalg.eigvalsh(V))
 

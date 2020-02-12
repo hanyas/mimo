@@ -35,7 +35,7 @@ gmm.add_data(data)
 
 print('Expecation Maximization')
 for _ in progprint_xrange(2500):
-    gmm.EM_step()
+    gmm.em_step()
 
 plt.figure()
 gmm.plot()
