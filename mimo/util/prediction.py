@@ -11,9 +11,9 @@ def kstep_error(dpglm, query, exogenous, horizon=1,
                 prediction='average', incremental=True,
                 input_scaler=None, target_scaler=None):
 
-    from sklearn.metrics import mean_squared_error, explained_variance_score
+    from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score
 
-    mse, evar = [], []
+    mse, smse, evar = [], [], []
     for _query, _exo in zip(query, exogenous):
 
         _query_list, _exo_list = [], []
@@ -37,12 +37,14 @@ def kstep_error(dpglm, query, exogenous, horizon=1,
         output = np.vstack(output)
 
         _mse = mean_squared_error(target, output)
-        _evar = explained_variance_score(target, output, multioutput='variance_weighted')
+        _smse = 1. - r2_score(target, output)
+        _evar = explained_variance_score(target, output)
 
         mse.append(_mse)
+        smse.append(_smse)
         evar.append(_evar)
 
-    return np.mean(mse), np.mean(evar)
+    return np.mean(mse), np.mean(smse), np.mean(evar)
 
 
 def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
@@ -61,6 +63,8 @@ def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
 
     pool = Pool(processes=-1)
     res = pool.map(_loop, range(nb_traj))
+    pool.close()
+    pool.clear()
 
     return res
 
@@ -103,6 +107,8 @@ def parallel_meanfield_prediction(dpglm, query,
 
     pool = Pool(processes=-1)
     res = pool.map(_loop, range(nb_data))
+    pool.close()
+    pool.clear()
 
     res = np.asarray(res).squeeze()
     mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
