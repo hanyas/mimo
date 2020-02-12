@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation_uai2020'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
@@ -168,18 +168,19 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
+    # create data
     noise = npr.normal(0, 1, 200) * 0.05
     target = npr.uniform(0, 1, 200)
     input = target + 0.3 * np.sin(2. * np.pi * target) + noise
     noise, target, input = noise.reshape(-1, 1), target.reshape(-1, 1), input.reshape(-1, 1)
 
-    # plot data
+    # creat plot for mean vs mode prediction and gaussian activations
     from matplotlib import gridspec
     fig = plt.figure()
     gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
     ax0 = plt.subplot(gs[0])
-    ax0.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k')
-
+    ax0.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k', linewidth=0.5)
+    plt.ylabel('y')
 
     # # Scaled Data
     # from sklearn.decomposition import PCA
@@ -220,7 +221,6 @@ if __name__ == "__main__":
     for t in range(len(input)):
         _mean, _var, _ = meanfield_prediction(dpglms[0], input[t, :], 'average')
         mu_predict.append(np.atleast_2d(_mean))
-
         var_predict.append(_var)
         std_predict.append(np.sqrt(_var))
 
@@ -228,20 +228,18 @@ if __name__ == "__main__":
     var_predict = np.vstack(var_predict)
     std_predict = np.vstack(std_predict)
 
+    # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
     mse = mean_squared_error(mu_predict, target)
-
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
     print('MEAN PREDICTION')
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglms[0].used_labels))
 
-    # plot mean prediction
-    ax0.scatter(input, mu_predict, marker='x', c='m')
+    # plot mean prediction (without standard deviations)
+    ax0.scatter(input, mu_predict, marker='x', c='b', linewidth=0.5)
     # plt.scatter(input, mu_predict + 2 * std_predict)
     # plt.scatter(input, mu_predict - 2 * std_predict)
-
-
 
 
 
@@ -252,7 +250,6 @@ if __name__ == "__main__":
     for t in range(len(input)):
         _mean, _var, _ = meanfield_prediction(dpglms[0], input[t, :], 'mode')
         mu_predict.append(np.atleast_2d(_mean))
-
         var_predict.append(_var)
         std_predict.append(np.sqrt(_var))
 
@@ -260,17 +257,17 @@ if __name__ == "__main__":
     var_predict = np.vstack(var_predict)
     std_predict = np.vstack(std_predict)
 
+    # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
 
     evar = explained_variance_score(mu_predict, target)
     mse = mean_squared_error(mu_predict, target)
-
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
     print('Mode PREDICTION')
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglms[0].used_labels))
 
-    # plot mode prediction
-    ax0.scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r')
+    # plot mode prediction without standard deviations
+    ax0.scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
     # plt.scatter(input, mu_predict + 2 * std_predict)
     # plt.scatter(input, mu_predict - 2 * std_predict)
 
@@ -286,10 +283,23 @@ if __name__ == "__main__":
             x_mu.append(mu[0])
             x_sigma.append(sigma[0])
 
+    colours = ['green', 'orange', 'purple']
     for i in range(len(dpglms[0].used_labels)):
         x = np.linspace(0, 1, 200)
-        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]), color=colours[i])
 
+    plt.ylabel('p(x)')
+    plt.xlabel('x')
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'inverse'
+
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_comparison.tex')
+    plt.savefig(path + dataset + '_comparison.pdf')
     plt.show()
 
 
@@ -302,17 +312,16 @@ if __name__ == "__main__":
             _,_, _ , _, M, _, _, _ = c.posterior.params
             regcoeff.append(M)
 
-    axis = np.linspace(0, 1, 500).reshape(-1, 1)
-
     # plot three experts
     plt.figure()
+    axis = np.linspace(0, 1, 500).reshape(-1, 1)
     mu_predict = []
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
         _mu_predict = (regcoeff[0] @ q).tolist()
         mu_predict.append(_mu_predict )
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='y')
+    plt.plot(axis, mu_predict, linewidth=2, c='green')
 
     mu_predict = []
     for t in range(len(axis)):
@@ -320,7 +329,7 @@ if __name__ == "__main__":
         _mu_predict = (regcoeff[1] @ q).tolist()
         mu_predict.append(_mu_predict )
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='b')
+    plt.plot(axis, mu_predict, linewidth=2, c='orange')
 
     mu_predict = []
     for t in range(len(axis)):
@@ -328,9 +337,18 @@ if __name__ == "__main__":
         _mu_predict = (regcoeff[2] @ q).tolist()
         mu_predict.append(_mu_predict )
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='g')
+    plt.plot(axis, mu_predict, linewidth=2, c='purple')
 
     # plot data
-    plt.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k')
+    plt.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k', linewidth=0.5)
+
+    plt.ylabel('y')
+    plt.xlabel('x')
+
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_experts.tex')
+    plt.savefig(path + dataset + '_experts.pdf')
 
     plt.show()
