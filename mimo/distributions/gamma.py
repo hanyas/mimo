@@ -1,16 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: wishart.py
-# @Date: 2019-06-07-13-36
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
 import numpy as np
 import numpy.random as npr
 
 from scipy.special import gammaln, digamma
 
 from mimo.abstractions import Distribution
+
+import warnings
 
 
 class Gamma(Distribution):
@@ -39,11 +34,15 @@ class Gamma(Distribution):
         return self.alphas / self.betas
 
     def mode(self):
-        return np.where(self.alphas > 1., (self.alphas - 1.) / self.betas, 100000)
+        if np.all(self.alphas >= 1.):
+            return (self.alphas - 1.) / self.betas
+        else:
+            warnings.warn("Mode of Gamma distribution not defined")
+            return None
 
     def log_likelihood(self, x):
-        loglik = np.sum(- gammaln(self.alphas) + self.alphas * np.log(self.betas) +
-                          (self.alphas - 1.) * np.log(x) - x * self.betas)
+        loglik = np.sum(- gammaln(self.alphas) + self.alphas * np.log(self.betas)
+                        + (self.alphas - 1.) * np.log(x) - x * self.betas)
 
         return loglik
 
@@ -78,14 +77,19 @@ class InverseGamma(Distribution):
         return 1. / npr.gamma(self.alphas, 1. / self.betas)
 
     def mean(self):
-        return np.where(self.alphas > 1., self.betas / (self.alphas - 1), 100000)
+        if np.all(self.alphas >= 1.):
+            return self.betas / (self.alphas - 1)
+        else:
+            warnings.warn("Mean of Inverse Gamma distribution not defined")
+            return None
 
     def mode(self):
         return self.betas / (self.alphas + 1.)
 
     def log_likelihood(self, x):
-        loglik = np.sum(- gammaln(self.alphas) + self.alphas * np.log(self.betas) -
-                          (self.alphas + 1.) * np.log(x) - x / self.betas)
+        loglik = np.sum(- gammaln(self.alphas)
+                        + self.alphas * np.log(self.betas)
+                        - (self.alphas + 1.) * np.log(x) - x / self.betas)
 
         return loglik
 
