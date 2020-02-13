@@ -56,7 +56,7 @@ def create_job(kwargs):
         nb_params += 1
 
     components_prior = []
-    if args.init_kmeans:
+    if args.kmeans:
         from sklearn.cluster import KMeans
         km = KMeans(args.nb_models).fit(np.hstack((input, target)))
 
@@ -71,7 +71,7 @@ def create_job(kwargs):
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e12 * np.eye(nb_params)
+            V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=psi_input, nu_niw=input_dim + 1,
@@ -90,7 +90,7 @@ def create_job(kwargs):
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e12 * np.eye(nb_params)
+        V = 1e3 * np.eye(nb_params)
 
         for n in range(args.nb_models):
             components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
@@ -126,25 +126,28 @@ def create_job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
-        print("Gibbs Sampling")
+        if args.verbose:
+            print("Gibbs Sampling")
         for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
             # Meanfield VI
-            print("Variational Inference")
+            if args.verbose:
+                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
         else:
-            svi_iters = range(args.gibbs_iters) if not args.verbose\
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
                 else progprint_xrange(args.svi_iters)
 
             # Stochastic meanfield VI
-            print('Stochastic Variational Inference')
+            if args.verbose:
+                print('Stochastic Variational Inference')
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
-            for _ in svi_iters:
+            for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
                 dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)

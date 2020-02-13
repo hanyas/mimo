@@ -104,13 +104,13 @@ def create_job(kwargs):
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
-        iter = range(args.gibbs_iters) if not args.verbose\
+        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
         if args.verbose:
             print("Gibbs Sampling")
-        for _ in iter:
+        for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
@@ -121,7 +121,7 @@ def create_job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
         else:
-            svi_iters = range(args.gibbs_iters) if not args.verbose\
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
                 else progprint_xrange(args.svi_iters)
 
             # Stochastic meanfield VI
@@ -129,7 +129,7 @@ def create_job(kwargs):
                 print('Stochastic Variational Inference')
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
-            for _ in svi_iters:
+            for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
                 dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
