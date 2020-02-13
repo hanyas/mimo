@@ -155,15 +155,15 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -172,6 +172,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--name', help='add name suffix', default='')
 
     args = parser.parse_args()
 
@@ -190,8 +191,8 @@ if __name__ == "__main__":
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 50, 500
-    nb_test_rollouts, nb_test_steps = 10, 500
+    nb_train_rollouts, nb_train_steps = 25, 250
+    nb_test_rollouts, nb_test_steps = 5, 250
 
     train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
@@ -213,36 +214,37 @@ if __name__ == "__main__":
                                       train_data=train_data,
                                       arguments=args)
 
-    # from mimo.util.prediction import meanfield_forcast
-    #
-    # idx = np.random.choice(len(test_obs))
-    # prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
-    #                                exogenous=test_act[idx],
-    #                                horizon=len(test_act[idx]),
-    #                                incremental=True,
-    #                                input_scaler=input_scaler,
-    #                                target_scaler=target_scaler)
-    #
-    # plt.figure()
-    # plt.plot(test_obs[idx])
-    # plt.plot(prediction)
-    #
-    # plt.show()
+    from mimo.util.prediction import meanfield_forcast
+
+    idx = np.random.choice(len(test_obs))
+    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
+                                   exogenous=test_act[idx],
+                                   horizon=len(test_act[idx]),
+                                   incremental=True,
+                                   input_scaler=input_scaler,
+                                   target_scaler=target_scaler)
+
+    plt.figure()
+    plt.plot(test_obs[idx])
+    plt.plot(prediction)
+
+    plt.show()
 
     from mimo.util.prediction import kstep_error
 
-    mse, smse, evar, nb_models = [], [], [], []
+    mse, smse, evar, nb_models, duration = [], [], [], [], []
     for dpglm in dpglms:
         _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar = kstep_error(dpglm,
-                                         test_obs, test_act,
-                                         horizon=10,
-                                         input_scaler=input_scaler,
-                                         target_scaler=target_scaler)
+        _mse, _smse, _evar, _dur = kstep_error(dpglm,
+                                               test_obs, test_act,
+                                               horizon=10,
+                                               input_scaler=input_scaler,
+                                               target_scaler=target_scaler)
         mse.append(_mse)
         smse.append(_smse)
         evar.append(_evar)
         nb_models.append(_nb_models)
+        duration.append(_dur)
 
     mean_mse = np.mean(mse)
     std_mse = np.std(mse)
@@ -256,9 +258,18 @@ if __name__ == "__main__":
     mean_nb_models = np.mean(nb_models)
     std_nb_models = np.std(nb_models)
 
+    mean_duration = np.mean(duration)
+    std_duration = np.std(duration)
+
     arr = np.array([mean_mse, std_mse,
                     mean_smse, std_smse,
                     mean_evar, std_evar,
-                    mean_nb_models, std_nb_models])
+                    mean_nb_models, std_nb_models,
+                    mean_duration, std_duration])
 
-    np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
+    if str(args.name) == 'alpha':
+        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
+    elif str(args.name) == 'models':
+        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
+    else:
+        raise NotImplementedError
