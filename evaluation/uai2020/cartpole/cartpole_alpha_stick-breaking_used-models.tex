@@ -1,0 +1,74 @@
+% This file was created by tikzplotlib v0.8.5.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+log basis x={10},
+tick align=outside,
+tick pos=both,
+title={cartpole dataset - stick-breaking prior },
+x grid style={white!69.01960784313725!black},
+xlabel={alphas},
+xmin=0.707945784384138, xmax=1412.53754462275,
+xmode=log,
+xtick style={color=black},
+y grid style={white!69.01960784313725!black},
+ylabel={used models},
+ymin=0.478570460589167, ymax=57.6356071922666,
+ytick style={color=black}
+]
+\path [draw=color0, semithick]
+(axis cs:1,3.07661758475632)
+--(axis cs:1,8.28338241524368);
+
+\path [draw=color0, semithick]
+(axis cs:10,22.9061064920196)
+--(axis cs:10,29.2538935079804);
+
+\path [draw=color0, semithick]
+(axis cs:50,44.1358983848622)
+--(axis cs:50,51.0641016151378);
+
+\path [draw=color0, semithick]
+(axis cs:100,45.6995808646219)
+--(axis cs:100,52.3804191353781);
+
+\path [draw=color0, semithick]
+(axis cs:500,47.6588374712157)
+--(axis cs:500,52.8211625287843);
+
+\path [draw=color0, semithick]
+(axis cs:1000,48.4824399319006)
+--(axis cs:1000,55.0375600680994);
+
+\addplot [semithick, color0, mark=-, mark size=10, mark options={solid}, only marks]
+table {%
+1 3.07661758475632
+10 22.9061064920196
+50 44.1358983848622
+100 45.6995808646219
+500 47.6588374712157
+1000 48.4824399319006
+};
+\addplot [semithick, color0, mark=-, mark size=10, mark options={solid}, only marks]
+table {%
+1 8.28338241524368
+10 29.2538935079804
+50 51.0641016151378
+100 52.3804191353781
+500 52.8211625287843
+1000 55.0375600680994
+};
+\addplot [semithick, color0, mark=*, mark size=3, mark options={solid}]
+table {%
+1 5.68
+10 26.08
+50 47.6
+100 49.04
+500 50.24
+1000 51.76
+};
+\end{axis}
+
+\end{tikzpicture}

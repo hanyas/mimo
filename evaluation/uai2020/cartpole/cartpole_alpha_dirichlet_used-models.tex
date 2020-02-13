@@ -1,0 +1,74 @@
+% This file was created by tikzplotlib v0.8.5.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+log basis x={10},
+tick align=outside,
+tick pos=both,
+title={cartpole dataset - dirichlet prior },
+x grid style={white!69.01960784313725!black},
+xlabel={alphas},
+xmin=0.0653208007180445, xmax=765.452956031932,
+xmode=log,
+xtick style={color=black},
+y grid style={white!69.01960784313725!black},
+ylabel={used models},
+ymin=16.1724513471416, ymax=101.010333283602,
+ytick style={color=black}
+]
+\path [draw=color0, semithick]
+(axis cs:0.1,20.0287187078898)
+--(axis cs:0.1,25.5712812921102);
+
+\path [draw=color0, semithick]
+(axis cs:1,46.4825933710154)
+--(axis cs:1,55.1174066289846);
+
+\path [draw=color0, semithick]
+(axis cs:10,72.3436742231519)
+--(axis cs:10,79.4163257768481);
+
+\path [draw=color0, semithick]
+(axis cs:50,85.3170680993402)
+--(axis cs:50,91.3229319006598);
+
+\path [draw=color0, semithick]
+(axis cs:100,88.422409818837)
+--(axis cs:100,93.897590181163);
+
+\path [draw=color0, semithick]
+(axis cs:500,92.8459340771462)
+--(axis cs:500,97.1540659228538);
+
+\addplot [semithick, color0, mark=-, mark size=10, mark options={solid}, only marks]
+table {%
+0.1 20.0287187078898
+1 46.4825933710154
+10 72.3436742231519
+50 85.3170680993402
+100 88.422409818837
+500 92.8459340771462
+};
+\addplot [semithick, color0, mark=-, mark size=10, mark options={solid}, only marks]
+table {%
+0.1 25.5712812921102
+1 55.1174066289846
+10 79.4163257768481
+50 91.3229319006598
+100 93.897590181163
+500 97.1540659228538
+};
+\addplot [semithick, color0, mark=*, mark size=3, mark options={solid}]
+table {%
+0.1 22.8
+1 50.8
+10 75.88
+50 88.32
+100 91.16
+500 95
+};
+\end{axis}
+
+\end{tikzpicture}
