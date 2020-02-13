@@ -4,6 +4,8 @@ from scipy.special import digamma, gammaln
 
 from mimo.abstractions import Distribution
 
+import warnings
+
 
 class Dirichlet(Distribution):
 
@@ -30,13 +32,20 @@ class Dirichlet(Distribution):
         return self.alphas / np.sum(self.alphas)
 
     def mode(self):
-        return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
+        if np.all(self.alphas > 1.):
+            return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
+        else:
+            warnings.warn("Mode of Dirichlet distribution not defined")
+            return None
 
     def log_likelihood(self, x):
-        return gammaln(np.sum(self.alphas)) - np.sum(gammaln(self.alphas)) + np.sum((self.alphas - 1.) * np.log(x))
+        return gammaln(np.sum(self.alphas))\
+               - np.sum(gammaln(self.alphas))\
+               + np.sum((self.alphas - 1.) * np.log(x))
 
     def log_partition(self):
-        return - gammaln(np.sum(self.alphas)) + np.sum(gammaln(self.alphas))
+        return - gammaln(np.sum(self.alphas))\
+               + np.sum(gammaln(self.alphas))
 
     def entropy(self):
         return self.log_partition() - np.sum((self.alphas - 1.) * (digamma(self.alphas) - digamma(np.sum(self.alphas))))
@@ -98,11 +107,27 @@ class StickBreaking(Distribution):
 
     def mean(self):
         # mean of beta dist.
-        raise self.gammas / (self.gammas + self.deltas)
+        return self.gammas / (self.gammas + self.deltas)
 
     def mode(self):
         # mode of beta dist.
-        raise (self.gammas - 1.) / (self.gammas + self.deltas - 2.)
+        _mode = np.zeros((self.K, ))
+        for k in range(self.K):
+            if self.gamma[k] > 1. and self.delta[k] > 1.:
+                _mode[k] = (self.gamma[k] - 1.) / (self.gamma[k] + self.delta[k] - 2.)
+            elif self.gamma[k] == 1. and self.delta[k] == 1.:
+                _mode[k] = 1.
+            elif self.gamma[k] < 1. and self.delta[k] < 1.:
+                _mode[k] = 1.
+            elif self.gamma[k] <= 1. and self.delta[k] > 1.:
+                _mode[k] = 0.
+            elif self.gamma[k] > 1. and self.delta[k] <= 1.:
+                _mode[k] = 1.
+            else:
+                warnings.warn("Mode of Dirichlet process not defined")
+                return None
+
+        return _mode
 
     def log_likelihood(self, x):
         raise NotImplementedError

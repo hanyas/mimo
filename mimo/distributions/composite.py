@@ -38,6 +38,16 @@ class NormalInverseWishart(Distribution):
         mu = self.gaussian.rvs()
         return mu, sigma
 
+    def mean(self):
+        mu = self.gaussian.mean()
+        sigma = self.invwishart.mean()
+        raise tuple([mu, sigma])
+
+    def mode(self):
+        mu = self.gaussian.mode()
+        sigma = self.invwishart.mode()
+        raise tuple([mu, sigma])
+
     def log_likelihood(self, x):
         mu, sigma = x
         return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu)\
@@ -150,16 +160,20 @@ class NormalInverseGamma(Distribution):
         mu = self.gaussian.rvs()
         return mu, sigmas
 
+    def mean(self):
+        mu = self.gaussian.mean()
+        sigma = self.invgamma.mean()
+        raise tuple([mu, np.diag(sigma)])
+
+    def mode(self):
+        mu = self.gaussian.mode()
+        sigma = self.invgamma.mode()
+        raise tuple([mu, np.diag(sigma)])
+
     def log_likelihood(self, x):
         mu, sigmas = x
         return DiagonalGaussian(mu=self.gaussian.mu, sigmas=sigmas/self.kappa).log_likelihood(mu)\
                + self.invgamma.log_likelihood(sigmas)
-
-    def mean(self):
-        return tuple([self.gaussian.mean(), self.invgamma.mean()])
-
-    def mode(self):
-        return tuple([self.gaussian.mode(), self.invgamma.mode()])
 
     def log_partition(self):
         return np.sum(gammaln(self.invgamma.alphas)
@@ -258,16 +272,16 @@ class MatrixNormalInverseWishart(Distribution):
         A = self.matnorm.rvs()
         return A, sigma
 
-    def log_likelihood(self, x):
-        A, sigma = x
-        return MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma).log_likelihood(A)\
-               + self.invwishart.log_likelihood(sigma)
-
     def mean(self):
         return tuple([self.matnorm.mean(), self.invwishart.mean()])
 
     def mode(self):
         return tuple([self.matnorm.mode(), self.invwishart.mode()])
+
+    def log_likelihood(self, x):
+        A, sigma = x
+        return MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma).log_likelihood(A)\
+               + self.invwishart.log_likelihood(sigma)
 
     def log_partition(self):
         return 0.5 * self.invwishart.nu * self.dout * np.log(2)\
@@ -420,13 +434,6 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
 
             return mu, sigma_niw, A, sigma_mniw
 
-        def log_likelihood(self, x):
-            mu, sigma_niw, A, sigma_mniw = x
-            return Gaussian(mu=self.gaussian.mu, sigma=sigma_niw / self.kappa).log_likelihood(mu)\
-                   + self.invwishart_niw.log_likelihood(sigma_niw)\
-                   + MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma_mniw).log_likelihood(A)\
-                   + self.invwishart_mniw.log_likelihood(sigma_mniw)
-
         def mean(self):
             return tuple([self.gaussian.mean(), self.invwishart_niw.mean(),
                           self.matnorm.mean(), self.invwishart_mniw.mean()])
@@ -434,6 +441,13 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         def mode(self):
             return tuple([self.gaussian.mode(), self.invwishart_niw.mode(),
                           self.matnorm.mode(), self.invwishart_mniw.mode()])
+
+        def log_likelihood(self, x):
+            mu, sigma_niw, A, sigma_mniw = x
+            return Gaussian(mu=self.gaussian.mu, sigma=sigma_niw / self.kappa).log_likelihood(mu)\
+                   + self.invwishart_niw.log_likelihood(sigma_niw)\
+                   + MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma_mniw).log_likelihood(A)\
+                   + self.invwishart_mniw.log_likelihood(sigma_mniw)
 
         def log_partition(self):
             return 0.5 * self.invwishart_niw.nu * self.dim * np.log(2)\
