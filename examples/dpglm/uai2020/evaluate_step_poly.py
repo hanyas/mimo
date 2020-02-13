@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation_uai2020'))
+    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
@@ -203,16 +203,16 @@ if __name__ == "__main__":
 
     # train_data = {'input': input,
     #                      'target': target}
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                       train_data=scaled_train_data,
-                                      arguments=args)
+                                      arguments=args)[0]
 
     # predict
     from mimo.util.prediction import meanfield_prediction
 
     mu_predict, var_predict, std_predict = [], [], []
     for t in range(len(scaled_input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], scaled_input[t, :], args.prediction)
+        _mean, _var, _ = meanfield_prediction(dpglm, scaled_input[t, :], args.prediction)
         mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
 
         trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     mse = mean_squared_error(mu_predict, target)
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
+    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
     # plot prediction
     ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
@@ -250,26 +250,32 @@ if __name__ == "__main__":
 
     # plot gaussian activations
     import scipy.stats as stats
-    ax2 = plt.subplot(gs[1])
+    ax1 = plt.subplot(gs[1])
     plt.xlabel('x')
     plt.ylabel('p(x)')
 
-    x_mu, x_sigma = [], []
-    for idx, c in enumerate(dpglms[0].components):
-        if idx in dpglms[0].used_labels:
-            mu, kappa, psi_niw, _, _, _, _, _ = c.posterior.params
+    mu, sigma = [], []
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            _mu, _sigma, _, _ = c.posterior.mode()
 
-            mu = input_scaler.inverse_transform(np.atleast_2d(mu))
-            trans = np.sqrt(input_scaler.explained_variance_[:, None])
-            psi_niw = trans.T @ psi_niw @ trans
+            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            _sigma = trans.T @ np.diag(_sigma) @ trans
 
-            sigma = np.sqrt(1 / kappa * psi_niw)
-            x_mu.append(mu[0])
-            x_sigma.append(sigma[0])
+            mu.append(_mu)
+            sigma.append(_sigma)
 
-    for i in range(len(dpglms[0].used_labels)):
-        x = np.linspace(-3, 3, 100)
-        ax2.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
+
+    activations = np.asarray(activations).squeeze()
+    # activations = activations / np.sum(activations, axis=1, keepdims=True)
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
+
+    for i in range(len(dpglm.used_labels)):
+        ax1.plot(input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)
