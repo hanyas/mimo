@@ -333,12 +333,12 @@ if __name__ == "__main__":
 
     plt.tight_layout()
 
-    # save time stamp for file names
-    import datetime
-    time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'sinc'
 
     # save figs
-    path = os.path.join(str(dataset))
-    tikzplotlib.save(path + '_mean.tex')
-    plt.savefig(path + '_mean.pdf')
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_mean.tex')
+    plt.savefig(path + dataset + '_mean.pdf')
     # plt.show()
