@@ -105,16 +105,17 @@ def parallel_meanfield_prediction(dpglm, query,
     nb_dim = dpglm.components[0].dout
 
     def _loop(n):
-        return meanfield_prediction(dpglm, query[n, :],
-                                    prediction, incremental,
-                                    input_scaler, target_scaler)
+        mean, var, std = meanfield_prediction(dpglm, query[n, :],
+                                              prediction, incremental,
+                                              input_scaler, target_scaler)
+        return np.hstack((mean, var, std))
 
     pool = Pool(processes=-1)
     res = pool.map(_loop, range(nb_data))
     pool.close()
     pool.clear()
 
-    res = np.asarray(res).squeeze()
+    res = np.vstack(res)
     mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
 
     return mean, var, std
