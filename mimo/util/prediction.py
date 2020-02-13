@@ -5,11 +5,14 @@ from mimo.distributions.dirichlet import Dirichlet
 from mimo.distributions.dirichlet import StickBreaking
 
 from pathos.pools import ProcessPool as Pool
+import time
 
 
 def kstep_error(dpglm, query, exogenous, horizon=1,
                 prediction='average', incremental=True,
                 input_scaler=None, target_scaler=None):
+
+    start = time.clock()
 
     from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score
 
@@ -44,7 +47,8 @@ def kstep_error(dpglm, query, exogenous, horizon=1,
         smse.append(_smse)
         evar.append(_evar)
 
-    return np.mean(mse), np.mean(smse), np.mean(evar)
+    finish = time.clock()
+    return np.mean(mse), np.mean(smse), np.mean(evar), finish - start
 
 
 def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
