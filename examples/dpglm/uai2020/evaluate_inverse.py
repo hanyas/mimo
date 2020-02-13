@@ -277,45 +277,32 @@ if __name__ == "__main__":
     plt.ylabel('p(x)')
     plt.xlabel('x')
 
-    # # plot gaussian activations
-    # mu, sigma = [], []
-    # for idx, c in enumerate(dpglm.components):
-    #     if idx in dpglm.used_labels:
-    #         _mu, _sigma, _, _ = c.posterior.mode()
-    #
-    #         # _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
-    #         # trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
-    #         # _sigma = trans.T @ np.diag(_sigma) @ trans
-    #
-    #         mu.append(_mu)
-    #         sigma.append(_sigma)
-    #
-    # activations = []
-    # for i in range(len(dpglm.used_labels)):
-    #     activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
-    #
-    # activations = np.asarray(activations).squeeze()
-    # # activations = activations / np.sum(activations, axis=1, keepdims=True)
-    # # activations = activations / np.sum(activations, axis=0, keepdims=True)
-    #
-    # colours = ['green', 'orange', 'purple']
-    # for i in range(len(dpglm.used_labels)):
-    #     ax1.plot(input, activations[i], color=colours[i])
-
-    x_mu, x_sigma = [], []
+    # plot gaussian activations
+    mu, sigma = [], []
     for idx, c in enumerate(dpglm.components):
         if idx in dpglm.used_labels:
-            mu, kappa, psi_niw, _, _, _, _, _ = c.posterior.params
+            _mu, _sigma, _, _ = c.posterior.mode()
 
-            sigma = np.sqrt(1 / kappa * psi_niw)
-            x_mu.append(mu[0])
-            x_sigma.append(sigma[0])
+            # _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            # trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            # _sigma = trans.T @ np.diag(_sigma) @ trans
+
+            mu.append(_mu)
+            sigma.append(_sigma)
+
+    sorting = np.argsort(input, axis=0)  # sort based on input values for plotting
+    sorted_input = np.take_along_axis(input, sorting, axis=0)
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(sorted_input, mu[i], np.sqrt(sigma[i])))
+
+    activations = np.asarray(activations).squeeze()
+    # activations = activations / np.sum(activations, axis=1, keepdims=True)
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     colours = ['green', 'orange', 'purple']
     for i in range(len(dpglm.used_labels)):
-        x = np.linspace(0, 1, 200)
-        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]), color=colours[i])
-
+        ax1.plot(sorted_input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)
