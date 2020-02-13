@@ -261,8 +261,22 @@ if __name__ == "__main__":
     for i in range(len(dpglm.used_labels)):
         ax1.plot(sorted_input, activations[i])
 
-    plt.ylabel('p(x)')
-    plt.xlabel('x')
+            mu.append(_mu)
+            sigma.append(_sigma)
+
+    sorting = np.argsort(input, axis=0)  # sort based on input values for plotting
+    sorted_input = np.take_along_axis(input, sorting, axis=0)
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(sorted_input, mu[i], np.sqrt(sigma[i])))
+
+    activations = np.asarray(activations).squeeze()
+    # activations = activations / np.sum(activations, axis=1, keepdims=True)
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
+
+    colours = ['green', 'orange', 'purple']
+    for i in range(len(dpglm.used_labels)):
+        ax1.plot(sorted_input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)
