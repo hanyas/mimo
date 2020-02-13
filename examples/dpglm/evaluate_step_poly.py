@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation_uai2020'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
@@ -168,7 +168,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    np.random.seed(11)
+    np.random.seed(1337)
+    # np.random.seed(11)
 
     n_train = 300
     noise_std = 2
@@ -184,10 +185,7 @@ if __name__ == "__main__":
     fig = plt.figure()
     gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
     ax0 = plt.subplot(gs[0])
-    ax0.plot(input, mean, '--b')
-    # plt.plot(input, mean + 2 * noise, '--g')
-    # plt.plot(input, mean - 2 * noise, '--g')
-    ax0.scatter(input, target, s=0.75, c='k')
+    plt.ylabel('y')
 
     # Scaled Data
     from sklearn.decomposition import PCA
@@ -232,25 +230,30 @@ if __name__ == "__main__":
     #     std_predict.append(np.sqrt(_var))
     #
     mu_predict = np.vstack(mu_predict)
-
     var_predict = np.vstack(var_predict)
     std_predict = np.vstack(std_predict)
 
+    # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
     evar = explained_variance_score(mu_predict, target)
     mse = mean_squared_error(mu_predict, target)
-
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 
-    ax0.plot(input, mu_predict, '-m')
-    ax0.plot(input, mu_predict + 2 * std_predict, '-r')
-    ax0.plot(input, mu_predict - 2 * std_predict, '-r')
+    # plot prediction
+    ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
+    ax0.plot(input, mu_predict - 2 * std_predict, '-b', zorder=5)
+    ax0.plot(input, mu_predict, '-r', zorder=10)
+    plt.scatter(input, target, s=0.75, color="black", zorder=0)
+    # ax0.plot(input, mean, '--b')
 
     # plot gaussian activations
     import scipy.stats as stats
     ax2 = plt.subplot(gs[1])
+    plt.xlabel('x')
+    plt.ylabel('p(x)')
+
     x_mu, x_sigma = [], []
     for idx, c in enumerate(dpglms[0].components):
         if idx in dpglms[0].used_labels:
@@ -267,9 +270,15 @@ if __name__ == "__main__":
     for i in range(len(dpglms[0].used_labels)):
         x = np.linspace(-3, 3, 100)
         ax2.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'step_poly'
+
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '.tex')
+    plt.savefig(path + dataset + '.pdf')
+
     plt.show()
-    #
-    # plt.figure()
-    # plt.plot(std_predict)
-    # plt.plot(noise)
-    # plt.show()
