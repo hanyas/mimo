@@ -31,7 +31,7 @@ def create_job(kwargs):
     target_dim = target.shape[-1]
 
     # set random seed
-    np.random.seed(seed=seed)
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
@@ -108,13 +108,15 @@ def create_job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
-        print("Gibbs Sampling")
+        if args.verbose:
+            print("Gibbs Sampling")
         for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
             # Meanfield VI
-            print("Variational Inference")
+            if args.verbose:
+                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
@@ -123,7 +125,8 @@ def create_job(kwargs):
                 else progprint_xrange(args.svi_iters)
 
             # Stochastic meanfield VI
-            print('Stochastic Variational Inference')
+            if args.verbose:
+                print('Stochastic Variational Inference')
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
             for _ in svi_iters:
@@ -152,22 +155,22 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=500, type=int)
-    parser.add_argument('--affine', help='affine functions', action='store_true', default='True')
+    parser.add_argument('--nb_models', help='max number of models', default=250, type=int)
+    parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=500, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default='True')
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=5000, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default='True')
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default='True')
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--nb_train', help='size of dataset', default=10000, type=int)
 
@@ -234,4 +237,3 @@ if __name__ == "__main__":
     test_smse = test_mse / np.var(test_target, axis=0)
 
     print('TEST - EVAR:', test_evar, 'MSE:', test_mse, 'SMSE:', test_smse, 'Compnents:', len(dpglms[0].used_labels))
-
