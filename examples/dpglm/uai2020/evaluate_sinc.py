@@ -108,25 +108,28 @@ def create_job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
-        print("Gibbs Sampling")
+        if args.verbose:
+            print("Gibbs Sampling")
         for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
             # Meanfield VI
-            print("Variational Inference")
+            if args.verbose:
+                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
         else:
-            svi_iters = range(args.gibbs_iters) if not args.verbose\
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
                 else progprint_xrange(args.svi_iters)
 
             # Stochastic meanfield VI
-            print('Stochastic Variational Inference')
+            if args.verbose:
+                print('Stochastic Variational Inference')
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
-            for _ in svi_iters:
+            for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
                 dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
@@ -148,10 +151,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -160,7 +163,7 @@ if __name__ == "__main__":
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=750, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=2500, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -172,7 +175,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # np.random.seed(1337)
+    np.random.seed(1337)
 
     # sample dataset
     nb_samples = 5000
@@ -249,91 +252,93 @@ if __name__ == "__main__":
         activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
 
     activations = np.asarray(activations).squeeze()
-    activations = activations / np.sum(activations, axis=1, keepdims=True)
+    # activations = activations / np.sum(activations, axis=1, keepdims=True)
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     for i in range(len(dpglm.used_labels)):
         ax1.plot(input, activations[i])
 
-    # # set working directory
-    # os.chdir(args.evalpath)
-    # dataset = 'sinc'
-    #
-    # # save figs
-    # import tikzplotlib
-    # path = os.path.join(str(dataset))
-    # tikzplotlib.save(path + '_example.tex')
-    # plt.savefig(path + '_example.pdf')
-    # # plt.show()
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'sinc'
 
-    # mu_predict, std_predict,  = [], []
-    # evar, mse, smse = [], [], []
-    # for i in range(10):
-    #     np.random.seed(i)
-    #
-    #     # subsample dataset
-    #     rows = np.random.choice(input.shape[0], 4000)
-    #     _input = input[rows, :]
-    #     _target = np.sinc(_input) + noise(_input) * np.random.randn(len(_input), 1)
-    #
-    #     _scaled_data = {'input': input_scaler.transform(_input),
-    #                     'target': target_scaler.transform(_target)}
-    #
-    #     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-    #                                      train_data=_scaled_data,
-    #                                      arguments=args)[0]
-    #
-    #     # predict
-    #     from mimo.util.prediction import parallel_meanfield_prediction
-    #     _mu_predict, _var_predict, _std_predict = parallel_meanfield_prediction(dpglm, input,
-    #                                                                             prediction=args.prediction,
-    #                                                                             input_scaler=input_scaler,
-    #                                                                             target_scaler=target_scaler)
-    #
-    #     _evar = explained_variance_score(_mu_predict, target)
-    #     _mse = mean_squared_error(_mu_predict, target)
-    #     _smse = mean_squared_error(_mu_predict, target) / np.var(target, axis=0)
-    #
-    #     print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse, 'Compnents:', len(dpglm.used_labels))
-    #
-    #     mu_predict.append(_mu_predict)
-    #     std_predict.append(_std_predict)
-    #     evar.append(_evar)
-    #     mse.append(_mse)
-    #     smse.append(_smse)
-    #
-    # # calcule means and confidence intervals
-    # mu_predict_avg, mu_predict_std = np.mean(mu_predict), np.std(mu_predict)
-    # std_predict_avg, std_predict_std = np.mean(std_predict), np.std(std_predict)
-    #
-    #
-    # # plot mean and standard deviation of mean estimation
-    # w, h = plt.figaspect(0.67)  # figure is wider than tall
-    # fig = plt.figure(figsize=(w, h))
-    # gs2 = gridspec.GridSpec(2, 1, height_ratios=[1, 1])
-    # ax2 = fig.add_subplot(gs2[0])
-    # ax3 = fig.add_subplot(gs2[1])
-    #
-    # # ax2.scatter(input, target, s=0.75, color='k', alpha=0.5)
-    # ax2.scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
-    # ax2.plot(input, mu_predict_avg, '-r')
-    # ax2.plot(input, mu_predict_avg + 2 * mu_predict_std, '-b')
-    # ax2.plot(input, mu_predict_avg - 2 * mu_predict_std, '-b')
-    #
-    # # plot mean and standard deviation of data generation / estimated noise level
-    # ax3.plot(std_predict_avg, '-r')
-    # ax3.plot(std_predict_avg + 2 * std_predict_std, '-b')
-    # ax3.plot(std_predict_avg - 2 * std_predict_std, '-b')
-    # ax3.plot(noise(input), 'k--')
-    #
-    # # plt.gridSpec.tightlayout()
-    #
-    # # save time stamp for file names
-    # import datetime
-    # time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
-    #
-    # # save figs
-    # path = os.path.join(str(dataset))
-    # tikzplotlib.save(path + '_mean.tex')
-    # plt.savefig(path + '_mean.pdf')
-    # # plt.show()
+    # save figs
+    import tikzplotlib
+    path = os.path.join(str(dataset))
+    tikzplotlib.save(path + '_example.tex')
+    plt.savefig(path + '_example.pdf')
+    plt.show()
+
+    mu_predict_list, std_predict_list,  = [], []
+    evar_list, mse_list, smse_list = [], [], []
+    for i in range(25):
+        np.random.seed(i)
+
+        # subsample dataset
+        rows = np.random.choice(input.shape[0], 4000)
+        _input = input[rows, :]
+        _target = np.sinc(_input) + noise(_input) * np.random.randn(len(_input), 1)
+
+        _scaled_data = {'input': input_scaler.transform(_input),
+                        'target': target_scaler.transform(_target)}
+
+        dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                         train_data=_scaled_data,
+                                         arguments=args)[0]
+
+        # predict
+        from mimo.util.prediction import parallel_meanfield_prediction
+        _mu_predict, _var_predict, _std_predict = parallel_meanfield_prediction(dpglm, input,
+                                                                                prediction=args.prediction,
+                                                                                input_scaler=input_scaler,
+                                                                                target_scaler=target_scaler)
+
+        _evar = explained_variance_score(_mu_predict, target)
+        _mse = mean_squared_error(_mu_predict, target)
+        _smse = mean_squared_error(_mu_predict, target) / np.var(target, axis=0)
+
+        print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse, 'Compnents:', len(dpglm.used_labels))
+
+        mu_predict_list.append(_mu_predict)
+        std_predict_list.append(_std_predict)
+        evar_list.append(_evar)
+        mse_list.append(_mse)
+        smse_list.append(_smse)
+
+    mu_predict_list = np.asarray(mu_predict_list).squeeze()
+    std_predict_list = np.asarray(std_predict_list).squeeze()
+
+    # calcule means and confidence intervals
+    mu_predict_avg, mu_predict_std = np.mean(mu_predict_list, axis=0), np.std(mu_predict_list, axis=0)
+    std_predict_avg, std_predict_std = np.mean(std_predict_list, axis=0), np.std(std_predict_list, axis=0)
+
+    # plot mean and standard deviation of mean estimation
+    w, h = plt.figaspect(0.67)  # figure is wider than tall
+    fig = plt.figure(figsize=(w, h))
+    gs2 = gridspec.GridSpec(2, 1, height_ratios=[1, 1])
+    ax2 = fig.add_subplot(gs2[0])
+    ax3 = fig.add_subplot(gs2[1])
+
+    # ax2.scatter(input, target, s=0.75, color='k', alpha=0.5)
+    ax2.scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
+    ax2.plot(input, mu_predict_avg, '-r')
+    ax2.plot(input, mu_predict_avg + 2 * mu_predict_std, '-b')
+    ax2.plot(input, mu_predict_avg - 2 * mu_predict_std, '-b')
+
+    # plot mean and standard deviation of data generation / estimated noise level
+    ax3.plot(input, std_predict_avg, '-r')
+    ax3.plot(input, std_predict_avg + 2 * std_predict_std, '-b')
+    ax3.plot(input, std_predict_avg - 2 * std_predict_std, '-b')
+    ax3.plot(input, noise(input), 'k--')
+
+    plt.tight_layout()
+
+    # save time stamp for file names
+    import datetime
+    time = str(datetime.datetime.now().strftime('_%m-%d_%H-%M-%S'))
+
+    # save figs
+    path = os.path.join(str(dataset))
+    tikzplotlib.save(path + '_mean.tex')
+    plt.savefig(path + '_mean.pdf')
+    # plt.show()

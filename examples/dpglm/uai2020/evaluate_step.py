@@ -38,7 +38,7 @@ def create_job(kwargs):
         nb_params += 1
 
     components_prior = []
-    if args.init_kmeans:
+    if args.kmeans:
         from sklearn.cluster import KMeans
         km = KMeans(args.nb_models).fit(np.hstack((input, target)))
 
@@ -108,25 +108,28 @@ def create_job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         # Gibbs sampling
-        print("Gibbs Sampling")
+        if args.verbose:
+            print("Gibbs Sampling")
         for _ in gibbs_iter:
             dpglm.resample_model()
 
         if not args.stochastic:
             # Meanfield VI
-            print("Variational Inference")
+            if args.verbose:
+                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
         else:
-            svi_iters = range(args.gibbs_iters) if not args.verbose\
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
                 else progprint_xrange(args.svi_iters)
 
             # Stochastic meanfield VI
-            print('Stochastic Variational Inference')
+            if args.verbose:
+                print('Stochastic Variational Inference')
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
-            for _ in svi_iters:
+            for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
                 dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
@@ -148,23 +151,27 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation_uai2020'))
+    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
     parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
+    parser.add_argument('--alpha', help='Set concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='Set max number of models', default=20, type=int)
-    parser.add_argument('--affine', help='Set affine or not', default=True, type=bool)
+    parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
+    parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='Set interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=100, type=int)
-    parser.add_argument('--stochastic', help='Set stoch. or deter. VI', default=False, type=float)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='Set max VI iterations', default=500, type=int)
     parser.add_argument('--svi_iters', help='Set stochastic VI iterations', default=2500, type=int)
     parser.add_argument('--svi_stepsize', help='Set SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='Set SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='Set prediction to mode or average', default='mode')
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--init_kmeans', help='Set initialization with KMEANS', default=True, type=float)
-    parser.add_argument('--verbose', help='Show learning progress', default=True, type=float)
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
+    parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
+    parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
 
     args = parser.parse_args()
 
@@ -172,21 +179,27 @@ if __name__ == "__main__":
 
     # create data
     n_train = 160
-    noise_std = 0.02
-    input1 = np.linspace(-2., -1, int(n_train / 4)).reshape(int(n_train / 4), 1)
-    input2 = np.linspace(-1., 0, int(n_train / 4)).reshape(int(n_train / 4), 1)
-    input3 = np.linspace(0, 1., int(n_train / 4)).reshape(int(n_train / 4), 1)
-    input4 = np.linspace(1, 2., int(n_train / 4)).reshape(int(n_train / 4), 1)
-    mean1 = np.ones((int(n_train / 4), 1)) * 1
-    mean2 = np.ones((int(n_train / 4), 1)) * 2
-    mean3 = np.ones((int(n_train / 4), 1)) * 0
-    mean4 = np.ones((int(n_train / 4), 1)) * 4
-    input, mean = np.concatenate((input1, input2, input3, input4), axis=0), np.concatenate((mean1, mean2, mean3, mean4), axis=0)
-    noise = npr.normal(0, noise_std, n_train).reshape(n_train, 1)
+
+    input, mean = [], []
+
+    input.append(np.linspace(-2., -1, int(n_train / 4)).reshape(int(n_train / 4), 1))
+    input.append(np.linspace(-1., 0, int(n_train / 4)).reshape(int(n_train / 4), 1))
+    input.append(np.linspace(0, 1., int(n_train / 4)).reshape(int(n_train / 4), 1))
+    input.append(np.linspace(1, 2., int(n_train / 4)).reshape(int(n_train / 4), 1))
+
+    mean.append(np.ones((int(n_train / 4), 1)) * 1.)
+    mean.append(np.ones((int(n_train / 4), 1)) * 2.)
+    mean.append(np.ones((int(n_train / 4), 1)) * 0.)
+    mean.append(np.ones((int(n_train / 4), 1)) * 4.)
+
+    input, mean = np.vstack((input)), np.vstack((mean))
+    noise = 0.1 * npr.randn(n_train).reshape(n_train, 1)
     target = mean + noise
 
     # create gridspec plot
     from matplotlib import gridspec
+    import scipy.stats as stats
+
     fig = plt.figure()
     gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
     ax0 = plt.subplot(gs[0])
@@ -200,27 +213,24 @@ if __name__ == "__main__":
     input_scaler.fit(input)
     target_scaler.fit(target)
 
-    scaled_input = input_scaler.transform(input)
-    scaled_target = target_scaler.transform(target)
+    scaled_train_data = {'input': input_scaler.transform(input),
+                         'target': target_scaler.transform(target)}
 
-    scaled_train_data = {'input': scaled_input,
-                         'target': scaled_target}
-
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=scaled_train_data,
-                                      arguments=args)
+    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                     train_data=scaled_train_data,
+                                     arguments=args)[0]
 
     # predict
     from mimo.util.prediction import meanfield_prediction
 
     mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(scaled_input)):
-        _mean, _var, _ = meanfield_prediction(dpglms[0], scaled_input[t, :], args.prediction)
-        mu_predict.append(target_scaler.inverse_transform(np.atleast_2d(_mean)))
+    for t in range(len(input)):
+        _mean, _var, _ = meanfield_prediction(dpglm, input[t, :],
+                                              args.prediction,
+                                              input_scaler=input_scaler,
+                                              target_scaler=target_scaler)
 
-        trans = np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_
-        _var = trans.T @ _var @ trans
-
+        mu_predict.append(_mean)
         var_predict.append(_var)
         std_predict.append(np.sqrt(_var))
 
@@ -234,7 +244,7 @@ if __name__ == "__main__":
     mse = mean_squared_error(mu_predict, target)
     smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
+    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
     # plot prediction
     ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
@@ -244,27 +254,32 @@ if __name__ == "__main__":
     plt.scatter(input, target, s=0.75, color="black", zorder=0)
 
     # plot gaussian activations
-    import scipy.stats as stats
     ax1 = plt.subplot(gs[1])
     plt.xlabel('x')
     plt.ylabel('p(x)')
 
-    x_mu, x_sigma = [], []
-    for idx, c in enumerate(dpglms[0].components):
-        if idx in dpglms[0].used_labels:
-            mu, kappa, psi_niw, _, _, _, _, _ = c.posterior.params
+    mu, sigma = [], []
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            _mu, _sigma, _, _ = c.posterior.mode()
 
-            mu = input_scaler.inverse_transform(np.atleast_2d(mu))
-            trans = np.sqrt(input_scaler.explained_variance_[:, None])
-            psi_niw = trans.T @ psi_niw @ trans
+            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            _sigma = trans.T @ np.diag(_sigma) @ trans
 
-            sigma = np.sqrt(1 / kappa * psi_niw)
-            x_mu.append(mu[0])
-            x_sigma.append(sigma[0])
+            mu.append(_mu)
+            sigma.append(_sigma)
 
-    for i in range(len(dpglms[0].used_labels)):
-        x = np.linspace(-2, 2, 100)
-        ax1.plot(x, stats.norm.pdf(x, x_mu[i], x_sigma[i]))
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
+
+    activations = np.asarray(activations).squeeze()
+    # activations = activations / np.sum(activations, axis=1, keepdims=True)
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
+
+    for i in range(len(dpglm.used_labels)):
+        ax1.plot(input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)
