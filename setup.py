@@ -12,7 +12,7 @@ setup(name='mimo',
       description='Mixture models inference',
       author='Hany Abdulsamad',
       author_email='hany@robot-learning.de',
-      install_requires=['numpy', 'scipy', 'matplotlib'],
+      install_requires=['numpy', 'scipy', 'matplotlib', 'tikzplotlib', 'joblib'],
       packages=['mimo'],
       zip_safe=False,
-)
+      )
