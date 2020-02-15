@@ -7,7 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
+from mimo.util.general import near_pd, beautify
 
 import argparse
 
@@ -232,3 +232,9 @@ if __name__ == "__main__":
         plt.plot(prediction[n])
 
     plt.show()
+
+
+
+
+
+
