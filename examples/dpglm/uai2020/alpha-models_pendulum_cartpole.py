@@ -14,7 +14,7 @@ os.chdir(evalpath)
 
 
 # set parameters for plot
-y_axis = 'used-models'             # smse, used-models
+y_axis = 'used-models'             # smse, used-models, nlpd
 
 dataset_choices = ['pendulum', 'cartpole']        # pendulum, cartpole
 prior_choices = ['stick-breaking', 'dirichlet']   # dirichlet, stick-breaking
@@ -52,7 +52,7 @@ for n in range(len(x_axis_choices)):
                 iterator = models
             if x_axis == 'alpha':
                 iterator = alpha
-            metrics = np.zeros((len(iterator), 10))
+            metrics = np.zeros((len(iterator), 12))
             for i in range(len(iterator)):
                 path = os.path.join(evalpath + '\\' + dataset + '\\' + dataset + '_' + x_axis + '\\' +
             dataset + '_' + x_axis + '_' + prior + '_' + str(iterator[i]) + '.csv')
@@ -68,6 +68,7 @@ for n in range(len(x_axis_choices)):
             # 4. 5 = mean_evar, std_evar
             # 6, 7 = mean_nb_models, std_nb_models
             # 8, 9 = mean_duration, std_duration
+            # 10, 11 = mean_nlpd, std_nlpd (negative log predictive density)
 
             # plot nmse or used models on y-axis
             if y_axis == 'used-models':
@@ -79,6 +80,11 @@ for n in range(len(x_axis_choices)):
                 y = metrics[:, 2]       # choose mean_smse for y-axis
                 error = metrics[:, 3]   # choose std_smse as error
                 ax2.set_ylabel('smse')
+
+            if y_axis == 'nlpd':
+                y = metrics[:, 11]       # choose mean_smse for y-axis
+                error = metrics[:, 12]   # choose std_smse as error
+                ax2.set_ylabel('nlpd')
 
             # set the x-axis of the stick-breaking prior
             if m == 0:
