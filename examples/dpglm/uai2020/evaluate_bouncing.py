@@ -198,6 +198,22 @@ if __name__ == "__main__":
     train_input = np.vstack([_x[:-1, :] for _x in train_obs])
     train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
 
+    # train_data = {'input': train_input,
+    #               'target': train_target}
+    #
+    # dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+    #                                   train_data=train_data,
+    #                                   arguments=args)
+    #
+    # from mimo.util.prediction import meanfield_forcast
+    #
+    # prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
+    #                                horizon=500, incremental=True)
+    #
+    # plt.figure()
+    # plt.plot(test_obs[0])
+    # plt.plot(prediction)
+
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=dm_obs, whiten=True)
     target_scaler = PCA(n_components=dm_obs, whiten=True)
@@ -213,114 +229,20 @@ if __name__ == "__main__":
                                       arguments=args)
 
     from mimo.util.prediction import meanfield_forcast
-    #
-    # prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
-    #                                horizon=500, incremental=True,
-    #                                input_scaler=input_scaler,
-    #                                target_scaler=target_scaler)
-    #
-    # plt.figure()
-    # plt.plot(test_obs[0])
-    # plt.plot(prediction)
-    #
-    # plt.show()
 
+    prediction = meanfield_forcast(dpglms[0], test_obs[0][0, :],
+                                   horizon=500, incremental=True,
+                                   input_scaler=input_scaler,
+                                   target_scaler=target_scaler)
 
-    # create meshgrid
-    xlim = (0.1, 5)
-    ylim = (-8.0, 8.0)
-
-    npts = 26
-
-    x = np.linspace(*xlim, npts)
-    y = np.linspace(*ylim, npts)
-
-    X, Y = np.meshgrid(x, y)
-    XY = np.stack((X, Y))
-
-    # next states from environment
-    XYn = np.zeros((2, npts, npts))
-    Zn = np.zeros((npts, npts))
-
-    env.reset()
-    for i in range(npts):
-        for j in range(npts):
-            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
-            # Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
-
-    dydt = XYn - XY
-
-    # streamplot environment
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
-
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='b', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
-
-    ax = beautify(ax)
-    ax.grid(False)
-
-    ax.set_xlim(xlim)
-    ax.set_xlabel('height')
-
-    ax.set_ylim(ylim)
-    ax.set_ylabel('velocity')
-
-    plt.title('streamplot for 1-step rollout (environment)')
-
-    # set working directory
-    os.chdir(args.evalpath)
-    dataset = 'bouncing'
-
-    # save tikz and pdf
-    import tikzplotlib
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_stream_env.tex')
-    plt.savefig(path + dataset + '_stream_env.pdf')
+    plt.figure()
+    plt.plot(test_obs[0])
+    plt.plot(prediction)
 
     plt.show()
 
 
-    # predicted next states
-    from mimo.util.prediction import meanfield_prediction
-    for i in range(npts):
-        for j in range(npts):
-            h = XY[0, i, j]
-            h_dot = XY[1, i, j]
-            test_obs = np.asarray([h, h_dot])
-            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
-                                           input_scaler=input_scaler,
-                                           target_scaler=target_scaler)
-            XYn[:, i, j] = prediction[0]
 
-    dydt = XYn - XY
-
-    # streamplot prediction
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='r', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
-
-    ax = beautify(ax)
-    ax.grid(False)
-
-    ax.set_xlim(xlim)
-    ax.set_xlabel('height')
-
-    ax.set_ylim(ylim)
-    ax.set_ylabel('velocity')
-
-    plt.title('streamplot for 1-step prediction')
-
-    # save tikz and pdf
-    import tikzplotlib
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_stream_pred.tex')
-    plt.savefig(path + dataset + '_stream_pred.pdf')
-
-    plt.show()
 
 
 
