@@ -262,11 +262,9 @@ if __name__ == "__main__":
     # activations = activations / np.sum(activations, axis=1, keepdims=True)
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
+    colours = ['green', 'orange', 'purple']
     for i in range(len(dpglm.used_labels)):
-        ax1.plot(sorted_input, activations[i])
-
-    plt.ylabel('p(x)')
-    plt.xlabel('x')
+        ax1.plot(sorted_input, activations[i], color=colours[i])
 
     # set working directory
     os.chdir(args.evalpath)

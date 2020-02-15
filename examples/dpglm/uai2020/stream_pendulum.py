@@ -5,9 +5,9 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo import distributions, mixture
+from mimo import distributions, models
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
+from mimo.util.general import near_pd, beautify
 
 import argparse
 
@@ -45,7 +45,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_input = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_input = near_pd(np.atleast_2d(_psi_input))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -55,8 +56,7 @@ def create_job(kwargs):
             V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
-                                        psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        psi_niw=psi_input, nu_niw=input_dim + 1,
                                         M=mu_output, affine=args.affine,
                                         V=V, nu_mniw=target_dim + 1,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
@@ -96,45 +96,43 @@ def create_job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     else:
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
-        # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
-
         gibbs_iter = range(args.gibbs_iters) if not args.verbose\
             else progprint_xrange(args.gibbs_iters)
 
+        # Gibbs sampling
+        if args.verbose:
+            print("Gibbs Sampling")
         for _ in gibbs_iter:
             dpglm.resample_model()
 
-        if args.stochastic:
-            # Stochastic meanfield VI
-            if args.verbose:
-                print('Stochastic Variational Inference')
-
-            svi_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
-
-            batch_size = args.svi_batchsize
-            prob = batch_size / float(len(data))
-            for _ in svi_iter:
-                minibatch = npr.permutation(len(data))[:batch_size]
-                dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
-                                        prob=prob, stepsize=args.svi_stepsize)
-        if args.deterministic:
+        if not args.stochastic:
             # Meanfield VI
             if args.verbose:
                 print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
+        else:
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
+                else progprint_xrange(args.svi_iters)
+
+            # Stochastic meanfield VI
+            if args.verbose:
+                print('Stochastic Variational Inference')
+            batch_size = args.svi_batchsize
+            prob = batch_size / float(len(data))
+            for _ in svi_iter:
+                minibatch = npr.permutation(len(data))[:batch_size]
+                dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
+                                        prob=prob, stepsize=args.svi_stepsize)
 
     return dpglm
 
@@ -157,19 +155,17 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
-    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
-    parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
+    parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
     parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=512, type=int)
+    parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
@@ -218,75 +214,129 @@ if __name__ == "__main__":
                                       train_data=train_data,
                                       arguments=args)
 
-    # from mimo.util.prediction import meanfield_forcast
-    #
-    # idx = np.random.choice(len(test_obs))
-    # prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
-    #                                exogenous=test_act[idx],
-    #                                horizon=len(test_act[idx]),
-    #                                incremental=True,
-    #                                input_scaler=input_scaler,
-    #                                target_scaler=target_scaler)
-    #
-    # plt.figure()
-    # plt.plot(test_obs[idx])
-    # plt.plot(prediction)
-    #
+    # create meshgrid
+    xlim = (-np.pi, np.pi)
+    ylim = (-8.0, 8.0)
+
+    npts = 26
+
+    x = np.linspace(*xlim, npts)
+    y = np.linspace(*ylim, npts)
+
+    X, Y = np.meshgrid(x, y)
+    XY = np.stack((X, Y))
+
+    XYn = np.zeros((3, npts, npts))
+    Zn = np.zeros((npts, npts))
+
+    env.reset()
+    for i in range(npts):
+        for j in range(npts):
+            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+            # Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+
+    Yn = XYn[2, :, :]
+
+    # Transform to angle
+    cos_x = XYn[0, :, :]
+    sin_x = XYn[1, :, :]
+    Xn = np.arctan2(sin_x, cos_x)
+
+    XYn = np.stack((Xn, Yn))
+
+    dydt = XYn - XY
+
+    # streamplot for environment
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='b', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
+
+    ax = beautify(ax)
+    ax.grid(False)
+
+    ax.set_xlim(xlim)
+    ax.set_xlabel('angle')
+
+    ax.set_ylim(ylim)
+    ax.set_ylabel('angular velocity')
+
+    plt.title('pendulum - streamplot for 1-step rollout (environment)')
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'pendulum'
+
+    # save tikz and pdf
+    import tikzplotlib
+
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_env.tex')
+    plt.savefig(path + dataset + '_stream_env.pdf')
+
     # plt.show()
 
-    test_input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(test_obs, test_act)])
-    test_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in test_obs])
 
-    test_data = np.hstack((input_scaler.transform(test_input),
-                           target_scaler.transform(test_target)))
+    # streamplot for predicted next states
+    from mimo.util.prediction import meanfield_prediction
 
-    from mimo.util.prediction import kstep_error
+    # transform to angle to cos / sin
+    X1 = np.cos(X)
+    X2 = np.sin(X)
 
-    mse, smse, evar, nb_models, duration, nlpd = [], [], [], [], [], []
-    for dpglm in dpglms:
-        _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar, _dur = kstep_error(dpglm,
-                                               test_obs, test_act,
-                                               horizon=10,
-                                               input_scaler=input_scaler,
-                                               target_scaler=target_scaler)
-        _nlpd = - 1.0 * dpglm.predictive_log_likelihood(test_data)
+    XY = np.stack((X1, X2, Y))
 
-        mse.append(_mse)
-        smse.append(_smse)
-        evar.append(_evar)
-        nb_models.append(_nb_models)
-        duration.append(_dur)
-        nlpd.append(_nlpd.mean())
+    # next states from environment
+    XYn = np.zeros((3, npts, npts))
+    for i in range(npts):
+        for j in range(npts):
+            _cos_x = XY[0, i, j]
+            _sin_x = XY[1, i, j]
+            _vel = XY[2, i, j]
+            _action = 0
+            test_obs = np.asarray([_cos_x, _sin_x, _vel, _action])
 
-    mean_mse = np.mean(mse)
-    std_mse = np.std(mse)
+            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
+                                              input_scaler=input_scaler,
+                                              target_scaler=target_scaler)
+            XYn[:, i, j] = prediction[0]
 
-    mean_smse = np.mean(smse)
-    std_smse = np.std(smse)
+    # retransform to angle
+    cos_x = XYn[0, :, :]
+    sin_x = XYn[1, :, :]
+    Xn = np.arctan2(sin_x, cos_x)
+    Yn = XYn[2, :, :]
 
-    mean_evar = np.mean(evar)
-    std_evar = np.std(evar)
+    XYn = np.stack((Xn, Yn))
+    XY = np.stack((X, Y))
 
-    mean_nb_models = np.mean(nb_models)
-    std_nb_models = np.std(nb_models)
+    dydt = XYn - XY
 
-    mean_duration = np.mean(duration)
-    std_duration = np.std(duration)
+    # streamplot prediction
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='r', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
 
-    mean_nlpd = np.mean(nlpd)
-    std_nlpd = np.std(nlpd)
+    ax = beautify(ax)
+    ax.grid(False)
 
-    arr = np.array([mean_mse, std_mse,
-                    mean_smse, std_smse,
-                    mean_evar, std_evar,
-                    mean_nb_models, std_nb_models,
-                    mean_duration, std_duration,
-                    mean_nlpd, std_nlpd])
+    ax.set_xlim(xlim)
+    ax.set_xlabel('angle')
 
-    if str(args.name) == 'alpha':
-        np.savetxt('pendulum_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
-    elif str(args.name) == 'models':
-        np.savetxt('pendulum_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
-    else:
-        raise NotImplementedError
+    ax.set_ylim(ylim)
+    ax.set_ylabel('angular velocity')
+
+    plt.title('pendulum - streamplot for 1-step prediction')
+
+    # save tikz and pdf
+    import tikzplotlib
+
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_pred.tex')
+    plt.savefig(path + dataset + '_stream_pred.pdf')
+
+    plt.show()
