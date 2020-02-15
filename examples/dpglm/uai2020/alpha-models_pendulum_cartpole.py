@@ -8,13 +8,11 @@ import matplotlib.pyplot as plt
 
 
 # set working directory
-evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/')
+evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control')
 os.chdir(evalpath)
 
-
-
 # set parameters for plot
-y_axis = 'used-models'             # smse, used-models, nlpd
+y_axis = 'smse'             # smse, used-models, nlpd, evar, mse
 
 dataset_choices = ['pendulum', 'cartpole']        # pendulum, cartpole
 prior_choices = ['stick-breaking', 'dirichlet']   # dirichlet, stick-breaking
@@ -53,6 +51,7 @@ for n in range(len(x_axis_choices)):
             if x_axis == 'alpha':
                 iterator = alpha
             metrics = np.zeros((len(iterator), 12))
+
             for i in range(len(iterator)):
                 path = os.path.join(evalpath + '\\' + dataset + '\\' + dataset + '_' + x_axis + '\\' +
             dataset + '_' + x_axis + '_' + prior + '_' + str(iterator[i]) + '.csv')
@@ -61,6 +60,8 @@ for n in range(len(x_axis_choices)):
                     for line in mycsv:
                         metrics[i, count] = line
                         count += 1
+                        if count == 12:
+                            break;
 
             # column indices for what to show on y-axis:
             # 0, 1 = mean_mse, std_mse
@@ -71,19 +72,29 @@ for n in range(len(x_axis_choices)):
             # 10, 11 = mean_nlpd, std_nlpd (negative log predictive density)
 
             # plot nmse or used models on y-axis
-            if y_axis == 'used-models':
-                y = metrics[:, 6]       # choose mean_nb_models for y-axis
-                error = metrics[:, 7]   # choose std_nb_models as error
-                ax2.set_ylabel('used models')
+            if y_axis == 'mse':
+                y = metrics[:, 0]       # choose mean_smse for y-axis
+                error = metrics[:, 1]   # choose std_smse as error
+                ax2.set_ylabel('mse')
 
             if y_axis == 'smse':
                 y = metrics[:, 2]       # choose mean_smse for y-axis
                 error = metrics[:, 3]   # choose std_smse as error
                 ax2.set_ylabel('smse')
 
+            if y_axis == 'evar':
+                y = metrics[:, 4]       # choose mean_smse for y-axis
+                error = metrics[:, 5]   # choose std_smse as error
+                ax2.set_ylabel('evar')
+
+            if y_axis == 'used-models':
+                y = metrics[:, 6]       # choose mean_nb_models for y-axis
+                error = metrics[:, 7]   # choose std_nb_models as error
+                ax2.set_ylabel('used models')
+
             if y_axis == 'nlpd':
-                y = metrics[:, 11]       # choose mean_smse for y-axis
-                error = metrics[:, 12]   # choose std_smse as error
+                y = metrics[:, 10]       # choose mean_smse for y-axis
+                error = metrics[:, 11]   # choose std_smse as error
                 ax2.set_ylabel('nlpd')
 
             # set the x-axis of the stick-breaking prior
@@ -121,10 +132,6 @@ for n in range(len(x_axis_choices)):
 
                 ax1.errorbar(x, y, yerr=error, fmt='-x', capsize=7)
 
-        # set working directory
-        evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020')
-        os.chdir(evalpath)
-
         # save tikz and pdf
         import tikzplotlib
         # path = os.path.join(str(dataset) + '/' + dataset + '_' + x_axis + '/')
@@ -132,7 +139,8 @@ for n in range(len(x_axis_choices)):
 
         plt.tight_layout() # otherwise title is clipped off
 
-        tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
+        print(path, dataset, x_axis, y_axis)
+        # tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
         plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
 
         plt.show()
