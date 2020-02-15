@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#./pendulum_alpha_script.sh &&
+./pendulum_alpha_script.sh &&
 ./pendulum_models_script.sh &&
 
 ./cartpole_alpha_script.sh &&

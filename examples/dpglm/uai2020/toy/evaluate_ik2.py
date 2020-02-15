@@ -5,7 +5,7 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo import distributions, models
+from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd
 
@@ -63,8 +63,7 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            _psi_input = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
-            psi_input = near_pd(np.atleast_2d(_psi_input))
+            psi_niw = 1e0
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -74,7 +73,8 @@ def create_job(kwargs):
             V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
-                                        psi_niw=psi_input, nu_niw=input_dim + 1,
+                                        psi_niw=np.eye(input_dim) * psi_niw,
+                                        nu_niw=input_dim + 1,
                                         M=mu_output, affine=args.affine,
                                         V=V, nu_mniw=target_dim + 1,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
@@ -114,43 +114,45 @@ def create_job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     else:
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
-
         # Gibbs sampling
         if args.verbose:
             print("Gibbs Sampling")
+
+        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
+            else progprint_xrange(args.gibbs_iters)
+
         for _ in gibbs_iter:
             dpglm.resample_model()
 
-        if not args.stochastic:
-            # Meanfield VI
-            if args.verbose:
-                print("Variational Inference")
-            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
-        else:
-            svi_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
-
+        if args.stochastic:
             # Stochastic meanfield VI
             if args.verbose:
                 print('Stochastic Variational Inference')
+
+            svi_iter = range(args.gibbs_iters) if not args.verbose\
+                else progprint_xrange(args.svi_iters)
+
             batch_size = args.svi_batchsize
             prob = batch_size / float(len(data))
             for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
                 dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
+        if args.deterministic:
+            # Meanfield VI
+            if args.verbose:
+                print("Variational Inference")
+            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
+                                               maxiter=args.meanfield_iters,
+                                               progprint=args.verbose)
 
     return dpglm
 
@@ -169,7 +171,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
@@ -177,11 +179,13 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
-    parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=2500, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
+    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
+    parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -201,36 +205,6 @@ if __name__ == "__main__":
     plt.figure()
     plt.scatter(input[:, 0], input[:, 1], s=1)
 
-    # # Original Data
-    # train_data = {'input': input, 'target': target}
-    #
-    # dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-    #                                   train_data=train_data,
-    #                                   arguments=args)
-    #
-    # from mimo.util.prediction import meanfield_prediction
-    #
-    # mu_predict = []
-    # for t in range(len(input)):
-    #     _mu, _, _ = meanfield_prediction(dpglms[0], input[t, :])
-    #     mu_predict.append(_mu)
-    #
-    # mu_predict = np.vstack(mu_predict)
-    #
-    # plt.plot(train_data['input'], mu_predict, '-c')
-    #
-    # from sklearn.metrics import explained_variance_score, mean_squared_error
-    # evar = explained_variance_score(mu_predict, target)
-    # mse = mean_squared_error(mu_predict, target)
-    #
-    # smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
-    #
-    # print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
-    #
-    # plt.figure()
-    # plt.scatter(target[:, 0], target[:, 1], s=1)
-    # plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
-
     # Scaled Data
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=2, whiten=True)
@@ -239,11 +213,8 @@ if __name__ == "__main__":
     input_scaler.fit(input)
     target_scaler.fit(target)
 
-    scaled_input = input_scaler.transform(input)
-    scaled_target = target_scaler.transform(target)
-
-    scaled_train_data = {'input': scaled_input,
-                         'target': scaled_target}
+    scaled_train_data = {'input': input_scaler.transform(input),
+                         'target': target_scaler.transform(target)}
 
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                       train_data=scaled_train_data,
