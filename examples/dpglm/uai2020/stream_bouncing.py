@@ -7,7 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, models
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
+from mimo.util.general import near_pd, beautify
 
 import argparse
 
@@ -152,9 +152,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
+    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -162,8 +162,8 @@ if __name__ == "__main__":
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--deterministic', help='use deterministic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=2500, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -172,7 +172,6 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--name', help='add name suffix', default='')
 
     args = parser.parse_args()
 
@@ -182,94 +181,132 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    env = gym.make('Cartpole-DPGLM-v1')
+    env = gym.make('BouncingBall-DPGLM-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-4
+    env.unwrapped._sigma = 1e-16
     env.seed(1337)
 
     dm_obs = env.observation_space.shape[0]
-    dm_act = env.action_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 25, 250
-    nb_test_rollouts, nb_test_steps = 5, 250
+    nb_train_rollouts, nb_train_steps = 10, 500
+    nb_test_rollouts, nb_test_steps = 5, 500
 
-    train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
-    test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
+    train_obs, _ = sample_env(env, nb_train_rollouts, nb_train_steps)
+    test_obs, _ = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    train_input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(train_obs, train_act)])
+    train_input = np.vstack([_x[:-1, :] for _x in train_obs])
     train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
 
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=dm_obs + dm_act, whiten=True)
+    input_scaler = PCA(n_components=dm_obs, whiten=True)
     target_scaler = PCA(n_components=dm_obs, whiten=True)
 
     input_scaler.fit(train_input)
     target_scaler.fit(train_target)
 
-    train_data = {'input': input_scaler.transform(train_input),
-                  'target': target_scaler.transform(train_target)}
+    scaled_train_data = {'input': input_scaler.transform(train_input),
+                         'target': target_scaler.transform(train_target)}
 
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=train_data,
+                                      train_data=scaled_train_data,
                                       arguments=args)
 
-    from mimo.util.prediction import meanfield_forcast
+    # create meshgrid
+    xlim = (0.1, 5)
+    ylim = (-8.0, 8.0)
 
-    idx = np.random.choice(len(test_obs))
-    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
-                                   exogenous=test_act[idx],
-                                   horizon=len(test_act[idx]),
-                                   incremental=True,
-                                   input_scaler=input_scaler,
-                                   target_scaler=target_scaler)
+    npts = 26
 
-    plt.figure()
-    plt.plot(test_obs[idx])
-    plt.plot(prediction)
+    x = np.linspace(*xlim, npts)
+    y = np.linspace(*ylim, npts)
+
+    X, Y = np.meshgrid(x, y)
+    XY = np.stack((X, Y))
+
+    # next states from environment
+    XYn = np.zeros((2, npts, npts))
+    Zn = np.zeros((npts, npts))
+
+    env.reset()
+    for i in range(npts):
+        for j in range(npts):
+            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+            # Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+
+    dydt = XYn - XY
+
+    # streamplot environment
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='b', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
+
+    ax = beautify(ax)
+    ax.grid(False)
+
+    ax.set_xlim(xlim)
+    ax.set_xlabel('height')
+
+    ax.set_ylim(ylim)
+    ax.set_ylabel('velocity')
+
+    plt.title('bouncing ball - streamplot for 1-step rollout (environment)')
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'bouncing'
+
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_env.tex')
+    plt.savefig(path + dataset + '_stream_env.pdf')
 
     plt.show()
 
-    from mimo.util.prediction import kstep_error
 
-    mse, smse, evar, nb_models, duration = [], [], [], [], []
-    for dpglm in dpglms:
-        _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar, _dur = kstep_error(dpglm,
-                                               test_obs, test_act,
-                                               horizon=10,
-                                               input_scaler=input_scaler,
-                                               target_scaler=target_scaler)
-        mse.append(_mse)
-        smse.append(_smse)
-        evar.append(_evar)
-        nb_models.append(_nb_models)
-        duration.append(_dur)
+    # predicted next states
+    from mimo.util.prediction import meanfield_prediction
+    for i in range(npts):
+        for j in range(npts):
+            h = XY[0, i, j]
+            h_dot = XY[1, i, j]
+            test_obs = np.asarray([h, h_dot])
+            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
+                                           input_scaler=input_scaler,
+                                           target_scaler=target_scaler)
+            XYn[:, i, j] = prediction[0]
 
-    mean_mse = np.mean(mse)
-    std_mse = np.std(mse)
+    dydt = XYn - XY
 
-    mean_smse = np.mean(smse)
-    std_smse = np.std(smse)
+    # streamplot prediction
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='r', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
 
-    mean_evar = np.mean(evar)
-    std_evar = np.std(evar)
+    ax = beautify(ax)
+    ax.grid(False)
 
-    mean_nb_models = np.mean(nb_models)
-    std_nb_models = np.std(nb_models)
+    ax.set_xlim(xlim)
+    ax.set_xlabel('height')
 
-    mean_duration = np.mean(duration)
-    std_duration = np.std(duration)
+    ax.set_ylim(ylim)
+    ax.set_ylabel('velocity')
 
-    arr = np.array([mean_mse, std_mse,
-                    mean_smse, std_smse,
-                    mean_evar, std_evar,
-                    mean_nb_models, std_nb_models,
-                    mean_duration, std_duration])
+    plt.title('bouncing ball - streamplot for 1-step prediction')
 
-    if str(args.name) == 'alpha':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
-    elif str(args.name) == 'models':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
-    else:
-        raise NotImplementedError
+    # save tikz and pdf
+    import tikzplotlib
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_pred.tex')
+    plt.savefig(path + dataset + '_stream_pred.pdf')
+
+    plt.show()
+
+
+

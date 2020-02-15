@@ -7,7 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, models
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
+from mimo.util.general import near_pd, beautify
 
 import argparse
 
@@ -152,10 +152,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
+    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    env = gym.make('Cartpole-DPGLM-v1')
+    env = gym.make('Pendulum-DPGLM-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-4
@@ -214,62 +214,129 @@ if __name__ == "__main__":
                                       train_data=train_data,
                                       arguments=args)
 
-    from mimo.util.prediction import meanfield_forcast
+    # create meshgrid
+    xlim = (-np.pi, np.pi)
+    ylim = (-8.0, 8.0)
 
-    idx = np.random.choice(len(test_obs))
-    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
-                                   exogenous=test_act[idx],
-                                   horizon=len(test_act[idx]),
-                                   incremental=True,
-                                   input_scaler=input_scaler,
-                                   target_scaler=target_scaler)
+    npts = 26
 
-    plt.figure()
-    plt.plot(test_obs[idx])
-    plt.plot(prediction)
+    x = np.linspace(*xlim, npts)
+    y = np.linspace(*ylim, npts)
+
+    X, Y = np.meshgrid(x, y)
+    XY = np.stack((X, Y))
+
+    XYn = np.zeros((3, npts, npts))
+    Zn = np.zeros((npts, npts))
+
+    env.reset()
+    for i in range(npts):
+        for j in range(npts):
+            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+            # Zn[i, j], XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+
+    Yn = XYn[2, :, :]
+
+    # Transform to angle
+    cos_x = XYn[0, :, :]
+    sin_x = XYn[1, :, :]
+    Xn = np.arctan2(sin_x, cos_x)
+
+    XYn = np.stack((Xn, Yn))
+
+    dydt = XYn - XY
+
+    # streamplot for environment
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='b', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
+
+    ax = beautify(ax)
+    ax.grid(False)
+
+    ax.set_xlim(xlim)
+    ax.set_xlabel('angle')
+
+    ax.set_ylim(ylim)
+    ax.set_ylabel('angular velocity')
+
+    plt.title('pendulum - streamplot for 1-step rollout (environment)')
+
+    # set working directory
+    os.chdir(args.evalpath)
+    dataset = 'pendulum'
+
+    # save tikz and pdf
+    import tikzplotlib
+
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_env.tex')
+    plt.savefig(path + dataset + '_stream_env.pdf')
+
+    # plt.show()
+
+
+    # streamplot for predicted next states
+    from mimo.util.prediction import meanfield_prediction
+
+    # transform to angle to cos / sin
+    X1 = np.cos(X)
+    X2 = np.sin(X)
+
+    XY = np.stack((X1, X2, Y))
+
+    # next states from environment
+    XYn = np.zeros((3, npts, npts))
+    for i in range(npts):
+        for j in range(npts):
+            _cos_x = XY[0, i, j]
+            _sin_x = XY[1, i, j]
+            _vel = XY[2, i, j]
+            _action = 0
+            test_obs = np.asarray([_cos_x, _sin_x, _vel, _action])
+
+            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
+                                              input_scaler=input_scaler,
+                                              target_scaler=target_scaler)
+            XYn[:, i, j] = prediction[0]
+
+    # retransform to angle
+    cos_x = XYn[0, :, :]
+    sin_x = XYn[1, :, :]
+    Xn = np.arctan2(sin_x, cos_x)
+    Yn = XYn[2, :, :]
+
+    XYn = np.stack((Xn, Yn))
+    XY = np.stack((X, Y))
+
+    dydt = XYn - XY
+
+    # streamplot prediction
+    fig = plt.figure(figsize=(5, 5), frameon=True)
+    ax = fig.gca()
+    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
+                  color='r', linewidth=1, density=1.25,
+                  arrowstyle='->', arrowsize=1.5)
+
+    ax = beautify(ax)
+    ax.grid(False)
+
+    ax.set_xlim(xlim)
+    ax.set_xlabel('angle')
+
+    ax.set_ylim(ylim)
+    ax.set_ylabel('angular velocity')
+
+    plt.title('pendulum - streamplot for 1-step prediction')
+
+    # save tikz and pdf
+    import tikzplotlib
+
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_stream_pred.tex')
+    plt.savefig(path + dataset + '_stream_pred.pdf')
 
     plt.show()
-
-    from mimo.util.prediction import kstep_error
-
-    mse, smse, evar, nb_models, duration = [], [], [], [], []
-    for dpglm in dpglms:
-        _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar, _dur = kstep_error(dpglm,
-                                               test_obs, test_act,
-                                               horizon=10,
-                                               input_scaler=input_scaler,
-                                               target_scaler=target_scaler)
-        mse.append(_mse)
-        smse.append(_smse)
-        evar.append(_evar)
-        nb_models.append(_nb_models)
-        duration.append(_dur)
-
-    mean_mse = np.mean(mse)
-    std_mse = np.std(mse)
-
-    mean_smse = np.mean(smse)
-    std_smse = np.std(smse)
-
-    mean_evar = np.mean(evar)
-    std_evar = np.std(evar)
-
-    mean_nb_models = np.mean(nb_models)
-    std_nb_models = np.std(nb_models)
-
-    mean_duration = np.mean(duration)
-    std_duration = np.std(duration)
-
-    arr = np.array([mean_mse, std_mse,
-                    mean_smse, std_smse,
-                    mean_evar, std_evar,
-                    mean_nb_models, std_nb_models,
-                    mean_duration, std_duration])
-
-    if str(args.name) == 'alpha':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
-    elif str(args.name) == 'models':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
-    else:
-        raise NotImplementedError
