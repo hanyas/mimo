@@ -3,7 +3,7 @@ import numpy.random as npr
 from sklearn.metrics import explained_variance_score
 import pandas
 
-from mimo import distributions, models
+from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
 from mimo.util.data import *
 from mimo.util.plot import *
@@ -242,11 +242,11 @@ for e in range(eval_iter):
 
         # define model
         if stick_breaking == False:
-            dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                 components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
+            dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                    components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
         else:
-            dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                  components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
+            dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                    components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(nb_models)])
 
         dpglm.add_data(data)
 
@@ -272,7 +272,7 @@ for e in range(eval_iter):
                     if mf != True and mf_conv != True and mf_sgd != True:
                         for idx, l in enumerate(dpglm.labels_list):
                             l.r = l.get_responsibility()
-                        scores.append(dpglm._vlb())
+                        scores.append(dpglm.variational_lowerbound())
 
             if mf == True:
                 # mean field to lock onto a mode (without convergence criterion, with fixed number of iterations)
@@ -310,7 +310,7 @@ for e in range(eval_iter):
                     dpglm.meanfield_sgdstep(minibatch=data[minibatch], prob=prob, stepsize=step_size)
                     for idx, l in enumerate(dpglm.labels_list):
                         l.r = l.get_responsibility()
-                    scores.append(dpglm._vlb())
+                    scores.append(dpglm.variational_lowerbound())
                 # allscores.append(dpglm.meanfield_coordinate_descent_step())
 
             # all_err.append(err_)
