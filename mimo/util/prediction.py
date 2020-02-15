@@ -4,7 +4,10 @@ from mimo import distributions
 from mimo.distributions.dirichlet import Dirichlet
 from mimo.distributions.dirichlet import StickBreaking
 
-from pathos.pools import ProcessPool as Pool
+import joblib
+from joblib import Parallel, delayed
+nb_cores = joblib.parallel.cpu_count()
+
 import time
 
 
@@ -65,10 +68,8 @@ def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
                                  prediction, incremental,
                                  input_scaler, target_scaler)
 
-    pool = Pool(processes=-1)
-    res = pool.map(_loop, range(nb_traj))
-    pool.close()
-    pool.clear()
+    with Parallel(n_jobs=nb_cores, backend='threading') as parallel:
+        res = parallel(map(delayed(_loop), np.arange(nb_traj)))
 
     return res
 
@@ -110,10 +111,8 @@ def parallel_meanfield_prediction(dpglm, query,
                                               input_scaler, target_scaler)
         return np.hstack((mean, var, std))
 
-    pool = Pool(processes=-1)
-    res = pool.map(_loop, range(nb_data))
-    pool.close()
-    pool.clear()
+    with Parallel(n_jobs=nb_cores, backend='threading') as parallel:
+        res = parallel(map(delayed(_loop), np.arange(nb_data)))
 
     res = np.vstack(res)
     mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
