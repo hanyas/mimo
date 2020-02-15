@@ -118,7 +118,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
         return np.sum(digamma((self.posterior.invwishart.nu - np.arange(self.dim)) / 2.)) \
                + self.dim * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart.psi_chol)))
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         loglmbdatilde = self._loglmbdatilde()
 
         # see Eq. 10.77 in Bishop
@@ -241,7 +241,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
         self.mu, self.sigma = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         expected_stats = self.posterior.get_expected_statistics()
 
         param_diff = self.prior.nat_param - self.posterior.nat_param
@@ -335,7 +335,7 @@ class BayesianCategoricalWithDirichlet(Categorical, MaxLikelihood, MaxAPosterior
         self.probs = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         # return avg energy plus entropy, our contribution to the vlb
         # see Eq. 10.66 in Bishop
         logpitilde = self.expected_log_likelihood()  # default is on np.arange(self.K)
@@ -419,7 +419,7 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         self.probs = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         # entropy of a beta distribution https://en.wikipedia.org/wiki/Beta_distribution
         # E_q[log(q(pi))] = entropy of beta distribution of variational posterior
         q_entropy = np.sum(betaln(self.posterior.gammas, self.posterior.deltas)
@@ -558,7 +558,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
         self.A, self.sigma = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
         a, b, c, d = self.prior.nat_param - self.posterior.nat_param
 
@@ -743,7 +743,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         return np.sum(digamma((self.posterior.invwishart_niw.nu - np.arange(self.din)) / 2.)) \
                + self.din * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart_niw.psi_chol)))
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         _, _, _, _, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
         _, _, _, _, a, b, c, d = self.prior.nat_param - self.posterior.nat_param
 
@@ -789,26 +789,26 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
         contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
         if isinstance(xy, np.ndarray):
-            out = np.einsum('ni,ni->n', xy.dot(parammat), xy)
+            tmp = np.einsum('ni,ni->n', xy.dot(parammat), xy)
         else:
-            out = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
-            out += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
-            out += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
+            tmp = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
+            tmp += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
+            tmp += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
 
-        out += - dout / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
+        tmp += - dout / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
 
         if self.affine:
-            out += y.dot(E_Sigmainv_b)
-            out -= x.dot(E_AT_Sigmainv_b)
-            out -= 1. / 2 * E_bT_Sigmainv_b
+            tmp += y.dot(E_Sigmainv_b)
+            tmp -= x.dot(E_AT_Sigmainv_b)
+            tmp -= 1. / 2 * E_bT_Sigmainv_b
 
         x = np.reshape(x, (-1, self.din)) - self.posterior.gaussian.mu
         xs = np.linalg.solve(self.posterior.invwishart_niw.psi_chol, x.T)
 
         # see Eqs. 10.64, 10.67, and 10.71 in Bishop
         # sneaky gaussian/quadratic identity hidden here
-        out2 = 0.5 * self._loglmbdatilde() - self.din / (2. * self.posterior.kappa)\
-               - self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T)\
-               - self.din / 2. * np.log(2. * np.pi)
+        aux = 0.5 * self._loglmbdatilde() - self.din / (2. * self.posterior.kappa)\
+              - self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T)\
+              - self.din / 2. * np.log(2. * np.pi)
 
-        return out + out2
+        return aux + tmp

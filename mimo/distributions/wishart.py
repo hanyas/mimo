@@ -67,12 +67,10 @@ class Wishart(Distribution):
             return NotImplementedError
 
     def log_likelihood(self, x):
-        xdet = np.linalg.det(x)
-
         loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
                  - 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
                  - multigammaln(self.nu / 2., self.dim)\
-                 + 0.5 * (self.nu - self.dim - 1) * np.log(xdet)\
+                 + 0.5 * (self.nu - self.dim - 1) * np.slogdet(x)[1]\
                  - 0.5 * np.trace(sc.linalg.solve(self.psi, x))
 
         return loglik
@@ -83,9 +81,9 @@ class Wishart(Distribution):
                + self.nu * np.sum(np.log(np.diag(self.psi_chol)))
 
     def entropy(self):
-        Elogdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
+        E_logdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
                        + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.psi_chol)))
-        aux = - 0.5 * (self.nu - self.dim - 1) * Elogdetlmbda + 0.5 * self.nu * self.dim
+        aux = - 0.5 * (self.nu - self.dim - 1) * E_logdetlmbda + 0.5 * self.nu * self.dim
         return self.log_partition() + aux
 
 
@@ -144,12 +142,10 @@ class InverseWishart(Distribution):
         return self.psi / (self.nu + self.dim + 1.)
 
     def log_likelihood(self, x):
-        xdet = np.linalg.det(x)
-
         loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
                  + 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
                  - multigammaln(self.nu / 2., self.dim)\
-                 - 0.5 * (self.nu + self.dim + 1) * np.log(xdet)\
+                 - 0.5 * (self.nu + self.dim + 1) * np.slogdet(x)[1]\
                  - 0.5 * np.trace(self.psi @ np.linalg.inv(x))
 
         return loglik
@@ -160,7 +156,7 @@ class InverseWishart(Distribution):
                - self.nu * np.sum(np.log(np.diag(self.psi_chol)))
 
     def entropy(self):
-        Elogdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
+        E_logdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
                        + self.dim * np.log(2.) - 2. * np.sum(np.log(np.diag(self.psi_chol)))
-        aux = - 0.5 * (self.nu - self.dim - 1) * Elogdetlmbda + 0.5 * self.nu * self.dim
+        aux = - 0.5 * (self.nu - self.dim - 1) * E_logdetlmbda + 0.5 * self.nu * self.dim
         return self.log_partition() + aux
