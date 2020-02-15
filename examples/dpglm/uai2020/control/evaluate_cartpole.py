@@ -7,15 +7,14 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
 
 import argparse
 
 import matplotlib.pyplot as plt
 
+import joblib
 from joblib import Parallel, delayed
-import multiprocessing
-nb_cores = multiprocessing.cpu_count()
+nb_cores = joblib.parallel.cpu_count()
 
 
 def create_job(kwargs):
@@ -176,6 +175,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--seed', help='choose seed', default=1337, type=int)
     parser.add_argument('--name', help='add name suffix', default='')
 
     args = parser.parse_args()
@@ -184,13 +184,13 @@ if __name__ == "__main__":
 
     from mimo.util.data import sample_env
 
-    np.random.seed(1337)
+    np.random.seed(args.seed)
 
     env = gym.make('Cartpole-DPGLM-v1')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
     env.unwrapped._sigma = 1e-4
-    env.seed(1337)
+    env.seed(args.seed)
 
     dm_obs = env.observation_space.shape[0]
     dm_act = env.action_space.shape[0]
