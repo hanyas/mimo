@@ -74,7 +74,7 @@ class MeanField(with_metaclass(abc.ABCMeta, BayesianDistribution)):
     def meanfield_update(self, data, weights):
         pass
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         raise NotImplementedError
 
 

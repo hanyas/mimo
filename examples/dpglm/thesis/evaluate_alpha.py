@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo import distributions, models
+from mimo import distributions, mixture
 from mimo.util.data import load_data
 from mimo.util.prediction import sample_prediction, single_prediction
 from mimo.util.prediction import em_prediction, meanfield_prediction, gibbs_prediction, gibbs_prediction_noWeights
@@ -62,11 +62,11 @@ def create_job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     else:
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                               components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     dpglm.add_data(train_data)
 
     # inference
