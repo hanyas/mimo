@@ -4,9 +4,9 @@ from mimo import distributions
 from mimo.distributions.dirichlet import Dirichlet
 from mimo.distributions.dirichlet import StickBreaking
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 import time
 
@@ -60,16 +60,18 @@ def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=None,
 
     assert isinstance(query, list)
 
-    nb_traj = len(query)
-
     def _loop(n):
         return meanfield_forcast(dpglm, query[n],
                                  exogenous[n], horizon[n],
                                  prediction, incremental,
                                  input_scaler, target_scaler)
 
-    with Parallel(n_jobs=nb_cores, backend='threading') as parallel:
-        res = parallel(map(delayed(_loop), np.arange(nb_traj)))
+    nb_traj = len(query)
+
+    pool = Pool()
+    res = pool.map(_loop, range(nb_traj))
+    pool.close()
+    pool.clear()
 
     return res
 
@@ -102,17 +104,19 @@ def parallel_meanfield_prediction(dpglm, query,
                                   input_scaler=None, target_scaler=None):
     query = np.atleast_2d(query)
 
-    nb_data = len(query)
-    nb_dim = dpglm.components[0].dout
-
     def _loop(n):
         mean, var, std = meanfield_prediction(dpglm, query[n, :],
                                               prediction, incremental,
                                               input_scaler, target_scaler)
         return np.hstack((mean, var, std))
 
-    with Parallel(n_jobs=nb_cores, backend='threading') as parallel:
-        res = parallel(map(delayed(_loop), np.arange(nb_data)))
+    nb_data = len(query)
+    nb_dim = dpglm.components[0].dout
+
+    pool = Pool()
+    res = pool.map(_loop, range(nb_data))
+    pool.close()
+    pool.clear()
 
     res = np.vstack(res)
     mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
@@ -162,7 +166,6 @@ def meanfield_prediction(dpglm, query,
     if prediction == 'mode':
         mode = np.argmax(effective_weight)
         t_mean, t_var, _ = predictive_matrix_t(_input, dpglm.components[mode].posterior)
-
         t_var = np.diag(t_var)  # consider only diagonal variances for plots
 
         mean, var = t_mean, t_var
