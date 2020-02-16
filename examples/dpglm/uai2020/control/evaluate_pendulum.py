@@ -176,6 +176,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
+    parser.add_argument('--horizon', help='horizon prediction', default=1, type=int)
     parser.add_argument('--name', help='add name suffix', default='')
 
     args = parser.parse_args()
@@ -245,11 +246,10 @@ if __name__ == "__main__":
     mse, smse, evar, nb_models, duration, nlpd = [], [], [], [], [], []
     for dpglm in dpglms:
         _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar, _dur = kstep_error(dpglm,
-                                               test_obs, test_act,
-                                               horizon=10,
-                                               input_scaler=input_scaler,
-                                               target_scaler=target_scaler)
+        _mse, _smse, _evar, _dur =\
+            kstep_error(dpglm, test_obs, test_act, horizon=args.horizon,
+                        input_scaler=input_scaler, target_scaler=target_scaler)
+
         _nlpd = - 1.0 * dpglm.predictive_log_likelihood(test_data)
 
         mse.append(_mse)
@@ -288,5 +288,7 @@ if __name__ == "__main__":
         np.savetxt('pendulum_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
     elif str(args.name) == 'models':
         np.savetxt('pendulum_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
+    elif str(args.name) == 'horizon':
+        np.savetxt('pendulum_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.horizon) + '.csv', arr, delimiter=',')
     else:
         raise NotImplementedError
