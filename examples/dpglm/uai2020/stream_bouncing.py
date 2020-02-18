@@ -5,7 +5,7 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo import distributions, models
+from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd, beautify
 
@@ -96,10 +96,10 @@ def create_job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     else:
-        dpglm = models.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     dpglm.add_data(data)
 
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
@@ -241,8 +241,8 @@ if __name__ == "__main__":
     ax = fig.gca()
 
     ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='b', linewidth=1, density=1.25,
-                  arrowstyle='->', arrowsize=1.5)
+                  color='b', linewidth=0.75, density=1,
+                  arrowstyle='->', arrowsize=1.5)# minlength=0.5 to control minimum length of streams
 
     ax = beautify(ax)
     ax.grid(False)
@@ -286,7 +286,7 @@ if __name__ == "__main__":
     fig = plt.figure(figsize=(5, 5), frameon=True)
     ax = fig.gca()
     ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='r', linewidth=1, density=1.25,
+                  color='r', linewidth=0.75, density=1,
                   arrowstyle='->', arrowsize=1.5)
 
     ax = beautify(ax)
