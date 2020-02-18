@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument('--svi_batchsize', help='Set SVI batch size', default=128, type=int)
     parser.add_argument('--prediction', help='Set prediction to mode or average', default='mode')
     parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
