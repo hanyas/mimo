@@ -12,12 +12,12 @@ evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control')
 os.chdir(evalpath)
 
 # set parameters for plot
-y_axis = 'smse'             # smse, used-models, nlpd, evar, mse
+y_axis = 'nmse'             # nmse, used-models, nlpd, evar, mse
 
-dataset_choices = ['pendulum', 'cartpole']        # pendulum, cartpole
+dataset_choices = ['cartpole', 'pendulum']        # pendulum, cartpole
 prior_choices = ['stick-breaking', 'dirichlet']   # dirichlet, stick-breaking
-x_axis_choices = ['models', 'alpha']              # alpha, models
-
+x_axis_choices = ['horizon', 'models', 'alpha']   # alpha, models, horizon
+#x_axis_choices = ['models', 'alpha']   # alpha, models, horizon
 
 # iterate all 4 plots:
 for n in range(len(x_axis_choices)):
@@ -39,6 +39,9 @@ for n in range(len(x_axis_choices)):
                 alpha = [0.1, 1.0, 10.0, 50.0, 100.0, 500.0]
             if prior == 'stick-breaking':
                 alpha = [1.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
+
+            horizon = [1, 5, 10, 15, 20, 25]
+
             # set y-ticks
             if dataset == 'pendulum':
                 models = [30, 45, 60, 75, 90]
@@ -50,6 +53,8 @@ for n in range(len(x_axis_choices)):
                 iterator = models
             if x_axis == 'alpha':
                 iterator = alpha
+            if x_axis == 'horizon':
+                iterator = horizon
             metrics = np.zeros((len(iterator), 12))
 
             for i in range(len(iterator)):
@@ -65,7 +70,7 @@ for n in range(len(x_axis_choices)):
 
             # column indices for what to show on y-axis:
             # 0, 1 = mean_mse, std_mse
-            # 2, 3 = mean_smse, std_smse
+            # 2, 3 = mean_nmse, std_nmse
             # 4. 5 = mean_evar, std_evar
             # 6, 7 = mean_nb_models, std_nb_models
             # 8, 9 = mean_duration, std_duration
@@ -73,18 +78,18 @@ for n in range(len(x_axis_choices)):
 
             # plot nmse or used models on y-axis
             if y_axis == 'mse':
-                y = metrics[:, 0]       # choose mean_smse for y-axis
-                error = metrics[:, 1]   # choose std_smse as error
+                y = metrics[:, 0]       # choose mean_nmse for y-axis
+                error = metrics[:, 1]   # choose std_nmse as error
                 ax2.set_ylabel('mse')
 
-            if y_axis == 'smse':
-                y = metrics[:, 2]       # choose mean_smse for y-axis
-                error = metrics[:, 3]   # choose std_smse as error
-                ax2.set_ylabel('smse')
+            if y_axis == 'nmse':
+                y = metrics[:, 2]       # choose mean_nmse for y-axis
+                error = metrics[:, 3]   # choose std_nmse as error
+                ax2.set_ylabel('nmse')
 
             if y_axis == 'evar':
-                y = metrics[:, 4]       # choose mean_smse for y-axis
-                error = metrics[:, 5]   # choose std_smse as error
+                y = metrics[:, 4]       # choose mean_nmse for y-axis
+                error = metrics[:, 5]   # choose std_nmse as error
                 ax2.set_ylabel('evar')
 
             if y_axis == 'used-models':
@@ -93,8 +98,8 @@ for n in range(len(x_axis_choices)):
                 ax2.set_ylabel('used models')
 
             if y_axis == 'nlpd':
-                y = metrics[:, 10]       # choose mean_smse for y-axis
-                error = metrics[:, 11]   # choose std_smse as error
+                y = metrics[:, 10]       # choose mean_nmse for y-axis
+                error = metrics[:, 11]   # choose std_nmse as error
                 ax2.set_ylabel('nlpd')
 
             # set the x-axis of the stick-breaking prior
@@ -106,11 +111,15 @@ for n in range(len(x_axis_choices)):
                 if x_axis == 'alpha':
                     x = alpha
                     plt.xscale('log')  # log scale on alphas
-                    ax2.set_xlabel('log(alphas) - stick-breaking prior')
+                    ax2.set_xlabel('log(alpha) - stick-breaking prior')
 
                 if x_axis == 'models':
                     x = models
                     ax2.set_xlabel('max. number of models - stick-breaking prior')
+
+                if x_axis == 'horizon':
+                    x = horizon
+                    ax2.set_xlabel('prediction horizon - stick-breaking prior')
 
                 ax2.errorbar(x, y, yerr=error, fmt='-o', capsize=7, c='red', markersize=5)  # fillstyle='none'
 
@@ -124,11 +133,15 @@ for n in range(len(x_axis_choices)):
                 if x_axis == 'alpha':
                     x = alpha
                     plt.xscale('log')  # log scale on alphas
-                    ax1.set_xlabel('log(alphas) - dirichlet prior')
+                    ax1.set_xlabel('log(alpha) - dirichlet prior')
 
                 if x_axis == 'models':
                     x = models
                     ax1.set_xlabel('max. number of models - dirichlet prior')
+
+                if x_axis == 'horizon':
+                    x = horizon
+                    ax1.set_xlabel('prediction horizon - dirichlet prior')
 
                 ax1.errorbar(x, y, yerr=error, fmt='-x', capsize=7)
 
@@ -140,7 +153,7 @@ for n in range(len(x_axis_choices)):
         plt.tight_layout() # otherwise title is clipped off
 
         print(path, dataset, x_axis, y_axis)
-        # tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
+        tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
         plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
 
         plt.show()
