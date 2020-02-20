@@ -1,5 +1,5 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "2"
+# os.environ["OMP_NUM_THREADS"] = "2"
 
 import numpy as np
 import numpy.random as npr
@@ -7,15 +7,12 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
 
 import argparse
 
-import matplotlib.pyplot as plt
-
+import joblib
 from joblib import Parallel, delayed
-import multiprocessing
-nb_cores = multiprocessing.cpu_count()
+nb_cores = joblib.parallel.cpu_count()
 
 
 def create_job(kwargs):
@@ -163,13 +160,13 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=500, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=5000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -178,8 +175,9 @@ if __name__ == "__main__":
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of dataset', default=12000, type=int)
-    parser.add_argument('--seed', help='choose seed', default=1337, type=int)
+    parser.add_argument('--nb_train', help='size of train dataset', default=10000, type=int)
+    parser.add_argument('--nb_test', help='size of test dataset', default=2000, type=int)
+    parser.add_argument('--seed', help='choose seed', default=1, type=int)
 
     args = parser.parse_args()
 
@@ -188,27 +186,31 @@ if __name__ == "__main__":
     import scipy as sc
     from scipy import io
 
-    # training data
+    # load all available data
     data = sc.io.loadmat(args.datapath + '/Barrett/ias_real_barrett_data.mat')
-    train_data = np.hstack((data['X_train'], data['Y_train']))
+    all_data = np.vstack((np.hstack((data['X_train'], data['Y_train'])),
+                          np.hstack((data['X_test'], data['Y_test']))))
+    # shuffle data
+    from sklearn.utils import shuffle
+    all_data = shuffle(all_data)
 
+    # training data
     nb_train = args.nb_train
-    train_choice = np.random.choice(len(train_data), nb_train)
-    train_input, train_target = train_data[train_choice, :21], train_data[train_choice, 21:]
+    train_data = all_data[:nb_train, :]
+    train_input, train_target = train_data[:, :21], train_data[:, 21:]
 
     # test data
-    test_data = np.hstack((data['X_test'], data['Y_test']))
-
-    test_choice = np.random.choice(len(test_data), len(test_data))
-    test_input, test_target = test_data[test_choice, :21], test_data[test_choice, 21:]
+    nb_test = args.nb_test
+    test_data = all_data[-nb_test:, :]
+    test_input, test_target = test_data[:, :21], test_data[:, 21:]
 
     # scale training data
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=21, whiten=True)
     target_scaler = PCA(n_components=7, whiten=True)
 
-    input_scaler.fit(train_input)
-    target_scaler.fit(train_target)
+    input_scaler.fit(all_data[:, :21])
+    target_scaler.fit(all_data[:, 21:])
 
     train_data = {'input': input_scaler.transform(train_input),
                   'target': target_scaler.transform(train_target)}
@@ -219,24 +221,24 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     from mimo.util.prediction import parallel_meanfield_prediction
-    from sklearn.metrics import explained_variance_score, mean_squared_error
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    # predict on train data
-    train_predict, _, _ = parallel_meanfield_prediction(dpglm, train_input,
-                                                        prediction=args.prediction,
-                                                        input_scaler=input_scaler,
-                                                        target_scaler=target_scaler)
-
-    train_evar = explained_variance_score(train_predict, train_target)
-    train_mse = mean_squared_error(train_predict, train_target)
-    train_smse = train_mse / np.var(train_target, axis=0)
-
-    train_nlpd = - 1.0 * dpglm.predictive_log_likelihood(np.hstack((input_scaler.transform(train_input),
-                                                                    target_scaler.transform(train_target)))).mean()
-
-    print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse,
-          'SMSE:', train_smse.mean(), 'NLPD:', train_nlpd,
-          'Compnents:', len(dpglm.used_labels))
+    # # predict on train data
+    # train_predict, _, _ = parallel_meanfield_prediction(dpglm, train_input,
+    #                                                     prediction=args.prediction,
+    #                                                     input_scaler=input_scaler,
+    #                                                     target_scaler=target_scaler)
+    #
+    # train_evar = explained_variance_score(train_target, train_predict)
+    # train_mse = mean_squared_error(train_target, train_predict)
+    # train_smse = 1. - r2_score(train_target, train_predict)
+    #
+    # train_nlpd = - 1.0 * dpglm.predictive_log_likelihood(np.hstack((input_scaler.transform(train_input),
+    #                                                                 target_scaler.transform(train_target)))).mean()
+    #
+    # print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse,
+    #       'SMSE:', train_smse, 'NLPD:', train_nlpd,
+    #       'Compnents:', len(dpglm.used_labels))
 
     # predict on test data
     test_predict, _, _ = parallel_meanfield_prediction(dpglm, test_input,
@@ -244,22 +246,19 @@ if __name__ == "__main__":
                                                        input_scaler=input_scaler,
                                                        target_scaler=target_scaler)
 
-    test_evar = explained_variance_score(test_predict, test_target)
-    test_mse = mean_squared_error(test_predict, test_target)
-    test_smse = test_mse / np.var(test_target, axis=0)
+    test_evar = explained_variance_score(test_target, test_predict)
+    test_mse = mean_squared_error(test_target, test_predict)
+    test_smse = 1. - r2_score(test_target, test_predict)
 
     test_nlpd = - 1.0 * dpglm.predictive_log_likelihood(np.hstack((input_scaler.transform(test_input),
                                                                    target_scaler.transform(test_target)))).mean()
 
     print('TEST - EVAR:', test_evar, 'MSE:', test_mse,
-          'SMSE:', test_smse.mean(), 'NLPD:', test_nlpd,
+          'SMSE:', test_smse, 'NLPD:', test_nlpd,
           'Compnents:', len(dpglm.used_labels))
 
-    arr = np.array([train_evar, train_mse,
-                    train_smse, train_nlpd,
-                    len(dpglm.used_labels),
-                    test_evar, test_mse,
-                    test_smse, test_nlpd,
-                    len(dpglm.used_labels)])
+    arr = np.hstack([test_evar, test_mse,
+                     test_smse, test_nlpd,
+                     len(dpglm.used_labels)])
 
-    np.savetxt('barrett_' + str(args.prior) + '_' + str(args.nb_train) + '_' + str(args.seed) + '.csv', arr, delimiter=',')
+    np.savetxt('barrett_' + str(args.prior) + '_' + str(args.nb_train) + '_alpha_' + str(args.alpha) + '_seed_' + str(args.seed) + '.csv', arr, delimiter=',')
