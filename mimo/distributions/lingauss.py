@@ -37,7 +37,7 @@ class LinearGaussian(Distribution):
             return self.A.shape[1] - 1
         else:
             return self.A.shape[1]
-
+          
     @property
     def dout(self):
         # output dimension
