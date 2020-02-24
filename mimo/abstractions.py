@@ -71,10 +71,10 @@ class MeanField(with_metaclass(abc.ABCMeta, BayesianDistribution)):
         pass
 
     @abc.abstractmethod
-    def meanfieldupdate(self, data, weights):
+    def meanfield_update(self, data, weights):
         pass
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         raise NotImplementedError
 
 
@@ -98,9 +98,9 @@ class MaxLikelihood(with_metaclass(abc.ABCMeta, Distribution)):
         raise NotImplementedError
 
 
-class MAP(with_metaclass(abc.ABCMeta, BayesianDistribution)):
+class MaxAPosteriori(with_metaclass(abc.ABCMeta, BayesianDistribution)):
     @abc.abstractmethod
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         """
         sets the parameters to their MAP values given the (weighted) data
         analogous to max_likelihood but includes hyperparameters
@@ -162,8 +162,7 @@ class ModelMeanField(with_metaclass(abc.ABCMeta, Model)):
             if scores[-1] is not None and len(scores) > 1:
                 if np.abs(scores[-1] - scores[-2]) < tol:
                     return scores
-        print(
-            'WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
+        print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return scores
 
 
@@ -179,7 +178,7 @@ class _EMBase(with_metaclass(abc.ABCMeta, Model)):
         # returns a log likelihood number on attached data
         pass
 
-    def _EM_fit(self, method, tol=1e-1, maxiter=100, progprint=False):
+    def _em_fit(self, method, tol=1e-1, maxiter=100, progprint=False):
         # NOTE: doesn't re-initialize!
         likes = []
         step_iterator = range(maxiter) if not progprint else progprint_xrange(
@@ -200,18 +199,18 @@ class _EMBase(with_metaclass(abc.ABCMeta, Model)):
 
 
 class ModelEM(with_metaclass(abc.ABCMeta, _EMBase)):
-    def EM_fit(self, tol=1e-1, maxiter=100):
-        return self._EM_fit(self.EM_step, tol=tol, maxiter=maxiter)
+    def em_fit(self, tol=1e-1, maxiter=100):
+        return self._em_fit(self.em_step, tol=tol, maxiter=maxiter)
 
     @abc.abstractmethod
-    def EM_step(self):
+    def em_step(self):
         pass
 
 
 class ModelMAPEM(with_metaclass(abc.ABCMeta, _EMBase)):
-    def MAP_EM_fit(self, tol=1e-1, maxiter=100):
+    def map_em_fit(self, tol=1e-1, maxiter=100):
         return self._EM_fit(self.MAP_EM_step, tol=tol, maxiter=maxiter)
 
     @abc.abstractmethod
-    def MAP_EM_step(self):
+    def map_em_step(self):
         pass

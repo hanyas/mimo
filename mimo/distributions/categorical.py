@@ -19,6 +19,10 @@ class Categorical(Distribution):
         self.K, self.probs = values
 
     @property
+    def num_parameters(self):
+        return len(self.probs) - 1
+
+    @property
     def dim(self):
         return self.K
 

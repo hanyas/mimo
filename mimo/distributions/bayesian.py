@@ -1,28 +1,24 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# @Filename: bayesian
-# @Date: 2019-06-08-21-53
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
+from abc import ABC
 
 import numpy as np
 
 import copy
 
-from mimo.abstractions import MaxLikelihood, MAP
+from mimo.abstractions import MaxLikelihood, MaxAPosteriori
 from mimo.abstractions import GibbsSampling, MeanField, MeanFieldSVI
 
 from mimo.distributions.gaussian import Gaussian, DiagonalGaussian
 from mimo.distributions.categorical import Categorical
-from mimo.distributions import LinearGaussian
+from mimo.distributions import LinearGaussian, LinearGaussianWithNoisyInputs
 
 from scipy.special import digamma, gammaln, betaln
 from numpy.core.umath_tests import inner1d
 from mimo.util.general import blockarray
+from mimo.util.general import near_pd
 
 
-class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
-                       GibbsSampling, MeanField, MeanFieldSVI):
+class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
+                       GibbsSampling, MeanField, MeanFieldSVI, ABC):
     """
     Multivariate Gaussian distribution class.
     Uses a Normal-Inverse-Wishart prior and posterior
@@ -67,7 +63,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return self
 
     # Max a posteriori
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -83,11 +79,11 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
     def resample(self, data=[], importance=[]):
         # importance imply importance of samples, i.e. exponentiated likelihood
         if not importance:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_statistics(data)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_statistics(data)
         else:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_weighted_statistics(data, weights=importance)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_weighted_statistics(data, weights=importance)
 
         self.mu, self.sigma = self.posterior.rvs()
         return self
@@ -99,7 +95,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -110,9 +106,9 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param +\
-                                   stepsize * (self.prior.nat_param +
-                                               1. / prob * self.posterior.get_weighted_statistics(data, weights))
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param
+                                                 + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
         self.mu, self.sigma = self.posterior.rvs()
         return self
@@ -122,12 +118,12 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
         return np.sum(digamma((self.posterior.invwishart.nu - np.arange(self.dim)) / 2.)) \
                + self.dim * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart.psi_chol)))
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         loglmbdatilde = self._loglmbdatilde()
 
         # see Eq. 10.77 in Bishop
-        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.)) -
-                             self.posterior.invwishart.entropy())
+        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.))
+                            - self.posterior.invwishart.entropy())
 
         # see Eq. 10.74 in Bishop, we aren't summing over K
         p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
@@ -145,12 +141,12 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MAP,
 
         # see Eqs. 10.64, 10.67, and 10.71 in Bishop
         # sneaky gaussian/quadratic identity hidden here
-        return 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa) -\
-               self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
+        return 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa)\
+               - self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) - self.dim / 2. * np.log(2. * np.pi)
 
 
-class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
-                               GibbsSampling, MeanField, MeanFieldSVI):
+class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
+                               GibbsSampling, MeanField, MeanFieldSVI, ABC):
     """
     Product of normal-gamma priors over mu (mean vector) and sigmas
     (vector of scalar variances).
@@ -191,7 +187,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return self
 
     # Max a posteriori
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -209,11 +205,11 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
     def resample(self, data=[], importance=[]):
         # importance imply importance of samples, i.e. exponentiated likelihood
         if not importance:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_statistics(data)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_statistics(data)
         else:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_weighted_statistics(data, weights=importance)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_weighted_statistics(data, weights=importance)
 
         self.mu, self.sigma = self.posterior.rvs()
         return self
@@ -225,7 +221,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -237,15 +233,15 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param +\
-                                   stepsize * (self.prior.nat_param +
-                                               1. / prob * self.posterior.get_weighted_statistics(data, weights))
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param
+                                                 + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
         # for plotting
         self.mu, self.sigma = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         expected_stats = self.posterior.get_expected_statistics()
 
         param_diff = self.prior.nat_param - self.posterior.nat_param
@@ -260,13 +256,12 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MAP,
         return (x**2).dot(a) + x.dot(b) + c.sum() + d.sum() - 0.5 * self.D * np.log(2. * np.pi)
 
 
-class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
-                                       GibbsSampling, MeanField, MeanFieldSVI):
+class BayesianCategoricalWithDirichlet(Categorical, MaxLikelihood, MaxAPosteriori,
+                                       GibbsSampling, MeanField, MeanFieldSVI, ABC):
     """
     This class represents a categorical distribution over labels, where the
     parameter is weights and the prior is a Dirichlet distribution.
-    For example, if K == 3, then five samples may look like
-        [0,1,0,2,1]
+    For example, if K == 3, then five samples may look like [0,1,0,2,1]
     Each entry is the label of a sample, like the outcome of die rolls. In other
     words, generated data or data passed to log_likelihood are indices, not
     indicator variables!  (But when 'weighted data' is passed, like in mean
@@ -305,7 +300,7 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         self.probs = counts / counts.sum()
         return self
 
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -322,7 +317,7 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         return self
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -333,25 +328,25 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        self.posterior.alphas = (1. - stepsize) * self.posterior.alphas +\
-                                stepsize * (self.prior.alphas +
-                                            1. / prob * self.posterior.get_weighted_statistics(data, weights))
+        self.posterior.alphas = (1. - stepsize) * self.posterior.alphas\
+                                + stepsize * (self.prior.alphas
+                                              + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
         self.probs = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         # return avg energy plus entropy, our contribution to the vlb
         # see Eq. 10.66 in Bishop
         logpitilde = self.expected_log_likelihood()  # default is on np.arange(self.K)
 
-        q_entropy = -1. * (gammaln(self.posterior.alphas.sum()) -
-                           gammaln(self.posterior.alphas).sum() +
-                           ((self.posterior.alphas - 1.) * logpitilde).sum())
+        q_entropy = -1. * (gammaln(self.posterior.alphas.sum())
+                           - gammaln(self.posterior.alphas).sum()
+                           + ((self.posterior.alphas - 1.) * logpitilde).sum())
 
-        p_avgengy = gammaln(self.prior.alphas.sum()) -\
-                    gammaln(self.prior.alphas).sum() +\
-                    ((self.prior.alphas - 1.) * logpitilde).sum()
+        p_avgengy = gammaln(self.prior.alphas.sum())\
+                    - gammaln(self.prior.alphas).sum()\
+                    + ((self.prior.alphas - 1.) * logpitilde).sum()
 
         return p_avgengy + q_entropy
 
@@ -361,12 +356,11 @@ class BayesianCategoricalWithDirichlet(Categorical,  MaxLikelihood, MAP,
         return digamma(self.posterior.alphas[x]) - digamma(self.posterior.alphas.sum())
 
 
-class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField, MeanFieldSVI):
+class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField, MeanFieldSVI, ABC):
     """
     This class represents a categorical distribution over labels, where the
     parameter is weights and the prior is a stick-breaking process.
-    For example, if K == 3, then five samples may look like
-        [0,1,0,2,1]
+    For example, if K == 3, then five samples may look like [0,1,0,2,1]
     This class can be seen as a better approximation for a DP via a stick-breaking prior
     Parameters:
         weights, vector encoding a finite pmf
@@ -400,7 +394,7 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         return self
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             counts = self.posterior.get_statistics(data)
         else:
@@ -417,28 +411,28 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         counts = self.posterior.get_weighted_statistics(data, weights)
         cumcounts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
 
-        self.posterior.gammas = (1. - stepsize) * self.posterior.gammas +\
-                                stepsize * (self.prior.gammas + 1. / prob * counts)
-        self.posterior.deltas = (1. - stepsize) * self.posterior.deltas +\
-                                stepsize * (self.prior.deltas + 1. / prob * cumcounts)
+        self.posterior.gammas = (1. - stepsize) * self.posterior.gammas\
+                                + stepsize * (self.prior.gammas + 1. / prob * counts)
+        self.posterior.deltas = (1. - stepsize) * self.posterior.deltas\
+                                + stepsize * (self.prior.deltas + 1. / prob * cumcounts)
 
         self.probs = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         # entropy of a beta distribution https://en.wikipedia.org/wiki/Beta_distribution
         # E_q[log(q(pi))] = entropy of beta distribution of variational posterior
-        q_entropy = np.sum(betaln(self.posterior.gammas, self.posterior.deltas) -
-                           (self.posterior.gammas - 1.) * digamma(self.posterior.gammas) -
-                           (self.posterior.deltas - 1.) * digamma(self.posterior.deltas) +
-                           (self.posterior.gammas + self.posterior.deltas - 2.) *
-                           digamma(self.posterior.gammas + self.posterior.deltas))
+        q_entropy = np.sum(betaln(self.posterior.gammas, self.posterior.deltas)
+                           - (self.posterior.gammas - 1.) * digamma(self.posterior.gammas)
+                           - (self.posterior.deltas - 1.) * digamma(self.posterior.deltas)
+                           + (self.posterior.gammas + self.posterior.deltas - 2.)
+                           * digamma(self.posterior.gammas + self.posterior.deltas))
 
         # cross entropy of a beta distribution https://en.wikipedia.org/wiki/Beta_distribution
         # E_q[log(p(pi))] = cross entropy of beta dists and the stick-breaking prior
-        p_avgengy = -1.0 * np.sum(betaln(self.prior.gammas, self.prior.deltas) -
-                                  (self.prior.gammas - 1.) * digamma(self.posterior.deltas) +
-                                  (self.prior.gammas - 1.) * digamma(self.posterior.gammas + self.posterior.deltas))
+        p_avgengy = -1.0 * np.sum(betaln(self.prior.gammas, self.prior.deltas)
+                                  - (self.prior.gammas - 1.) * digamma(self.posterior.deltas)
+                                  + (self.prior.gammas - 1.) * digamma(self.posterior.gammas + self.posterior.deltas))
 
         return p_avgengy + q_entropy
 
@@ -446,12 +440,12 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         # usually called when np.all(x == np.arange(self.K))
         x = x if x is not None else slice(None)
         return np.take(digamma(self.posterior.gammas) - digamma(self.posterior.gammas + self.posterior.deltas)
-                       + np.hstack((0, np.cumsum(digamma(self.posterior.deltas) -
-                                                 digamma(self.posterior.gammas + self.posterior.deltas))[:-1])), x)
+                       + np.hstack((0, np.cumsum(digamma(self.posterior.deltas)
+                                                 - digamma(self.posterior.gammas + self.posterior.deltas))[:-1])), x)
 
 
-class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
-                             GibbsSampling, MeanField, MeanFieldSVI):
+class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
+                             GibbsSampling, MeanField, MeanFieldSVI, ABC):
     """
     Multivariate Gaussian distribution with a linear mean function.
     Uses a conjugate Matrix-Normal/Inverse-Wishart prior.
@@ -494,7 +488,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -502,7 +496,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         return self
 
     # Max a posteriori
-    def MAP(self, data, weights=None):
+    def max_aposteriori(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -519,7 +513,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = 1e-10 * np.eye(self.dout) + symmetrize(self.sigma)
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -530,11 +524,11 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
     def resample(self, data=[], importance=[]):
         # importance imply importance of samples, i.e. exponentiated likelihood
         if not importance:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_statistics(data)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_statistics(data)
         else:
-            self.posterior.nat_param = self.prior.nat_param +\
-                                       self.posterior.get_weighted_statistics(data, weights=importance)
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_weighted_statistics(data, weights=importance)
 
         self.A, self.sigma = self.posterior.rvs()
         return self
@@ -546,7 +540,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         return new
 
     # Mean field
-    def meanfieldupdate(self, data, weights=None):
+    def meanfield_update(self, data, weights=None):
         if weights is None:
             stats = self.posterior.get_statistics(data)
         else:
@@ -557,19 +551,19 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param +\
-                                   stepsize * (self.prior.nat_param +
-                                               1. / prob * self.posterior.get_weighted_statistics(data, weights))
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param
+                                                 + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
         self.A, self.sigma = self.posterior.rvs()
         return self
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
         a, b, c, d = self.prior.nat_param - self.posterior.nat_param
 
-        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A)) -\
-              0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
+        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A))\
+              - 0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
 
         logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
 
@@ -605,3 +599,216 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood,
             out -= 1. / 2 * E_bT_Sigmainv_b
 
         return out
+
+
+class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLikelihood,
+                                            GibbsSampling, MeanField, MeanFieldSVI, ABC):
+    """
+    Multivariate Gaussian distribution with a linear mean function.
+    Uses a conjugate Matrix-Normal/Inverse-Wishart prior.
+    Parameters are linear transf. and covariance matrix:
+        A, sigma
+    """
+
+    def __init__(self, prior, mu=None, sigma_niw=None, A=None, sigma=None):
+        super(BayesianLinearGaussianWithNoisyInputs, self).__init__(mu=mu, sigma_niw=sigma_niw,
+                                                                    A=A, sigma=sigma, affine=prior.affine)
+
+        self.mu = mu
+        self.sigma_niw = sigma_niw
+
+        self.A = A
+        self.sigma = sigma
+
+        # Normal-Inverse-Wishart-Matrix-Normal-Inverse-Wishart prior
+        self.prior = prior
+
+        # Normal-Inverse-Wishart-Matrix-Normal-Inverse-Wishart posterior
+        self.posterior = copy.deepcopy(prior)
+
+        if A is None or sigma is None:
+            self.mu, self.sigma_niw, self.A, self.sigma = self.prior.rvs()
+
+    def empirical_bayes(self, data):
+        raise NotImplementedError
+
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+
+        # (yxT, xxT, yyT, n)
+        x_niw, n_niw, xxT_niw, n_niw, yxT_mniw, xxT_mniw, yyT_mniw, n_mniw = stats
+
+        # this SVD is necessary to check if the max likelihood solution is
+        # degenerate, which can happen in the EM algorithm
+        if n_niw < self.din or np.sum(np.linalg.svd(xxT_niw, compute_uv=False) > 1e-6) < self.din:
+            self.mu = 99999999 * np.ones(self.din)
+            self.sigma_niw = np.eye(self.din)
+        else:
+            self.mu = x_niw / n_niw
+            self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
+
+        if n_mniw < (self.din * self.dout) or np.sum(np.linalg.svd(xxT_mniw, compute_uv=False) > 1e-6) < self.din\
+                or np.sum(np.linalg.svd(yyT_mniw, compute_uv=False) > 1e-6) < self.dout:
+            self.A = 99999999 * np.ones((self.dout, self.din))
+            self.sigma = np.eye(self.dout)
+        else:
+            self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
+            self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
+
+        def symmetrize(A):
+            return (A + A.T) / 2.
+
+        # numerical stabilization
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
+
+        assert np.allclose(self.sigma, self.sigma.T)
+        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
+
+        return self
+
+    # Max a posteriori
+    def MAP(self, data, weights=None):
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+        stats += self.prior.nat_param
+
+        # (yxT, xxT, yyT, n)
+        x_niw, n_niw, xxT_niw, n_niw, yxT_mniw, xxT_mniw, yyT_mniw, n_mniw = stats
+
+        self.mu = x_niw / n_niw
+        self.sigma_niw = xxT_niw / n_niw - np.outer(self.mu, self.mu)
+
+        self.A = np.linalg.solve(xxT_mniw, yxT_mniw.T).T
+        self.sigma = (yyT_mniw - self.A.dot(yxT_mniw.T)) / n_mniw
+
+        def symmetrize(A):
+            return (A + A.T) / 2.
+
+        # numerical stabilization
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.sigma.shape[0]))
+
+        assert np.allclose(self.sigma, self.sigma.T)
+        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
+
+        return self
+
+    # Gibbs sampling
+    def resample(self, data=[], importance=[]):
+        # importance imply importance of samples, i.e. exponentiated likelihood
+        if not importance:
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_statistics(data)
+        else:
+            self.posterior.nat_param = self.prior.nat_param\
+                                       + self.posterior.get_weighted_statistics(data, weights=importance)
+
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def copy_sample(self):
+        new = copy.copy(self)
+        new.mu = self.mu.copy()
+        new.sigma_niw = self.sigma_niw.copy()
+        new.A = self.A.copy()
+        new.sigma = self.sigma.copy()
+        return new
+
+    # Mean field
+    def meanfield_update(self, data, weights=None):
+        if weights is None:
+            stats = self.posterior.get_statistics(data)
+        else:
+            stats = self.posterior.get_weighted_statistics(data, weights)
+
+        self.posterior.nat_param = self.prior.nat_param + stats
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param +\
+                                   stepsize * (self.prior.nat_param +
+                                               1. / prob * self.posterior.get_weighted_statistics(data, weights))
+
+        self.mu, self.sigma_niw, self.A, self.sigma = self.posterior.rvs()
+        return self
+
+    def _loglmbdatilde(self):
+        # see Eq. 10.65 in Bishop
+        return np.sum(digamma((self.posterior.invwishart_niw.nu - np.arange(self.din)) / 2.)) \
+               + self.din * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart_niw.psi_chol)))
+
+    def variational_lowerbound(self):
+        _, _, _, _, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
+        _, _, _, _, a, b, c, d = self.prior.nat_param - self.posterior.nat_param
+
+        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A))\
+              - 0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
+
+        logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
+
+        loglmbdatilde = self._loglmbdatilde()
+
+        # see Eq. 10.77 in Bishop
+        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.din * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.))
+                            - self.posterior.invwishart_niw.entropy())
+
+        # see Eq. 10.74 in Bishop, we aren't summing over K
+        p_avgengy = 0.5 * (self.din * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
+                           - self.din * self.prior.kappa / self.posterior.kappa
+                           - self.prior.kappa * self.posterior.invwishart_niw.nu
+                           * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
+                                    np.linalg.solve(self.posterior.invwishart_niw.psi,
+                                                    self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
+                    - self.prior.invwishart_niw.log_partition() \
+                    + (self.prior.invwishart_niw.nu - self.din - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart_niw.nu \
+                    * np.linalg.solve(self.posterior.invwishart_niw.psi, self.prior.invwishart_niw.psi).trace()
+
+        return aux - logpart_diff + q_entropy + p_avgengy
+
+    def expected_log_likelihood(self, xy=None, stats=None):
+        assert isinstance(xy, (tuple, np.ndarray)) ^ isinstance(stats, tuple)
+
+        dout = self.dout
+        _, _, _, _, E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv = self.posterior.get_expected_statistics()
+
+        if self.affine:
+            E_Sigmainv_A, E_Sigmainv_b = E_Sigmainv_A[:, :-1], E_Sigmainv_A[:, -1]
+            E_AT_Sigmainv_A, E_AT_Sigmainv_b, E_bT_Sigmainv_b = E_AT_Sigmainv_A[:-1, :-1],\
+                                                                E_AT_Sigmainv_A[:-1, -1],\
+                                                                E_AT_Sigmainv_A[-1, -1]
+
+        x, y = (xy[:, :-dout], xy[:, -dout:]) if isinstance(xy, np.ndarray) else xy
+
+        parammat = -1. / 2 * blockarray([[E_AT_Sigmainv_A, -E_Sigmainv_A.T], [-E_Sigmainv_A, E_Sigmainv]])
+
+        contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
+        if isinstance(xy, np.ndarray):
+            tmp = np.einsum('ni,ni->n', xy.dot(parammat), xy)
+        else:
+            tmp = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
+            tmp += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
+            tmp += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
+
+        tmp += - dout / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
+
+        if self.affine:
+            tmp += y.dot(E_Sigmainv_b)
+            tmp -= x.dot(E_AT_Sigmainv_b)
+            tmp -= 1. / 2 * E_bT_Sigmainv_b
+
+        x = np.reshape(x, (-1, self.din)) - self.posterior.gaussian.mu
+        xs = np.linalg.solve(self.posterior.invwishart_niw.psi_chol, x.T)
+
+        # see Eqs. 10.64, 10.67, and 10.71 in Bishop
+        # sneaky gaussian/quadratic identity hidden here
+        aux = 0.5 * self._loglmbdatilde() - self.din / (2. * self.posterior.kappa)\
+              - self.posterior.invwishart_niw.nu / 2. * inner1d(xs.T, xs.T)\
+              - self.din / 2. * np.log(2. * np.pi)
+
+        return aux + tmp

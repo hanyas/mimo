@@ -7,3 +7,4 @@ from .categorical import *
 from .dirichlet import *
 from .composite import *
 from .bayesian import *
+
