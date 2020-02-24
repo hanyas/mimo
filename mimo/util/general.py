@@ -4,15 +4,45 @@ import scipy.linalg.lapack as lapack
 from scipy.special import logsumexp
 
 
+def is_pd(B):
+    try:
+        _ = np.linalg.cholesky(B)
+        return True
+    except np.linalg.LinAlgError:
+        return False
+
+
+def near_pd(A):
+    B = (A + A.T) / 2
+    _, s, V = np.linalg.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+    A2 = (B + H) / 2
+    A3 = (A2 + A2.T) / 2
+
+    if is_pd(A3):
+        return A3
+
+    spacing = np.spacing(np.linalg.norm(A))
+    I = np.eye(A.shape[0])
+    k = 1
+    while not is_pd(A3):
+        mineig = np.min(np.real(np.linalg.eigvals(A3)))
+        A3 += I * (-mineig * k**2 + spacing)
+        k += 1
+
+    return A3
+
+
 def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int32):
-    'samples log probability array along specified axis'
+    # samples log probability array along specified axis
     lognorms = logsumexp(p_log, axis=axis)
     cumvals = np.exp(p_log - np.expand_dims(lognorms, axis)).cumsum(axis)
     thesize = np.array(p_log.shape)
     thesize[axis] = 1
     randvals = npr.random(size=thesize) * \
-            np.reshape(cumvals[tuple([slice(None) if i is not axis else -1
-                                      for i in range(p_log.ndim)])], thesize)
+               np.reshape(cumvals[tuple([slice(None) if i is not axis else -1
+                                         for i in range(p_log.ndim)])], thesize)
     samples = np.sum(randvals > cumvals, axis=axis, dtype=dtype)
     if return_lognorms:
         return samples, lognorms
@@ -123,3 +153,27 @@ def inv_psd(A, return_chol=False):
         return Ainv, L
     else:
         return Ainv
+
+def beautify(ax):
+    ax.set_frame_on(True)
+    ax.minorticks_on()
+
+    ax.grid(True)
+    ax.grid(linestyle=':')
+
+    ax.tick_params(which='both', direction='in',
+                   bottom=True, labelbottom=True,
+                   top=True, labeltop=False,
+                   right=True, labelright=False,
+                   left=True, labelleft=True)
+
+    ax.tick_params(which='major', length=6)
+    ax.tick_params(which='minor', length=3)
+
+    ax.autoscale(tight=True)
+    # ax.set_aspect('equal')
+
+    if ax.get_legend():
+        ax.legend(loc='best')
+
+    return ax

@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- codcolg: utf-8 -*-
-# @Filename: matrix.py
-# @Date: 2019-06-10-13-56
-# @Author: Hany Abdulsamad
-# @Contact: hany@robot-learning.de
-
 import numpy as np
 import numpy.random as npr
 
@@ -12,6 +5,7 @@ from scipy import linalg
 from numpy.core.umath_tests import inner1d
 
 from mimo.abstractions import Distribution
+from mimo.util.general import near_pd
 
 
 class MatrixNormal(Distribution):
@@ -21,6 +15,11 @@ class MatrixNormal(Distribution):
         self._U = U
         self._V = V
 
+        self._U_chol = None
+        self._V_chol = None
+
+        self._sigma_chol = None
+
     @property
     def params(self):
         return self.M, self.U, self.V
@@ -28,6 +27,11 @@ class MatrixNormal(Distribution):
     @params.setter
     def params(self, values):
         self.M, self.U, self.V = values
+
+    @property
+    def num_parameters(self):
+        _num = self.dcol * self.drow
+        return _num + _num * (_num + 1) / 2
 
     @property
     def dcol(self):
@@ -44,6 +48,8 @@ class MatrixNormal(Distribution):
     @U.setter
     def U(self, value):
         self._U = value
+        # reset Cholesky for new values of U
+        # A new Cholesky will be computed when needed
         self._U_chol = None
 
     @property
@@ -53,6 +59,8 @@ class MatrixNormal(Distribution):
     @V.setter
     def V(self, value):
         self._V = value
+        # reset Cholesky for new values of V
+        # A new Cholesky will be computed when needed
         self._V_chol = None
 
     @property
@@ -61,20 +69,20 @@ class MatrixNormal(Distribution):
 
     @property
     def U_chol(self):
-        if not hasattr(self, '_U_chol') or self._U_chol is None:
-            self._U_chol = np.linalg.cholesky(self.U)
+        if self._U_chol is None:
+            self._U_chol = np.linalg.cholesky(near_pd(self.U))
         return self._U_chol
 
     @property
     def V_chol(self):
-        if not hasattr(self, '_V_chol') or self._V_chol is None:
-            self._V_chol = np.linalg.cholesky(self.V)
+        if self._V_chol is None:
+            self._V_chol = np.linalg.cholesky(near_pd(self.V))
         return self._V_chol
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+        if self._sigma_chol is None:
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, size=None):
@@ -101,8 +109,8 @@ class MatrixNormal(Distribution):
         bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
         xc = np.nan_to_num(xr).reshape((-1, self.dim)) - mr
         xs = linalg.solve_triangular(self.sigma_chol, xc.T, lower=True)
-        out = - 0.5 * self.drow * self.dcol * np.log(2. * np.pi) -\
-              np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
+        out = - 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
+              - np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
         out[bads] = 0
         return out
 
@@ -136,9 +144,9 @@ class MatrixNormal(Distribution):
                          np.zeros((self.dim, self.dim)), 0])
 
     def log_partition(self):
-        return 0.5 * self.drow * self.dcol * np.log(2. * np.pi) +\
-               self.drow * np.sum(np.log(np.diag(self.V_chol))) +\
-               self.dcol * np.sum(np.log(np.diag(self.U_chol)))
+        return 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
+               + self.drow * np.trace(np.log(self.V_chol))\
+               + self.dcol * np.trace(np.log(self.U_chol))
 
     def entropy(self):
         return NotImplementedError

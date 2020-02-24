@@ -6,13 +6,19 @@ from scipy import linalg
 
 from mimo.abstractions import Distribution
 from mimo.util.general import flattendata
+from mimo.util.general import near_pd
 
 
 class Gaussian(Distribution):
 
     def __init__(self, mu=None, sigma=None):
         self.mu = mu
+
         self._sigma = sigma
+        self._sigma_chol = None
+
+        self._parameterplot = None
+        self._scatterplot = None
 
     @property
     def params(self):
@@ -21,6 +27,10 @@ class Gaussian(Distribution):
     @params.setter
     def params(self, values):
         self.mu, self.sigma = values
+
+    @property
+    def num_parameters(self):
+        return self.dim + self.dim * (self.dim + 1) / 2
 
     @property
     def dim(self):
@@ -37,8 +47,8 @@ class Gaussian(Distribution):
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
+        if self._sigma_chol is None:
+            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, size=None):
@@ -59,8 +69,8 @@ class Gaussian(Distribution):
             bads = np.isnan(np.atleast_2d(x)).any(axis=1)
             xc = np.nan_to_num(x).reshape((-1, self.dim)) - self.mu
             xs = linalg.solve_triangular(self.sigma_chol, xc.T, lower=True)
-            out = - 0.5 * self.dim * np.log(2. * np.pi) -\
-                  np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
+            out = - 0.5 * self.dim * np.log(2. * np.pi)\
+                  - np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
             out[bads] = 0
             return out
         except np.linalg.LinAlgError:
@@ -68,15 +78,12 @@ class Gaussian(Distribution):
             return np.repeat(-np.inf, x.shape[0])
 
     def log_partition(self):
-        return 0.5 * self.dim * np.log(2. * np.pi) +\
-               np.sum(np.log(np.diag(self.sigma_chol)))
+        return 0.5 * self.dim * np.log(2. * np.pi)\
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def entropy(self):
-        return 0.5 * (self.dim * np.log(2. * np.pi) + self.dim +
-                      2. * np.sum(np.log(np.diag(self.sigma_chol))))
-
-    _parameterplot = None
-    _scatterplot = None
+        return 0.5 * self.dim * np.log(2. * np.pi) + self.dim\
+               + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def plot(self, ax=None, data=None, color='b', label='', alpha=1., update=False, draw=True):
 
@@ -102,7 +109,13 @@ class DiagonalGaussian(Gaussian):
 
     def __init__(self, mu=None, sigmas=None):
         self._sigmas = sigmas
+        self._sigma_chol = None
+
         super(DiagonalGaussian, self).__init__(mu=mu, sigma=self.sigma)
+
+    @property
+    def num_parameters(self):
+        return self.dim + self.dim
 
     @property
     def sigma(self):
@@ -122,10 +135,6 @@ class DiagonalGaussian(Gaussian):
 
     @property
     def sigma_chol(self):
-        if not hasattr(self, '_sigma_chol') or self._sigma_chol is None:
+        if self._sigma_chol is None:
             self._sigma_chol = np.diag(np.sqrt(self._sigmas))
         return self._sigma_chol
-
-
-if __name__ == "__main__":
-    pass

@@ -9,6 +9,10 @@ from mimo.abstractions import MeanField
 
 from mimo.util.general import sample_discrete_from_log
 
+from joblib import Parallel, delayed
+import multiprocessing
+nb_cores = multiprocessing.cpu_count()
+
 
 #  internal labels class
 class Labels:
@@ -19,19 +23,23 @@ class Labels:
 
         self.model = model
 
+        self.normalizer = None
+        self.expectations = None
+        self.resps = None
+
         if data is None:
-            self._generate(N)
+            self.generate(N)
         else:
             self.data = data
 
             if z is not None:
                 self.z = z
             elif initialize_from_prior:
-                self._generate(len(data))
+                self.generate(len(data))
             else:
                 self.resample()
 
-    def _generate(self, N):
+    def generate(self, N):
         self.z = self.gating.rvs(N)
 
     @property
@@ -47,12 +55,12 @@ class Labels:
         return self.model.components
 
     def log_likelihood(self):
-        if not hasattr(self, '_normalizer') or self._normalizer is None:
-            scores = self._compute_scores()
-            self._normalizer = logsumexp(scores[~np.isnan(self.data).any(1)], axis=1).sum()
-        return self._normalizer
+        if not hasattr(self, 'normalizer') or self.normalizer is None:
+            scores = self.compute_scores()
+            self.normalizer = np.sum(logsumexp(scores[~np.isnan(self.data).any(1)], axis=1))
+        return self.normalizer
 
-    def _compute_scores(self):
+    def compute_scores(self):
         data, K = self.data, len(self.components)
         scores = np.empty((data.shape[0], K))
         for idx, c in enumerate(self.components):
@@ -62,20 +70,20 @@ class Labels:
         return scores
 
     def clear_caches(self):
-        self._normalizer = None
+        self.normalizer = None
 
     # Gibbs sampling
     def resample(self):
-        scores = self._compute_scores()
+        scores = self.compute_scores()
         self.z, lognorms = sample_discrete_from_log(scores, axis=1, return_lognorms=True)
-        self._normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
+        self.normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
 
     def copy_sample(self):
         new = copy.copy(self)
         new.z = self.z.copy()
         return new
 
-    def get_responsibility(self, data=None, importance=None):
+    def get_responsibility(self, data=None):
         data = self.data if data is None else data
         N, K = data.shape[0], len(self.components)
 
@@ -91,35 +99,32 @@ class Labels:
         r = np.exp(logr - logr.max(1)[:, np.newaxis])
         r /= r.sum(1)[:, np.newaxis]
 
-        if importance is not None:
-            r = r * importance[:, np.newaxis]
-
         return r
 
     # Mean Field
-    def meanfieldupdate(self, importance=None):
+    def meanfield_update(self):
         # get responsibilities
-        self.r = self.get_responsibility(importance=importance)
+        self.resps = self.get_responsibility()
         # for plotting
-        self.z = self.r.argmax(1)
+        self.z = self.resps.argmax(1)
 
-    def get_vlb(self):
+    def variational_lowerbound(self):
         # return avg energy plus entropy, our contribution to the mean field
         # variational lower bound
         errs = np.seterr(invalid='ignore', divide='ignore')
-        prod = self.r * np.log(self.r)
+        prod = self.resps * np.log(self.resps)
         prod[np.isnan(prod)] = 0.  # 0 * -inf = 0.
         np.seterr(**errs)
 
         logpitilde = self.gating.expected_log_likelihood(np.arange(len(self.components)))
 
-        q_entropy = -prod.sum()
-        p_avgengy = (self.r * logpitilde).sum()
+        q_entropy = - prod.sum()
+        p_avgengy = (self.resps * logpitilde).sum()
 
         return p_avgengy + q_entropy
 
     # EM
-    def E_step(self):
+    def estep(self):
         data, N, K = self.data, self.data.shape[0], len(self.components)
 
         self.expectations = np.empty((N, K))
@@ -161,7 +166,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
     def N(self):
         return len(self.components)
 
-    def generate(self, N, keep=True, resp=False):
+    def generate(self, N, keep=True):
         templabels = self._labels_class(model=self, N=N)
 
         out = np.empty(self.components[0].rvs(N).shape)
@@ -177,11 +182,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             templabels.data = out
             self.labels_list.append(templabels)
 
-        if resp:
-            r = templabels.get_responsibility()
-            return out, templabels.z, r
-        else:
-            return out, templabels.z
+        return out, templabels.z
 
     def clear_caches(self):
         for l in self.labels_list:
@@ -209,23 +210,58 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
                 return self.labels_list.pop().log_likelihood()
 
     # Gibbs sampling
-    def resample_model(self, importance=[]):
-        self.resample_components(importance=importance)
+    def resample_model(self, num_procs=0):
+        self.resample_components(num_procs=num_procs)
         self.resample_gating()
-        self.resample_labels()
+        self.resample_labels(num_procs=num_procs)
 
     def resample_gating(self):
         self.gating.resample([l.z for l in self.labels_list])
         self.clear_caches()
 
-    def resample_components(self, importance=[]):
-        for idx, c in enumerate(self.components):
-            c.resample(data=[l.data[l.z == idx] for l in self.labels_list],
-                       importance=[imp[l.z == idx] for (imp, l) in zip(importance, self.labels_list)])
+    def resample_components(self, num_procs=0):
+        if num_procs == 0:
+            for idx, c in enumerate(self.components):
+                c.resample(data=[l.data[l.z == idx] for l in self.labels_list])
+        else:
+            self._resample_components_joblib(num_procs)
+        self.clear_caches()
 
-    def resample_labels(self):
-        for l in self.labels_list:
-            l.resample()
+    def resample_labels(self, num_procs=0):
+        if num_procs == 0:
+            for l in self.labels_list:
+                l.resample()
+        else:
+            self._resample_labels_joblib(num_procs)
+
+    def _resample_components_joblib(self, num_procs):
+        from joblib import Parallel, delayed
+        from . import parallel_mixture
+
+        parallel_mixture.model = self
+        parallel_mixture.labels_list = self.labels_list
+
+        if len(self.components) > 0:
+            params = Parallel(n_jobs=num_procs, backend='threading')\
+                    (delayed(parallel_mixture._get_sampled_component_params)(idx)
+                     for idx in range(len(self.components)))
+
+        for c, p in zip(self.components, params):
+            c.parameters = p
+
+    def _resample_labels_joblib(self,num_procs):
+        from joblib import Parallel, delayed
+        from . import parallel_mixture
+
+        if len(self.labels_list) > 0:
+            parallel_mixture.model = self
+
+            raw = Parallel(n_jobs=num_procs, backend='threading')\
+                (delayed(parallel_mixture._get_sampled_labels)(idx)
+                 for idx in range(len(self.labels_list)))
+
+            for l, (z, normalizer) in zip(self.labels_list, raw):
+                l.z, l._normalizer = z, normalizer
 
     def copy_sample(self):
         new = copy.copy(self)
@@ -237,49 +273,46 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         return new
 
     # Mean Field
-    def meanfield_coordinate_descent_step(self, importance=[]):
+    def meanfield_coordinate_descent_step(self):
         assert all(isinstance(c, MeanField) for c in self.components), 'Components must implement MeanField'
         assert len(self.labels_list) > 0, 'Must have data to run MeanField'
 
-        self._meanfield_update_sweep(importance=importance)
-        return self._vlb()
+        self._meanfield_update_sweep()
+        return self.variational_lowerbound()
 
-    def _meanfield_update_sweep(self, importance=[]):
+    def _meanfield_update_sweep(self):
         # NOTE: to interleave mean field steps with Gibbs sampling steps, label
         # updates need to come first, otherwise the sampled updates will be
         # ignored and the model will essentially stay where it was the last time
         # mean field updates were run
         # TODO fix that, seed with sample from variational distribution
-        self.meanfield_update_labels(importance=importance)
+        self.meanfield_update_labels()
         self.meanfield_update_parameters()
 
-    def meanfield_update_labels(self, importance=[]):
+    def meanfield_update_labels(self):
         for idx, l in enumerate(self.labels_list):
-            if not importance:
-                l.meanfieldupdate(importance=None)
-            else:
-                l.meanfieldupdate(importance=importance[idx])
+            l.meanfield_update()
 
     def meanfield_update_parameters(self):
         self.meanfield_update_components()
         self.meanfield_update_gating()
 
     def meanfield_update_gating(self):
-        self.gating.meanfieldupdate(None, [l.r for l in self.labels_list])
+        self.gating.meanfield_update(None, [l.resps for l in self.labels_list])
         self.clear_caches()
 
     def meanfield_update_components(self):
         for idx, c in enumerate(self.components):
-            c.meanfieldupdate([l.data for l in self.labels_list], [l.r[:, idx] for l in self.labels_list])
+            c.meanfield_update([l.data for l in self.labels_list], [l.resps[:, idx] for l in self.labels_list])
         self.clear_caches()
 
-    def _vlb(self):
+    def variational_lowerbound(self):
         vlb = 0.
-        vlb += sum(l.get_vlb() for l in self.labels_list)
-        vlb += self.gating.get_vlb()
-        vlb += sum(c.get_vlb() for c in self.components)
+        vlb += sum(l.variational_lowerbound() for l in self.labels_list)
+        vlb += self.gating.variational_lowerbound()
+        vlb += sum(c.variational_lowerbound() for c in self.components)
         for l in self.labels_list:
-            vlb += np.sum([r.dot(c.expected_log_likelihood(l.data)) for c, r in zip(self.components, l.r.T)])
+            vlb += np.sum([r.dot(c.expected_log_likelihood(l.data)) for c, r in zip(self.components, l.resps.T)])
 
         # add in symmetry factor (if we're actually symmetric)
         if len(set(type(c) for c in self.components)) == 1:
@@ -296,7 +329,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             mb_labels_list.append(self.labels_list.pop())
 
         for l in mb_labels_list:
-            l.meanfieldupdate()
+            l.meanfield_update()
 
         self._meanfield_sgdstep_parameters(mb_labels_list, prob, stepsize)
 
@@ -307,20 +340,20 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
     def _meanfield_sgdstep_components(self, mb_labels_list, prob, stepsize):
         for idx, c in enumerate(self.components):
             c.meanfield_sgdstep([l.data for l in mb_labels_list],
-                                [l.r[:, idx] for l in mb_labels_list], prob, stepsize)
+                                [l.resps[:, idx] for l in mb_labels_list], prob, stepsize)
 
     def _meanfield_sgdstep_gating(self, mb_labels_list, prob, stepsize):
-        self.gating.meanfield_sgdstep(None, [l.r for l in mb_labels_list], prob, stepsize)
+        self.gating.meanfield_sgdstep(None, [l.resps for l in mb_labels_list], prob, stepsize)
 
     # EM
-    def EM_step(self):
+    def em_step(self):
         # assert all(isinstance(c,MaxLikelihood) for c in self.components), \
         #         'Components must implement MaxLikelihood'
         assert len(self.labels_list) > 0, 'Must have data to run EM'
 
         # E step
         for l in self.labels_list:
-            l.E_step()
+            l.estep()
 
         # M step
         # component parameters
@@ -332,11 +365,9 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
 
     @property
     def num_parameters(self):
-        # NOTE: scikit.learn's gmm.py doesn't count the weights in the number of
-        # parameters, but I don't know why they wouldn't. Some convention?
         return sum(c.num_parameters for c in self.components) + self.gating.num_parameters
 
-    def BIC(self, data=None):
+    def bic(self, data=None):
         """
         BIC on the passed data.
         If passed data is None (default), calculates BIC on the model's assigned data.
@@ -345,14 +376,13 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         # maximum likelihood parameters (or, of course, an EM fixed-point as an
         # approximation!)
         if data is None:
-            assert len(self.labels_list) > 0,\
-                "If not passing in data, the class must already have it. Use the method add_data()"
+            assert len(self.labels_list) > 0, "No data available"
             return -2 * sum(self.log_likelihood(l.data) for l in self.labels_list)\
                    + self.num_parameters * np.log(sum(l.data.shape[0] for l in self.labels_list))
         else:
             return -2 * self.log_likelihood(data) + self.num_parameters * np.log(data.shape[0])
 
-    def AIC(self):
+    def aic(self):
         # NOTE: in principle this method computes the AIC only after finding the
         # maximum likelihood parameters (or, of course, an EM fixed-point as an
         # approximation!)
@@ -422,21 +452,11 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             if hasattr(c, '_scatterplot') and c._scatterplot is not None:
                 del c._scatterplot
 
-    def predictive_likelihoods(self, test_data, forecast_horizons):
-        likes = self._log_likelihoods(test_data)
-        return [likes[k:] for k in forecast_horizons]
+    def predictive_log_likelihood(self, x=None):
+        N, K = x.shape[0], len(self.components)
 
-    def block_predictive_likelihoods(self, test_data, blocklens):
-        csums = np.cumsum(self._log_likelihoods(test_data))
-        outs = []
-        for k in blocklens:
-            outs.append(csums[k:] - csums[:-k])
-        return outs
-
-    def mean_posterior(self, weights):
-        weights = weights if weights is None else np.ones((len(self.components, )))
-        params = [c.posterior.params for c in self.components]
-        aux = []
-        for m in list(zip(*params)):
-            aux.append(sum(_w * _p for _w, _p in zip(weights, m)))
-        return aux
+        vals = np.zeros((N, K))
+        for idx, c in enumerate(self.components):
+            vals[:, idx] = c.expected_log_likelihood(x)
+        vals += self.gating.expected_log_likelihood(np.arange(len(self.components)))
+        return logsumexp(vals[:, self.used_labels], axis=1)
