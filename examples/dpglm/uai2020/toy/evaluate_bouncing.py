@@ -232,9 +232,3 @@ if __name__ == "__main__":
         plt.plot(prediction[n])
 
     plt.show()
-
-
-
-
-
-
