@@ -179,20 +179,15 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # create data
-    noise = npr.normal(0, 1, 200) * 0.05
-    target = npr.uniform(0, 1, 200)
+    noise = npr.normal(0, 1, (200, 1)) * 0.05
+    target = npr.uniform(0, 1, (200, 1))
     input = target + 0.3 * np.sin(2. * np.pi * target) + noise
-    noise, target, input = noise.reshape(-1, 1), target.reshape(-1, 1), input.reshape(-1, 1)
 
     # creat plot for mean vs mode prediction and gaussian activations
-    from matplotlib import gridspec
-    fig = plt.figure()
-    gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
-    ax0 = plt.subplot(gs[0])
-    ax0.scatter(input[:, 0], target[:, 0],
-                facecolors='none',
-                edgecolors='k',
-                linewidth=0.5)
+    fig, axes = plt.subplots(2, 1)
+
+    axes[0].scatter(input, target, facecolors='none',
+                    edgecolors='k', linewidth=0.5)
     plt.ylabel('y')
 
     train_data = {'input': input, 'target': target}
@@ -206,44 +201,45 @@ if __name__ == "__main__":
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _, _ = meanfield_prediction(dpglm, input[t, :], 'average')
+        _mean, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='average')
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
 
     # metrics
-    from sklearn.metrics import explained_variance_score, mean_squared_error
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
+    evar = explained_variance_score(target, mu_predict)
+    mse = mean_squared_error(target, mu_predict)
+    smse = 1. - r2_score(target, mu_predict)
+
     print('MEAN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
 
-    ax0.scatter(input, mu_predict, marker='x', c='b', linewidth=0.5)
+    axes[0].scatter(input, mu_predict, marker='x', c='b', linewidth=0.5)
 
     # mode prediction
     from mimo.util.prediction import meanfield_prediction
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _var, _ = meanfield_prediction(dpglm, input[t, :], 'mode')
+        _mean, _var, _ = meanfield_prediction(dpglm, input[t, :], prediction='mode')
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
 
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
+    evar = explained_variance_score(target, mu_predict)
+    mse = mean_squared_error(target, mu_predict)
+    smse = 1. - r2_score(target, mu_predict)
+
     print('Mode - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
 
-    ax0.scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
+    axes[0].scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
 
     # plot gaussian activations
     import scipy.stats as stats
-    ax1 = plt.subplot(gs[1])
-    plt.xlabel('x')
-    plt.ylabel('p(x)')
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
 
     mu, sigma = [], []
     for idx, c in enumerate(dpglm.components):
@@ -264,7 +260,7 @@ if __name__ == "__main__":
 
     colours = ['green', 'orange', 'purple']
     for i in range(len(dpglm.used_labels)):
-        ax1.plot(sorted_input, activations[i], color=colours[i])
+        axes[1].plot(sorted_input, activations[i], color=colours[i])
 
     # set working directory
     os.chdir(args.evalpath)
@@ -307,12 +303,12 @@ if __name__ == "__main__":
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
         _mu_predict = (regcoeff[2] @ q).tolist()
-        mu_predict.append(_mu_predict )
+        mu_predict.append(_mu_predict)
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
     plt.plot(axis, mu_predict, linewidth=2, c='purple')
 
     # plot data
-    plt.scatter(input[:, 0], target[:, 0], facecolors='none', edgecolors='k', linewidth=0.5)
+    plt.scatter(input, target, facecolors='none', edgecolors='k', linewidth=0.5)
 
     plt.ylabel('y')
     plt.xlabel('x')
