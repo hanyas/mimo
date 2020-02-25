@@ -519,4 +519,4 @@ def stick_breaking(gammas, deltas):
         for j in range(idx):
             product[idx] = product[idx] * (1. - gammas[j] / (gammas[j] + deltas[j]))
 
-    return product
+    return product / product.sum()
