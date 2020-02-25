@@ -10,8 +10,6 @@ from mimo.util.text import progprint_xrange
 
 import argparse
 
-import matplotlib.pyplot as plt
-
 import joblib
 from joblib import Parallel, delayed
 nb_cores = joblib.parallel.cpu_count()
@@ -177,7 +175,7 @@ if __name__ == "__main__":
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
     parser.add_argument('--horizon', help='horizon prediction', default=1, type=int)
-    parser.add_argument('--name', help='add name suffix', default='')
+    parser.add_argument('--task', help='add task name suffix', default='')
 
     args = parser.parse_args()
 
@@ -284,11 +282,11 @@ if __name__ == "__main__":
                     mean_duration, std_duration,
                     mean_nlpd, std_nlpd])
 
-    if str(args.name) == 'alpha':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
-    elif str(args.name) == 'models':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
-    elif str(args.name) == 'horizon':
-        np.savetxt('cartpole_' + str(args.name) + '_' + str(args.prior) + '_' + str(args.horizon) + '.csv', arr, delimiter=',')
+    if str(args.task) == 'alpha':
+        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
+    elif str(args.task) == 'models':
+        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
+    elif str(args.task) == 'horizon':
+        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.horizon) + '.csv', arr, delimiter=',')
     else:
         raise NotImplementedError

@@ -1,0 +1,140 @@
+% This file was created by tikzplotlib v0.8.5.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+tick align=outside,
+tick pos=left,
+title={pendulum},
+x grid style={white!69.01960784313725!black},
+xlabel={prediction horizon - stick-breaking prior},
+xmin=-0.2, xmax=26.2,
+xtick style={color=red},
+y grid style={white!69.01960784313725!black},
+ylabel={nmse},
+ymin=-0.000623717768318974, ymax=0.0163206224197059,
+ytick style={color=black},
+ytick={-0.002,0,0.002,0.004,0.006,0.008,0.01,0.012,0.014,0.016,0.018},
+yticklabels={−0.002,0.000,0.002,0.004,0.006,0.008,0.010,0.012,0.014,0.016,0.018}
+]
+\path [draw=red, semithick]
+(axis cs:1,0.000146479512954886)
+--(axis cs:1,0.000149283593200776);
+
+\path [draw=red, semithick]
+(axis cs:5,0.000787930371482897)
+--(axis cs:5,0.00084900304933311);
+
+\path [draw=red, semithick]
+(axis cs:10,0.00176836153918594)
+--(axis cs:10,0.00196746448910649);
+
+\path [draw=red, semithick]
+(axis cs:15,0.0029816383442408)
+--(axis cs:15,0.00353617008339538);
+
+\path [draw=red, semithick]
+(axis cs:20,0.00442872515288762)
+--(axis cs:20,0.0061924952052694);
+
+\path [draw=red, semithick]
+(axis cs:25,0.00578681873715116)
+--(axis cs:25,0.00971573045616997);
+
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.000146479512954886
+5 0.000787930371482897
+10 0.00176836153918594
+15 0.0029816383442408
+20 0.00442872515288762
+25 0.00578681873715116
+};
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.000149283593200776
+5 0.00084900304933311
+10 0.00196746448910649
+15 0.00353617008339538
+20 0.0061924952052694
+25 0.00971573045616997
+};
+\addplot [semithick, red, mark=*, mark size=2, mark options={solid}]
+table {%
+1 0.000147881553077831
+5 0.000818466710408003
+10 0.00186791301414622
+15 0.00325890421381809
+20 0.00531061017907851
+25 0.00775127459666057
+};
+\end{axis}
+
+\begin{axis}[
+axis x line=top,
+tick align=outside,
+x grid style={white!69.01960784313725!black},
+xlabel={prediction horizon - dirichlet prior},
+xmin=-0.2, xmax=26.2,
+xtick pos=right,
+xtick style={color=blue},
+y grid style={white!69.01960784313725!black},
+ymin=-0.000623717768318974, ymax=0.0163206224197059,
+ytick pos=left,
+ytick style={color=black}
+]
+\path [draw=color0, semithick]
+(axis cs:1,0.000146914264405849)
+--(axis cs:1,0.000149870103356175);
+
+\path [draw=color0, semithick]
+(axis cs:5,0.000786947694476936)
+--(axis cs:5,0.000870244685078116);
+
+\path [draw=color0, semithick]
+(axis cs:10,0.00173745678971906)
+--(axis cs:10,0.00222673105320048);
+
+\path [draw=color0, semithick]
+(axis cs:15,0.00276899497785854)
+--(axis cs:15,0.0044465096106083);
+
+\path [draw=color0, semithick]
+(axis cs:20,0.00410190880116242)
+--(axis cs:20,0.00723496191249201);
+
+\path [draw=color0, semithick]
+(axis cs:25,0.0033190810768962)
+--(axis cs:25,0.0155504251384321);
+
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.000146914264405849
+5 0.000786947694476936
+10 0.00173745678971906
+15 0.00276899497785854
+20 0.00410190880116242
+25 0.0033190810768962
+};
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.000149870103356175
+5 0.000870244685078116
+10 0.00222673105320048
+15 0.0044465096106083
+20 0.00723496191249201
+25 0.0155504251384321
+};
+\addplot [semithick, color0, mark=x, mark size=3, mark options={solid}]
+table {%
+1 0.000148392183881012
+5 0.000828596189777526
+10 0.00198209392145977
+15 0.00360775229423342
+20 0.00566843535682721
+25 0.00943475310766414
+};
+\end{axis}
+
+\end{tikzpicture}
