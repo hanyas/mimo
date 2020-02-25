@@ -181,27 +181,24 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    n_train = 900
+    nb_train = 900
 
     input, mean = [], []
 
-    input.append(np.linspace(-3., 0, int(n_train / 3)).reshape(int(n_train / 3), 1))
-    input.append(np.linspace(0., 3., int(n_train / 3)).reshape(int(n_train / 3), 1))
-    input.append(np.linspace(3., 6., int(n_train / 3)).reshape(int(n_train / 3), 1))
+    input.append(np.linspace(-3., 0, int(nb_train / 3)).reshape(int(nb_train / 3), 1))
+    input.append(np.linspace(0., 3., int(nb_train / 3)).reshape(int(nb_train / 3), 1))
+    input.append(np.linspace(3., 6., int(nb_train / 3)).reshape(int(nb_train / 3), 1))
 
     mean.append(-2 * input[0] ** 3 + 2 * input[0])
     mean.append(-2 * (input[1] - 3) ** 3 + 2 * (input[1] - 3))
     mean.append(-2 * (input[2] - 6) ** 3 + 2 * (input[2] - 6))
 
-    input, mean = np.vstack((input)), np.vstack((mean))
-    noise = 3.0 * npr.randn(n_train).reshape(n_train, 1)
+    input, mean = np.vstack(input), np.vstack(mean)
+    noise = 3.0 * npr.randn(nb_train).reshape(nb_train, 1)
     target = mean + noise
 
-    from matplotlib import gridspec
-    fig = plt.figure()
-    gs = gridspec.GridSpec(2, 1, height_ratios=[6, 1])
-    ax0 = plt.subplot(gs[0])
-    plt.ylabel('y')
+    fig, axes = plt.subplots(2, 1)
+    axes[0].set_ylabel('y')
 
     # Scaled Data
     from sklearn.decomposition import PCA
@@ -237,25 +234,24 @@ if __name__ == "__main__":
     std_predict = np.vstack(std_predict)
 
     # metrics
-    from sklearn.metrics import explained_variance_score, mean_squared_error
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
+    evar = explained_variance_score(target, mu_predict)
+    mse = mean_squared_error(target, mu_predict)
+    smse = 1. - r2_score(target, mu_predict)
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
     # plot prediction
-    ax0.plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
-    ax0.plot(input, mu_predict - 2 * std_predict, '-b', zorder=5)
-    ax0.plot(input, mu_predict, '-r', zorder=10)
-    plt.scatter(input, target, s=0.75, color="black", zorder=0)
-    # ax0.plot(input, mean, '--b')
+    axes[0].plot(input, mu_predict + 2 * std_predict, '-b', zorder=5)
+    axes[0].plot(input, mu_predict - 2 * std_predict, '-b', zorder=5)
+    axes[0].plot(input, mu_predict, '-r', zorder=10)
+    axes[0].scatter(input, target, s=0.75, color="black", zorder=0)
+    # axes[0].plot(input, mean, '--b')
 
     # plot gaussian activations
     import scipy.stats as stats
-    ax1 = plt.subplot(gs[1])
-    plt.xlabel('x')
-    plt.ylabel('p(x)')
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
 
     mu, sigma = [], []
     for idx, c in enumerate(dpglm.components):
@@ -278,7 +274,7 @@ if __name__ == "__main__":
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     for i in range(len(dpglm.used_labels)):
-        ax1.plot(input, activations[i])
+        axes[1].plot(input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)

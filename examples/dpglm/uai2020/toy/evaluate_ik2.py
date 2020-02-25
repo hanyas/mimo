@@ -227,11 +227,10 @@ if __name__ == "__main__":
                                                                          input_scaler=input_scaler,
                                                                          target_scaler=target_scaler)
 
-    from sklearn.metrics import explained_variance_score, mean_squared_error
-    evar = explained_variance_score(mu_predict, target)
-    mse = mean_squared_error(mu_predict, target)
-
-    smse = mean_squared_error(mu_predict, target) / np.var(target, axis=0)
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
+    evar = explained_variance_score(target, mu_predict)
+    mse = mean_squared_error(target, mu_predict)
+    smse = 1. - r2_score(target, mu_predict)
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 
