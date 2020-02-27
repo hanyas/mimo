@@ -2,20 +2,23 @@ import copy
 
 import numpy as np
 import scipy.special as special
-from scipy.special import logsumexp
+from scipy.special import logsumexp, digamma
 
 from mimo.abstractions import ModelEM, ModelGibbsSampling, ModelMeanField
 from mimo.abstractions import MeanField
 
 from mimo.util.general import sample_discrete_from_log
 
+from mimo.distributions.bayesian import BayesianCategoricalWithDirichlet
+from mimo.distributions.bayesian import BayesianCategoricalWithStickBreaking
+
+import joblib
 from joblib import Parallel, delayed
-import multiprocessing
-nb_cores = multiprocessing.cpu_count()
+nb_cores = joblib.parallel.cpu_count()
 
 
-#  internal labels class
-class Labels:
+# labels class assuming a dirichlet prior
+class LabelsWithDirichlet:
     def __init__(self, model, data=None, N=None,
                  z=None, initialize_from_prior=True):
 
@@ -56,25 +59,19 @@ class Labels:
 
     def log_likelihood(self):
         if not hasattr(self, 'normalizer') or self.normalizer is None:
-            scores = self.compute_scores()
-            self.normalizer = np.sum(logsumexp(scores[~np.isnan(self.data).any(1)], axis=1))
+            resps = self.compute_scores()
+            self.normalizer = np.sum(np.log(np.sum(resps, axis=1)))
         return self.normalizer
-
-    def compute_scores(self):
-        data, K = self.data, len(self.components)
-        scores = np.empty((data.shape[0], K))
-        for idx, c in enumerate(self.components):
-            scores[:, idx] = c.log_likelihood(data)
-        scores += self.gating.log_likelihood(np.arange(K))
-        scores[np.isnan(data).any(1)] = 0.  # missing data
-        return scores
 
     def clear_caches(self):
         self.normalizer = None
 
     # Gibbs sampling
     def resample(self):
-        scores = self.compute_scores()
+        errs = np.seterr(invalid='ignore', divide='ignore')
+        scores = np.log(self.compute_scores())
+        np.seterr(**errs)
+
         self.z, lognorms = sample_discrete_from_log(scores, axis=1, return_lognorms=True)
         self.normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
 
@@ -83,7 +80,8 @@ class Labels:
         new.z = self.z.copy()
         return new
 
-    def get_responsibility(self, data=None):
+    def compute_scores(self, data=None):
+        # compute responsibilities
         data = self.data if data is None else data
         N, K = data.shape[0], len(self.components)
 
@@ -96,21 +94,20 @@ class Labels:
         logpitilde = self.gating.expected_log_likelihood(np.arange(len(self.components)))
         logr = logpitilde + component_scores
 
-        r = np.exp(logr - logr.max(1)[:, np.newaxis])
-        r /= r.sum(1)[:, np.newaxis]
+        r = np.exp(logr - np.max(logr, axis=1, keepdims=True))
+        r /= np.sum(r, axis=1, keepdims=True)
 
         return r
 
     # Mean Field
     def meanfield_update(self):
         # get responsibilities
-        self.resps = self.get_responsibility()
+        self.resps = self.compute_scores()
         # for plotting
-        self.z = self.resps.argmax(1)
+        self.z = np.argmax(self.resps, axis=1)
 
     def variational_lowerbound(self):
-        # return avg energy plus entropy, our contribution to the mean field
-        # variational lower bound
+        # return avg energy plus entropy
         errs = np.seterr(invalid='ignore', divide='ignore')
         prod = self.resps * np.log(self.resps)
         prod[np.isnan(prod)] = 0.  # 0 * -inf = 0.
@@ -134,24 +131,146 @@ class Labels:
 
         self.expectations += self.gating.log_likelihood(np.arange(K))
 
-        self.expectations -= self.expectations.max(1)[:, np.newaxis]
+        self.expectations -= np.max(self.expectations, axis=1, keepdims=True)
         np.exp(self.expectations, out=self.expectations)
-        self.expectations /= self.expectations.sum(1)[:, np.newaxis]
+        self.expectations /= np.sum(self.expectations, axis=1, keepdims=True)
 
-        self.z = self.expectations.argmax(1)
+        self.z = np.argmax(self.expectations, axis=1)
+
+
+# labels class assuming a stick-breaking prior
+class LabelsWithStickBreaking:
+    def __init__(self, model, data=None, N=None,
+                 z=None, initialize_from_prior=True):
+
+        assert data is not None or (N is not None and z is None)
+
+        self.model = model
+
+        self.normalizer = None
+        self.expectations = None
+        self.resps = None
+
+        if data is None:
+            self.generate(N)
+        else:
+            self.data = data
+
+            if z is not None:
+                self.z = z
+            elif initialize_from_prior:
+                self.generate(len(data))
+            else:
+                self.resample()
+
+    def generate(self, N):
+        self.z = self.gating.rvs(N)
+
+    @property
+    def N(self):
+        return len(self.z)
+
+    @property
+    def gating(self):
+        return self.model.gating
+
+    @property
+    def components(self):
+        return self.model.components
+
+    def log_likelihood(self):
+        if not hasattr(self, 'normalizer') or self.normalizer is None:
+            resps = self.compute_scores()
+            self.normalizer = np.sum(np.log(np.sum(resps, axis=1)))
+        return self.normalizer
+
+    def clear_caches(self):
+        self.normalizer = None
+
+    # Gibbs sampling
+    def resample(self):
+        # TODO Fix the Gibbs sampler of DP
+        errs = np.seterr(invalid='ignore', divide='ignore')
+        scores = np.log(self.compute_scores())
+        np.seterr(**errs)
+
+        self.z, lognorms = sample_discrete_from_log(scores, axis=1, return_lognorms=True)
+        self.normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
+
+    def copy_sample(self):
+        new = copy.copy(self)
+        new.z = self.z.copy()
+        return new
+
+    def compute_scores(self, data=None):
+        data = self.data if data is None else data
+        N, K = data.shape[0], len(self.components)
+
+        # update, see Eq. 10.67 in Bishop
+        component_scores = np.empty((N, K))
+        for idx, c in enumerate(self.components):
+            component_scores[:, idx] = c.expected_log_likelihood(data)
+        component_scores = np.nan_to_num(component_scores)
+
+        E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
+        gating_scores = np.take(E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1])), np.arange(K))
+
+        logr = gating_scores + component_scores
+
+        r = np.exp(logr - np.max(logr, axis=1, keepdims=True))
+        r /= np.sum(r, axis=1, keepdims=True)
+
+        return r
+
+    # Mean Field
+    def meanfield_update(self):
+        # get responsibilities
+        self.resps = self.compute_scores()
+        # for plotting
+        self.z = np.argmax(self.resps, axis=1)
+
+    def variational_lowerbound(self):
+        # return avg energy plus entropy
+        errs = np.seterr(invalid='ignore', divide='ignore')
+        prod = self.resps * np.log(self.resps)
+        prod[np.isnan(prod)] = 0.  # 0 * -inf = 0.
+        np.seterr(**errs)
+
+        q_entropy = - prod.sum()
+
+        counts = self.resps
+        cumcounts = np.hstack((np.cumsum(counts[:, ::-1], axis=1)[:, -2::-1],
+                               np.zeros((len(counts), 1))))
+
+        E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
+
+        p_avgengy = np.sum(cumcounts * E_log_rest + counts * E_log_stick)
+
+        return p_avgengy + q_entropy
+
+    # EM
+    def estep(self):
+        raise NotImplementedError
 
 
 class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
     """
     This class is for mixtures of other distributions.
     """
-    _labels_class = Labels
 
     def __init__(self, gating, components):
         assert len(components) > 0
 
         self.gating = gating
         self.components = components
+
+        self._labels_class = None
+        if isinstance(self.gating, BayesianCategoricalWithDirichlet):
+            self._labels_class = LabelsWithDirichlet
+        elif isinstance(self.gating, BayesianCategoricalWithStickBreaking):
+            self._labels_class = LabelsWithStickBreaking
+        else:
+            raise NotImplementedError
 
         self.labels_list = []
 
@@ -235,7 +354,6 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             self._resample_labels_joblib(num_procs)
 
     def _resample_components_joblib(self, num_procs):
-        from joblib import Parallel, delayed
         from . import parallel_mixture
 
         parallel_mixture.model = self
@@ -249,8 +367,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         for c, p in zip(self.components, params):
             c.parameters = p
 
-    def _resample_labels_joblib(self,num_procs):
-        from joblib import Parallel, delayed
+    def _resample_labels_joblib(self, num_procs):
         from . import parallel_mixture
 
         if len(self.labels_list) > 0:

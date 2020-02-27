@@ -437,11 +437,12 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         return p_avgengy + q_entropy
 
     def expected_log_likelihood(self, x=None):
-        # usually called when np.all(x == np.arange(self.K))
-        x = x if x is not None else slice(None)
-        return np.take(digamma(self.posterior.gammas) - digamma(self.posterior.gammas + self.posterior.deltas)
-                       + np.hstack((0, np.cumsum(digamma(self.posterior.deltas)
-                                                 - digamma(self.posterior.gammas + self.posterior.deltas))[:-1])), x)
+        E_log_stick = digamma(self.posterior.gammas)\
+                      - digamma(self.posterior.gammas + self.posterior.deltas)
+
+        E_log_rest = digamma(self.posterior.deltas)\
+                     - digamma(self.posterior.gammas + self.posterior.deltas)
+        return E_log_stick, E_log_rest
 
 
 class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
