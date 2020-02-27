@@ -7,15 +7,17 @@ import matplotlib.pyplot as plt
 
 
 # set working directory
+# evalpath = os.path.abspath(mimo.__file__ + '/../../examples/dpglm/uai2020/control')
 evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control')
+
 os.chdir(evalpath)
 
 # set parameters for plot
-y_axis = 'nmse'             # nmse, used-models, nlpd, evar, mse
+y_axis = 'used-models'             # nmse, used-models, nlpd, evar, mse
 
-datasets = ['cartpole', 'pendulum']        # pendulum, cartpole
+datasets = ['cartpole']        # pendulum, cartpole
 priors = ['stick-breaking', 'dirichlet']   # dirichlet, stick-breaking
-x_axises = ['horizon', 'models', 'alpha']   # alpha, models, horizon
+x_axises = ['alpha']   # alpha, models, horizon
 
 
 # iterate all 4 plots:
@@ -39,28 +41,24 @@ for n in range(len(x_axises)):
             if prior == 'stick-breaking':
                 alpha = [1.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
 
-            horizon = [1, 5, 10, 15, 20, 25]
+            models = [50, 75, 100, 125, 150]
 
-            # set y-ticks
-            models = []
-            if dataset == 'pendulum':
-                models = [30, 45, 60, 75, 90]
-            if dataset == 'cartpole':
-                models = [50, 75, 100, 125, 150]
+            horizon = [1, 5, 10, 15, 20, 25]
 
             # get data from saved files
             iterator = []
             if x_axis == 'models':
                 iterator = models
-            if x_axis == 'alpha':
+            elif x_axis == 'alpha':
                 iterator = alpha
-            if x_axis == 'horizon':
+            elif x_axis == 'horizon':
                 iterator = horizon
             metrics = np.zeros((len(iterator), 12))
 
             for i in range(len(iterator)):
                 path = os.path.join(str(evalpath), str(dataset), str(dataset) + '_' + str(x_axis),
                                     str(dataset) + '_' + str(prior) + '_' + str(x_axis) + '_' + str(iterator[i]) + '.csv')
+
                 with open(path) as mycsv:
                     count = 0
                     for line in mycsv:
@@ -72,7 +70,7 @@ for n in range(len(x_axises)):
             # column indices for what to show on y-axis:
             # 0, 1 = mean_mse, std_mse
             # 2, 3 = mean_nmse, std_nmse
-            # 4. 5 = mean_evar, std_evar
+            # 4, 5 = mean_evar, std_evar
             # 6, 7 = mean_nb_models, std_nb_models
             # 8, 9 = mean_duration, std_duration
             # 10, 11 = mean_nlpd, std_nlpd (negative log predictive density)
@@ -153,8 +151,8 @@ for n in range(len(x_axises)):
 
         plt.tight_layout()  # otherwise title is clipped off
 
-        print(path, dataset, x_axis, y_axis)
-        tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
-        plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
+        # print(path, dataset, x_axis, y_axis)
+        # tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
+        # plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
 
         plt.show()
