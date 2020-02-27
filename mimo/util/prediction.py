@@ -43,8 +43,8 @@ def kstep_error(dpglm, query, exogenous, horizon=1,
         output = np.vstack(output)
 
         _mse = mean_squared_error(target, output)
-        _smse = 1. - r2_score(target, output)
-        _evar = explained_variance_score(target, output)
+        _smse = 1. - r2_score(target, output, multioutput='variance_weighted')
+        _evar = explained_variance_score(target, output, multioutput='variance_weighted')
 
         mse.append(_mse)
         smse.append(_smse)
@@ -150,8 +150,8 @@ def meanfield_prediction(dpglm, query,
     if isinstance(dpglm.gating.prior, Dirichlet):
         weights = dpglm.gating.posterior.alphas
     elif isinstance(dpglm.gating.prior, StickBreaking):
-        weights = stick_breaking(dpglm.gating.posterior.gammas,
-                                 dpglm.gating.posterior.deltas)
+        weights = expected_stick_breaking(dpglm.gating.posterior.gammas,
+                                          dpglm.gating.posterior.deltas)
 
     # calculate the marginal likelihood of query for each cluster
     # calculate the normalization term for mean function for xhat
@@ -511,7 +511,7 @@ def niw_marginal_likelihood(data, posterior):
 
 
 # recover weights of a stick-breaking process
-def stick_breaking(gammas, deltas):
+def expected_stick_breaking(gammas, deltas):
     nb_models = len(gammas)
     product = np.ones((nb_models,))
     for idx in range(nb_models):
