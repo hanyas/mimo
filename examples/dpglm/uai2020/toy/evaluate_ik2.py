@@ -228,9 +228,10 @@ if __name__ == "__main__":
                                                                          target_scaler=target_scaler)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
-    evar = explained_variance_score(target, mu_predict)
+
     mse = mean_squared_error(target, mu_predict)
-    smse = 1. - r2_score(target, mu_predict)
+    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
 

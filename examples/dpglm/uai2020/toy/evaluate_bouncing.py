@@ -141,8 +141,10 @@ def create_job(kwargs):
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
-        kwargs['seed'] = n
-        kwargs_list.append(kwargs.copy())
+        _kwargs = {'seed': kwargs['arguments'].seed,
+                   'train_data': kwargs['data_dicts'][n],
+                   'arguments': kwargs['arguments']}
+        kwargs_list.append(_kwargs)
 
     return Parallel(n_jobs=min(nb_jobs, nb_cores),
                     verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
@@ -153,10 +155,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--nb_seeds', help='number of seeds', default=25, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=5, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=10, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -173,7 +175,7 @@ if __name__ == "__main__":
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
@@ -187,48 +189,62 @@ if __name__ == "__main__":
 
     env = gym.make('BouncingBall-DPGLM-v0')
     env._max_episode_steps = 5000
-    env.unwrapped._dt = 0.001
-    env.unwrapped._sigma = 1e-18
+    env.unwrapped._dt = 0.01
+    env.unwrapped._sigma = 1e-4
     env.seed(args.seed)
 
     dm_obs = env.observation_space.shape[0]
 
-    nb_train_rollouts, nb_train_steps = 25, 2500
-    nb_test_rollouts, nb_test_steps = 5, 2500
+    nb_train_rollouts, nb_train_steps = 25, 250
+    nb_test_rollouts, nb_test_steps = 5, 250
 
     train_obs, _ = sample_env(env, nb_train_rollouts, nb_train_steps)
     test_obs, _ = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    train_input = np.vstack([_x[:-1, :] for _x in train_obs])
-    train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
+    _input = np.vstack([_x[:-1, :] for _x in train_obs])
+    _target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
+
+    train_data = np.hstack((_input, _target))
+
+    # shuffle data
+    from sklearn.utils import shuffle
+    train_data = shuffle(train_data)
 
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=dm_obs, whiten=True)
     target_scaler = PCA(n_components=dm_obs, whiten=True)
 
-    input_scaler.fit(train_input)
-    target_scaler.fit(train_target)
+    input_scaler.fit(train_data[:, :dm_obs])
+    target_scaler.fit(train_data[:, dm_obs:])
 
-    scaled_train_data = {'input': input_scaler.transform(train_input),
-                         'target': target_scaler.transform(train_target)}
+    # split to nb_seeds train datasets
+    from sklearn.model_selection import ShuffleSplit
+    spliter = ShuffleSplit(n_splits=args.nb_seeds, test_size=0.2)
 
-    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_data=scaled_train_data,
-                                     arguments=args)[0]
+    train_inputs, train_targets = [], []
+    for train_index, _ in spliter.split(train_data):
+        train_inputs.append(train_data[train_index, :dm_obs])
+        train_targets.append(train_data[train_index, dm_obs:])
+
+    train_dicts = []
+    for train_input, train_target in zip(train_inputs, train_targets):
+        train_dicts.append({'input': input_scaler.transform(train_input),
+                            'target': target_scaler.transform(train_target)})
+
+    # train
+    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                      data_dicts=train_dicts,
+                                      arguments=args)
 
     from mimo.util.prediction import meanfield_forcast
 
-    plt.figure()
+    idx = np.random.choice(len(test_obs))
+    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
+                                   prediction=args.prediction,
+                                   horizon=250, incremental=True,
+                                   input_scaler=input_scaler,
+                                   target_scaler=target_scaler)
 
-    prediction = []
-    for n in range(len(test_obs)):
-        prediction.append(meanfield_forcast(dpglm, test_obs[n][0, :],
-                                            prediction=args.prediction,
-                                            horizon=2500, incremental=True,
-                                            input_scaler=input_scaler,
-                                            target_scaler=target_scaler))
-
-        plt.plot(test_obs[n][1:, :])
-        plt.plot(prediction[n])
-
+    plt.plot(test_obs[idx][1:, :])
+    plt.plot(prediction)
     plt.show()

@@ -235,9 +235,10 @@ if __name__ == "__main__":
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
-    evar = explained_variance_score(train_target, train_mu)
+
     mse = mean_squared_error(train_target, train_mu)
-    smse = 1. - r2_score(train_target, train_mu)
+    evar = explained_variance_score(train_target, train_mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(train_target, train_mu, multioutput='variance_weighted')
 
     print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
@@ -268,9 +269,9 @@ if __name__ == "__main__":
     test_std = np.hstack(test_std)
 
     # metrics
-    evar = explained_variance_score(test_target, test_mu)
     mse = mean_squared_error(test_target, test_mu)
-    smse = 1. - r2_score(test_target, test_mu)
+    evar = explained_variance_score(test_target, test_mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(test_target, test_mu, multioutput='variance_weighted')
 
     print('TEST - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
