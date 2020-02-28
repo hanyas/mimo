@@ -22,20 +22,15 @@ def create_job(kwargs):
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
 
-    # set random seed
-    np.random.seed(seed)
-
     input = train_data['input']
     target = train_data['target']
-
-    # subsample data
-    rows = np.random.choice(input.shape[0], 4000)
-    input, target = input[rows, :], target[rows, :]
-
     data = np.hstack((input, target))
 
     input_dim = input.shape[-1]
     target_dim = target.shape[-1]
+
+    # set random seed
+    np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
@@ -49,7 +44,7 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e-1
+            psi_niw = 1e-2
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -146,8 +141,10 @@ def create_job(kwargs):
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
-        kwargs['seed'] = n
-        kwargs_list.append(kwargs.copy())
+        _kwargs = {'seed': kwargs['arguments'].seed,
+                   'train_data': kwargs['data_dicts'][n],
+                   'arguments': kwargs['arguments']}
+        kwargs_list.append(_kwargs)
 
     return Parallel(n_jobs=min(nb_jobs, nb_cores),
                     verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
@@ -160,8 +157,8 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=25, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=500, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -204,18 +201,36 @@ if __name__ == "__main__":
     target = np.sinc(input) + noise(input) * np.random.randn(len(input), 1)
     mean = np.sinc(input)
 
+    data = np.hstack((input, target))
+
     # Data scaling
     input_scaler = PCA(n_components=1, whiten=True)
     target_scaler = PCA(n_components=1, whiten=True)
 
-    input_scaler.fit(input)
-    target_scaler.fit(target)
+    input_scaler.fit(data[:, :1])
+    target_scaler.fit(data[:, 1:])
 
-    scaled_data = {'input': input_scaler.transform(input),
-                   'target': target_scaler.transform(target)}
+    # shuffle data
+    from sklearn.utils import shuffle
+    data = shuffle(data)
 
+    # split to nb_seeds train datasets
+    from sklearn.model_selection import ShuffleSplit
+    spliter = ShuffleSplit(n_splits=args.nb_seeds, test_size=0.2)
+
+    train_inputs, train_targets = [], []
+    for train_index, _ in spliter.split(data):
+        train_inputs.append(data[train_index, :1])
+        train_targets.append(data[train_index, 1:])
+
+    train_dicts = []
+    for train_input, train_target in zip(train_inputs, train_targets):
+        train_dicts.append({'input': input_scaler.transform(train_input),
+                            'target': target_scaler.transform(train_target)})
+
+    # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=scaled_data,
+                                      data_dicts=train_dicts,
                                       arguments=args)
 
     # Evaluation over multiple seeds to get confidence
@@ -229,9 +244,9 @@ if __name__ == "__main__":
                                           input_scaler=input_scaler,
                                           target_scaler=target_scaler)
 
-        _evar = explained_variance_score(target, _mu_predict)
         _mse = mean_squared_error(target, _mu_predict)
-        _smse = 1. - r2_score(target, _mu_predict)
+        _evar = explained_variance_score(target, _mu_predict, multioutput='variance_weighted')
+        _smse = 1. - r2_score(target, _mu_predict, multioutput='variance_weighted')
 
         print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse, 'Compnents:', len(dpglm.used_labels))
 
@@ -278,7 +293,7 @@ if __name__ == "__main__":
     plt.show()
 
     # show on learned example
-    idx = np.random.choice(args.nb_seed, 1)
+    idx = np.random.choice(args.nb_seeds, 1)
     w, h = plt.figaspect(0.67)
     fig, axes = plt.subplots(2, 1, figsize=(w, h))
 
