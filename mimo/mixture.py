@@ -189,7 +189,7 @@ class LabelsWithStickBreaking:
 
     # Gibbs sampling
     def resample(self):
-        # TODO Fix the Gibbs sampler of DP
+        # TODO Are we doing this the correct way?
         errs = np.seterr(invalid='ignore', divide='ignore')
         scores = np.log(self.compute_scores())
         np.seterr(**errs)
