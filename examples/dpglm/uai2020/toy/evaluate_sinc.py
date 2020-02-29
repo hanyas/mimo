@@ -1,5 +1,5 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy as np
 import numpy.random as npr
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # sample dataset
-    nb_samples = 5000
+    nb_samples = 10000
     input = np.linspace(-10., 10., nb_samples).reshape(nb_samples, 1)
     noise = lambda x: 0.05 + 0.2 * (1. + np.sin(2. * x)) / (1. + np.exp(-0.2 * x))
     target = np.sinc(input) + noise(input) * np.random.randn(len(input), 1)
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     plt.show()
 
     # show on learned example
-    idx = np.random.choice(args.nb_seeds, 1)
+    choice = np.random.choice(args.nb_seeds, 1)[0]
     w, h = plt.figaspect(0.67)
     fig, axes = plt.subplots(2, 1, figsize=(w, h))
 
@@ -303,14 +303,14 @@ if __name__ == "__main__":
     axes[0].plot(input, mean - 2 * noise(input), 'g--')
     axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
 
-    axes[0].plot(input, mu_predict[idx], '-r')
-    axes[0].plot(input, mu_predict[idx] + 2 * std_predict[idx], '-b')
-    axes[0].plot(input, mu_predict[idx] - 2 * std_predict[idx], '-b')
+    axes[0].plot(input, mu_predict[choice], '-r')
+    axes[0].plot(input, mu_predict[choice] + 2 * std_predict[choice], '-b')
+    axes[0].plot(input, mu_predict[choice] - 2 * std_predict[choice], '-b')
 
     # plot gaussian activations
     mu, sigma = [], []
-    for idx, c in enumerate(dpglms[idx].components):
-        if idx in dpglms[idx].used_labels:
+    for idx, c in enumerate(dpglms[choice].components):
+        if idx in dpglms[choice].used_labels:
             _mu, _sigma, _, _ = c.posterior.mode()
 
             _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
@@ -321,14 +321,14 @@ if __name__ == "__main__":
             sigma.append(_sigma)
 
     activations = []
-    for i in range(len(dpglms[idx].used_labels)):
+    for i in range(len(dpglms[choice].used_labels)):
         activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
 
     activations = np.asarray(activations).squeeze()
     # activations = activations / np.sum(activations, axis=1, keepdims=True)
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
-    for i in range(len(dpglms[idx].used_labels)):
+    for i in range(len(dpglms[choice].used_labels)):
         axes[1].plot(input, activations[i])
 
     # set working directory
@@ -338,6 +338,6 @@ if __name__ == "__main__":
     # save figs
     import tikzplotlib
     path = os.path.join(str(dataset))
-    tikzplotlib.save(path + dataset + '_example.tex')
+    tikzplotlib.save(path + '_example.tex')
     plt.savefig(path + dataset + '_example.pdf')
     plt.show()
