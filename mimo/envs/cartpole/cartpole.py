@@ -17,7 +17,7 @@ class Cartpole(gym.Env):
 
         self._dt = 0.01
 
-        self._sigma = 1.e-4
+        self._sigma = 1e-4
 
         self._global = True
 
