@@ -64,7 +64,7 @@ class Dirichlet(Distribution):
                 # when weights is 2D or data is None, the weights are expected
                 # indicators and data is just a placeholder; nominally data
                 # should be np.arange(K)[na,:].repeat(N,axis=0)
-                counts = np.atleast_2d(weights).sum(0)
+                counts = np.sum(np.atleast_2d(weights), axis=0)
             else:
                 # when weights is 1D, data is indices and we do a weighted
                 # bincount
@@ -99,35 +99,42 @@ class StickBreaking(Distribution):
 
     def rvs(self, size=None):
         # stick-breaking construction
-        _betas = npr.beta(self.gammas, self.deltas)
-        _probs = np.zeros((self.K, ))
-        _probs[0] = _betas[0]
-        _probs[1:] = _betas[1:] * np.cumprod(1.0 - _betas[:-1])
-        return _probs / _probs.sum()
+        betas = npr.beta(self.gammas, self.deltas)
+        probs = np.zeros((self.K, ))
+        probs[0] = betas[0]
+        probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
+        return probs / probs.sum()
 
     def mean(self):
-        # mean of beta dist.
-        return self.gammas / (self.gammas + self.deltas)
+        # mean of stick-breaking
+        betas = self.gammas / (self.gammas + self.deltas)
+        probs = np.zeros((self.K, ))
+        probs[0] = betas[0]
+        probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
+        return probs / probs.sum()
 
     def mode(self):
         # mode of beta dist.
-        _mode = np.zeros((self.K, ))
+        betas = np.zeros((self.K, ))
         for k in range(self.K):
             if self.gamma[k] > 1. and self.delta[k] > 1.:
-                _mode[k] = (self.gamma[k] - 1.) / (self.gamma[k] + self.delta[k] - 2.)
+                betas[k] = (self.gamma[k] - 1.) / (self.gamma[k] + self.delta[k] - 2.)
             elif self.gamma[k] == 1. and self.delta[k] == 1.:
-                _mode[k] = 1.
+                betas[k] = 1.
             elif self.gamma[k] < 1. and self.delta[k] < 1.:
-                _mode[k] = 1.
+                betas[k] = 1.
             elif self.gamma[k] <= 1. and self.delta[k] > 1.:
-                _mode[k] = 0.
+                betas[k] = 0.
             elif self.gamma[k] > 1. and self.delta[k] <= 1.:
-                _mode[k] = 1.
+                betas[k] = 1.
             else:
                 warnings.warn("Mode of Dirichlet process not defined")
                 return None
 
-        return _mode
+        probs = np.zeros((self.K, ))
+        probs[0] = betas[0]
+        probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
+        return probs / probs.sum()
 
     def log_likelihood(self, x):
         raise NotImplementedError
@@ -152,7 +159,7 @@ class StickBreaking(Distribution):
                 # when weights is 2D or data is None, the weights are expected
                 # indicators and data is just a placeholder; nominally data
                 # should be np.arange(K)[na,:].repeat(N,axis=0)
-                counts = np.atleast_2d(weights).sum(0)
+                counts = np.sum(np.atleast_2d(weights), axis=0)
             else:
                 # when weights is 1D, data is indices and we do a weighted
                 # bincount

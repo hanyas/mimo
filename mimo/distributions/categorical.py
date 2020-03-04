@@ -37,9 +37,9 @@ class Categorical(Distribution):
 
     def log_likelihood(self, x):
         out = np.zeros_like(x, dtype=np.double)
-        nanidx = np.isnan(x)
+        bads = np.isnan(x)
         err = np.seterr(divide='ignore')
-        out[~nanidx] = np.log(self.probs)[list(x[~nanidx])]  # log(0) can happen, no warning
+        out[~bads] = np.log(self.probs)[list(x[~bads])]  # log(0) can happen, no warning
         np.seterr(**err)
         return out
 
