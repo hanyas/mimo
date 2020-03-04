@@ -22,16 +22,16 @@ class MatrixNormal(Distribution):
 
     @property
     def params(self):
-        return self.M, self.U, self.V
+        return self.M, self.V
 
     @params.setter
     def params(self, values):
-        self.M, self.U, self.V = values
+        self.M, self.V = values
 
     @property
     def num_parameters(self):
-        _num = self.dcol * self.drow
-        return _num + _num * (_num + 1) / 2
+        num = self.dcol * self.drow
+        return num + num * (num + 1) / 2
 
     @property
     def dcol(self):
