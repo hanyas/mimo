@@ -2,7 +2,7 @@ import copy
 
 import numpy as np
 import scipy.special as special
-from scipy.special import logsumexp, digamma
+from scipy.special import logsumexp
 
 from mimo.abstractions import ModelEM, ModelGibbsSampling, ModelMeanField
 from mimo.abstractions import MeanField
@@ -59,8 +59,8 @@ class LabelsWithDirichlet:
 
     def log_likelihood(self):
         if not hasattr(self, 'normalizer') or self.normalizer is None:
-            resps = self.compute_scores()
-            self.normalizer = np.sum(np.log(np.sum(resps, axis=1)))
+            scores = self.compute_scores()
+            self.normalizer = np.sum(logsumexp(scores[~np.isnan(self.data).any(1)], axis=1))
         return self.normalizer
 
     def clear_caches(self):
@@ -68,12 +68,9 @@ class LabelsWithDirichlet:
 
     # Gibbs sampling
     def resample(self):
-        errs = np.seterr(invalid='ignore', divide='ignore')
-        scores = np.log(self.compute_scores())
-        np.seterr(**errs)
-
+        scores = self.compute_scores()
         self.z, lognorms = sample_discrete_from_log(scores, axis=1, return_lognorms=True)
-        self.normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
+        self.normalizer = np.sum(lognorms[~np.isnan(self.data).any(1)])
 
     def copy_sample(self):
         new = copy.copy(self)
@@ -88,32 +85,49 @@ class LabelsWithDirichlet:
         # update, see Eq. 10.67 in Bishop
         component_scores = np.empty((N, K))
         for idx, c in enumerate(self.components):
+            component_scores[:, idx] = c.log_likelihood(data)
+        component_scores = np.nan_to_num(component_scores)
+
+        logpitilde = self.gating.log_likelihood(np.arange(K))
+        score = logpitilde + component_scores
+        return score
+
+    def compute_responsibilities(self, data=None):
+        # compute responsibilities
+        data = self.data if data is None else data
+        N, K = data.shape[0], len(self.components)
+
+        # update, see Eq. 10.67 in Bishop
+        component_scores = np.empty((N, K))
+        for idx, c in enumerate(self.components):
             component_scores[:, idx] = c.expected_log_likelihood(data)
         component_scores = np.nan_to_num(component_scores)
 
-        logpitilde = self.gating.expected_log_likelihood(np.arange(len(self.components)))
+        logpitilde = self.gating.expected_log_likelihood(np.arange(K))
         logr = logpitilde + component_scores
 
         r = np.exp(logr - np.max(logr, axis=1, keepdims=True))
         r /= np.sum(r, axis=1, keepdims=True)
 
-        return r
+        return r, logr
 
     # Mean Field
     def meanfield_update(self):
         # get responsibilities
-        self.resps = self.compute_scores()
+        self.resps, _ = self.compute_responsibilities()
         # for plotting
         self.z = np.argmax(self.resps, axis=1)
 
     def variational_lowerbound(self):
+        K = len(self.components)
+
         # return avg energy plus entropy
         errs = np.seterr(invalid='ignore', divide='ignore')
         prod = self.resps * np.log(self.resps)
         prod[np.isnan(prod)] = 0.  # 0 * -inf = 0.
         np.seterr(**errs)
 
-        logpitilde = self.gating.expected_log_likelihood(np.arange(len(self.components)))
+        logpitilde = self.gating.expected_log_likelihood(np.arange(K))
 
         q_entropy = - prod.sum()
         p_avgengy = (self.resps * logpitilde).sum()
@@ -180,8 +194,8 @@ class LabelsWithStickBreaking:
 
     def log_likelihood(self):
         if not hasattr(self, 'normalizer') or self.normalizer is None:
-            resps = self.compute_scores()
-            self.normalizer = np.sum(np.log(np.sum(resps, axis=1)))
+            scores = self.compute_scores()
+            self.normalizer = np.sum(logsumexp(scores[~np.isnan(self.data).any(1)], axis=1))
         return self.normalizer
 
     def clear_caches(self):
@@ -190,12 +204,9 @@ class LabelsWithStickBreaking:
     # Gibbs sampling
     def resample(self):
         # TODO Are we doing this the correct way?
-        errs = np.seterr(invalid='ignore', divide='ignore')
-        scores = np.log(self.compute_scores())
-        np.seterr(**errs)
-
+        scores = self.compute_scores()
         self.z, lognorms = sample_discrete_from_log(scores, axis=1, return_lognorms=True)
-        self.normalizer = lognorms[~np.isnan(self.data).any(1)].sum()
+        self.normalizer = np.sum(lognorms[~np.isnan(self.data).any(1)])
 
     def copy_sample(self):
         new = copy.copy(self)
@@ -209,10 +220,25 @@ class LabelsWithStickBreaking:
         # update, see Eq. 10.67 in Bishop
         component_scores = np.empty((N, K))
         for idx, c in enumerate(self.components):
+            component_scores[:, idx] = c.log_likelihood(data)
+        component_scores = np.nan_to_num(component_scores)
+
+        gating_scores = self.gating.log_likelihood(np.arange(K))
+
+        score = gating_scores + component_scores
+        return score
+
+    def compute_responsibilities(self, data=None):
+        data = self.data if data is None else data
+        N, K = data.shape[0], len(self.components)
+
+        # update, see Eq. 10.67 in Bishop
+        component_scores = np.empty((N, K))
+        for idx, c in enumerate(self.components):
             component_scores[:, idx] = c.expected_log_likelihood(data)
         component_scores = np.nan_to_num(component_scores)
 
-        E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
+        E_log_stick, E_log_rest = self.gating.expected_log_likelihood(np.arange(K))
         gating_scores = np.take(E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1])), np.arange(K))
 
         logr = gating_scores + component_scores
@@ -220,16 +246,18 @@ class LabelsWithStickBreaking:
         r = np.exp(logr - np.max(logr, axis=1, keepdims=True))
         r /= np.sum(r, axis=1, keepdims=True)
 
-        return r
+        return r, logr
 
     # Mean Field
     def meanfield_update(self):
         # get responsibilities
-        self.resps = self.compute_scores()
+        self.resps, _ = self.compute_responsibilities()
         # for plotting
         self.z = np.argmax(self.resps, axis=1)
 
     def variational_lowerbound(self):
+        K = len(self.components)
+
         # return avg energy plus entropy
         errs = np.seterr(invalid='ignore', divide='ignore')
         prod = self.resps * np.log(self.resps)
@@ -242,8 +270,7 @@ class LabelsWithStickBreaking:
         cumcounts = np.hstack((np.cumsum(counts[:, ::-1], axis=1)[:, -2::-1],
                                np.zeros((len(counts), 1))))
 
-        E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
-
+        E_log_stick, E_log_rest = self.gating.expected_log_likelihood(np.arange(K))
         p_avgengy = np.sum(cumcounts * E_log_rest + counts * E_log_stick)
 
         return p_avgengy + q_entropy
@@ -570,10 +597,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
                 del c._scatterplot
 
     def predictive_log_likelihood(self, x=None):
-        N, K = x.shape[0], len(self.components)
-
-        vals = np.zeros((N, K))
-        for idx, c in enumerate(self.components):
-            vals[:, idx] = c.expected_log_likelihood(x)
-        vals += self.gating.expected_log_likelihood(np.arange(len(self.components)))
-        return logsumexp(vals[:, self.used_labels], axis=1)
+        _label_list = self.add_data(x)
+        _, scores = _label_list.compute_responsibilities()
+        self.labels_list.pop()
+        return logsumexp(scores[:, self.used_labels], axis=1)
