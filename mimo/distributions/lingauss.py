@@ -1,9 +1,9 @@
 import numpy as np
 import numpy.random as npr
-from numpy.core.umath_tests import inner1d
-from scipy import linalg
 
 from mimo.abstractions import Distribution
+from mimo.distributions.gaussian import Gaussian
+
 from mimo.util.general import inv_psd, blockarray
 from mimo.util.general import near_pd
 
@@ -14,6 +14,7 @@ class LinearGaussian(Distribution):
     Parameters are linear transf. and covariance matrix:
         A, sigma
     """
+
     def __init__(self, A=None, sigma=None, affine=False):
 
         self.A = A
@@ -31,15 +32,19 @@ class LinearGaussian(Distribution):
         self.A, self.sigma = values
 
     @property
-    def din(self):
+    def num_parameters(self):
+        return self.dcol * self.drow + self.drow * (self.drow + 1) / 2
+
+    @property
+    def dcol(self):
         # input dimension, intercept excluded
         if self.affine:
             return self.A.shape[1] - 1
         else:
             return self.A.shape[1]
-          
+
     @property
-    def dout(self):
+    def drow(self):
         # output dimension
         return self.A.shape[0]
 
@@ -69,7 +74,7 @@ class LinearGaussian(Distribution):
 
         x = npr.normal(size=(size, A.shape[1])) if x is None else x
         y = self.predict(x)
-        y += npr.normal(size=(x.shape[0], self.dout)).dot(sigma_chol.T)
+        y += npr.normal(size=(x.shape[0], self.drow)).dot(sigma_chol.T)
 
         return np.hstack((x, y))
 
@@ -92,8 +97,8 @@ class LinearGaussian(Distribution):
 
     # distribution
     def log_likelihood(self, xy):
-        A, sigma, dout = self.A, self.sigma, self.dout
-        x, y = (xy[:, :-dout], xy[:, -dout:])
+        A, sigma, drow = self.A, self.sigma, self.drow
+        x, y = (xy[:, :-drow], xy[:, -drow:])
 
         if self.affine:
             A, b = A[:, :-1], A[:, -1]
@@ -107,11 +112,11 @@ class LinearGaussian(Distribution):
         if isinstance(xy, np.ndarray):
             out = np.einsum(contract, xy.dot(parammat), xy)
         else:
-            out = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
-            out += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
-            out += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
+            out = np.einsum(contract, x.dot(parammat[:-drow, :-drow]), x)
+            out += np.einsum(contract, y.dot(parammat[-drow:, -drow:]), y)
+            out += 2. * np.einsum(contract, x.dot(parammat[:-drow, -drow:]), y)
 
-        out -= 0.5 * dout * np.log(2. * np.pi) + np.log(np.diag(L)).sum()
+        out -= 0.5 * drow * np.log(2. * np.pi) + np.log(np.diag(L)).sum()
 
         if self.affine:
             out += y.dot(sigma_inv).dot(b)
@@ -121,11 +126,11 @@ class LinearGaussian(Distribution):
         return out
 
     def log_partition(self):
-        return 0.5 * self.dout * np.log(2. * np.pi)\
+        return 0.5 * self.drow * np.log(2. * np.pi)\
                + np.sum(np.log(np.diag(self.sigma_chol)))
 
     def entropy(self):
-        return 0.5 * self.dout * np.log(2. * np.pi) + self.dout\
+        return 0.5 * self.drow * np.log(2. * np.pi) + self.drow\
                + np.sum(np.log(np.diag(self.sigma_chol)))
 
 
@@ -138,162 +143,64 @@ class LinearGaussianWithNoisyInputs(Distribution):
     Parameters are a constant mean and covariance matrix:
         mu, sigma
     """
-    def __init__(self, mu=None, sigma_niw=None, A=None, sigma=None, affine=False):
 
-        self.mu = mu
-        self._sigma_niw = sigma_niw
-        self._sigma_niw_chol = None
+    def __init__(self, mu=None, sigma_in=None, A=None, sigma_out=None, affine=False):
 
-        self.A = A
-        self._sigma = sigma
-        self._sigma_chol = None
-
-        self.affine = affine
+        self.gaussian = Gaussian(mu=mu, sigma=sigma_in)
+        self.linear_gaussian = LinearGaussian(A=A, sigma=sigma_out, affine=affine)
 
     @property
     def params(self):
-        return self.mu, self.sigma_niw, self.A, self.sigma
+        return self.gaussian.params, self.linear_gaussian.params
 
     @params.setter
     def params(self, values):
-        self.mu, self.sigma_niw, self.A, self.sigma = values
+        self.gaussian.params = values[:2]
+        self.linear_gaussian.params = values[2:]
 
     @property
     def num_parameters(self):
-        _num_out = self.dout + self.dout * (self.dout + 1) / 2
-        _num_in = self.din + self.din * (self.din + 1) / 2
-        _num = _num_out + _num_in
-        if self.affine:
-            _num += self.dout
-        return _num
+        return self.gaussian.num_parameters()\
+               + self.linear_gaussian.num_parameters()
 
     @property
-    def din(self):
-        # input dimension, intercept excluded
-        if self.affine:
-            return self.A.shape[1] - 1
-        else:
-            return self.A.shape[1]
+    def dcol(self):
+        return self.linear_gaussian.dcol
 
     @property
-    def dout(self):
-        # output dimension
-        return self.A.shape[0]
-
-    @property
-    def sigma(self):
-        return self._sigma
-
-    @property
-    def sigma_niw(self):
-        return self._sigma_niw
-
-    @sigma.setter
-    def sigma(self, value):
-        self._sigma = value
-        self._sigma_chol = None
-
-    @sigma_niw.setter
-    def sigma_niw(self, value):
-        self._sigma_niw = value
-        self._sigma_niw_chol = None
-
-    @property
-    def sigma_chol(self):
-        if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
-        return self._sigma_chol
-
-    @property
-    def sigma_niw_chol(self):
-        if self._sigma_niw_chol is None:
-            self._sigma_niw_chol = np.linalg.cholesky(near_pd(self.sigma_niw))
-        return self._sigma_niw_chol
+    def drow(self):
+        return self.linear_gaussian.drow
 
     def rvs(self, x=None, size=None):
         size = 1 if size is None else size
-        _, sigma_chol = self.A, self.sigma_chol
-
-        if size is None:
-            x = self.mu + npr.normal(size=self.din).dot(self.sigma_niw_chol.T) if x is None else x
-        else:
-            size = tuple([size, self.din])
-            x = self.mu + npr.normal(size=size).dot(self.sigma_niw_chol.T) if x is None else x
-
-        y = self.predict(x)
-        y += npr.normal(size=(x.shape[0], self.dout)).dot(sigma_chol.T)
-
-        return np.hstack((x, y))
+        if x is None:
+            x = self.gaussian.rvs(size=size)
+        xy = self.linear_gaussian.rvs(x=x, size=size)
+        return xy
 
     def predict(self, x):
-        A, sigma = self.A, self.sigma
-
-        if self.affine:
-            A, b = A[:, :-1], A[:, -1]
-            y = x.dot(A.T) + b.T
-        else:
-            y = x.dot(A.T)
-
-        return y
+        return self.linear_gaussian.predict(x)
 
     def mean(self):
-        return self.mu, self.A
+        return self.gaussian.mean(), self.linear_gaussian.mean()
 
     def mode(self):
-        return self.mu, self.A
+        return self.gaussian.mode(), self.linear_gaussian.mode()
 
     # distribution
     def log_likelihood(self, xy):
         # log-likelihood of linear gaussian
-        A, sigma, dout = self.A, self.sigma, self.dout
-        x, y = (xy[:, :-dout], xy[:, -dout:])
-
-        if self.affine:
-            A, b = A[:, :-1], A[:, -1]
-
-        sigma_inv, L = inv_psd(sigma, return_chol=True)
-        parammat = - 0.5 * blockarray([[A.T.dot(sigma_inv).dot(A),
-                                        -A.T.dot(sigma_inv)],
-                                       [-sigma_inv.dot(A), sigma_inv]])
-
-        contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
-        if isinstance(xy, np.ndarray):
-            tmp = np.einsum(contract, xy.dot(parammat), xy)
-        else:
-            tmp = np.einsum(contract, x.dot(parammat[:-dout, :-dout]), x)
-            tmp += np.einsum(contract, y.dot(parammat[-dout:, -dout:]), y)
-            tmp += 2. * np.einsum(contract, x.dot(parammat[:-dout, -dout:]), y)
-
-        tmp -= 0.5 * dout * np.log(2. * np.pi) + np.sum(np.log(np.diag(L)))
-
-        if self.affine:
-            tmp += y.dot(sigma_inv).dot(b)
-            tmp -= x.dot(A.T).dot(sigma_inv).dot(b)
-            tmp -= 0.5 * b.dot(sigma_inv).dot(b)
+        tmp = self.linear_gaussian.log_likelihood(xy)
 
         # log-likelihood of gaussian
-        try:
-            bads = np.isnan(np.atleast_2d(x)).any(axis=1)
-            xc = np.nan_to_num(x).reshape((-1, self.din)) - self.mu
-            xs = linalg.solve_triangular(self.sigma_niw_chol, xc.T, lower=True)
-            aux = - 0.5 * self.din * np.log(2. * np.pi)\
-                  - np.sum(np.log(np.diag(self.sigma_niw_chol)))\
-                  - 0.5 * inner1d(xs.T, xs.T)
-            aux[bads] = 0
-        except np.linalg.LinAlgError:
-            # NOTE: degenerate distribution doesn't have a density
-            aux = np.repeat(-np.inf, x.shape[0])
+        x = xy[:, :-self.drow]
+        aux = self.gaussian.log_likelihood(x)
 
         return tmp + aux
 
     def log_partition(self):
-        return 0.5 * self.dout * np.log(2. * np.pi)\
-               + np.sum(np.log(np.diag(self.sigma_chol)))\
-               + 0.5 * self.din * np.log(2. * np.pi)\
-               + np.sum(np.log(np.diag(self.sigma_niw_chol)))
+        return self.linear_gaussian.log_partition()\
+               + self.gaussian.log_partition()
 
     def entropy(self):
-        return 0.5 * (self.dout * np.log(2. * np.pi) + self.dout
-                      + 2. * np.sum(np.log(np.diag(self.sigma_chol))))\
-               + 0.5 * (self.din * np.log(2. * np.pi) + self.din
-                        + 2. * np.sum(np.log(np.diag(self.sigma_niw_chol))))
+        return self.linear_gaussian.entropy() + self.gaussian.entropy()

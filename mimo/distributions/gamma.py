@@ -99,7 +99,3 @@ class InverseGamma(Distribution):
     def entropy(self):
         return np.sum(self.alphas + np.log(self.betas) +
                       gammaln(self.alphas) - (1. + self.alphas) * digamma(self.alphas))
-
-
-if __name__ == "__main__":
-    pass
