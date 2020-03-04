@@ -161,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1000, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
@@ -244,9 +244,9 @@ if __name__ == "__main__":
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
-    evar = explained_variance_score(train_target, train_mu)
     mse = mean_squared_error(train_target, train_mu)
-    smse = 1. - r2_score(train_target, train_mu)
+    evar = explained_variance_score(train_target, train_mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(train_target, train_mu, multioutput='variance_weighted')
 
     print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
