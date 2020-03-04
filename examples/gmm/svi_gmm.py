@@ -9,6 +9,7 @@ from mimo.util.text import progprint_xrange
 
 import operator
 
+npr.seed(1337)
 
 n_samples = 2500
 
@@ -42,15 +43,15 @@ allmodels = []
 for superitr in range(1):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
-    for _ in progprint_xrange(100):
+    for _ in progprint_xrange(250):
         gmm.resample_model()
 
     print('Stochastic Mean Field')
-    minibatchsize = 64
+    minibatchsize = 128
     prob = minibatchsize / float(n_samples)
     for _ in progprint_xrange(2500):
         minibatch = npr.permutation(n_samples)[:minibatchsize]
-        gmm.meanfield_sgdstep(minibatch=data[minibatch], prob=prob, stepsize=5e-4)
+        gmm.meanfield_sgdstep(minibatch=data[minibatch, :], prob=prob, stepsize=5e-4)
 
     allscores.append(gmm.meanfield_coordinate_descent_step())
     allmodels.append(copy.deepcopy(gmm))
