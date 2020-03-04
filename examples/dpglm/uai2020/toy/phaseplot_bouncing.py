@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
     import gym
 
-    from mimo.util.data import sample_env
+    from mimo.util.general import sample_env
 
     np.random.seed(args.seed)
 
