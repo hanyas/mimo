@@ -9,6 +9,7 @@ from mimo.util.text import progprint_xrange
 
 import operator
 
+npr.seed(124)
 
 n_samples = 2500
 

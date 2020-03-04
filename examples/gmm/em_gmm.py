@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
 
+npr.seed(1337)
 
 nb_samples = 2500
 
