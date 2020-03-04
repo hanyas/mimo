@@ -1,7 +1,11 @@
 import numpy as np
 import numpy.random as npr
+
+import scipy as sc
 import scipy.linalg.lapack as lapack
 from scipy.special import logsumexp
+
+from numpy.core.umath_tests import inner1d
 
 
 def is_pd(B):
@@ -50,6 +54,33 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
+def multivariate_t_loglik(y, nu, mu, lmbda):
+    # returns the log value
+    d = len(mu)
+    yc = np.array(y - mu, ndmin=2)
+    L = np.linalg.cholesky(lmbda)
+    ys = sc.linalg.solve_triangular(L, yc.T, overwrite_b=True, lower=True)
+    return sc.special.gammaln((nu + d) / 2.) - sc.special.gammaln(nu / 2.) \
+            - (d / 2.) * np.log(nu * np.pi) - np.log(L.diagonal()).sum() \
+            - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
+
+
+def multivariate_t_predictive(x, posterior):
+    M, V, psi, nu = posterior.params
+
+    if posterior.affine:
+        x = np.hstack((x, 1.))
+
+    xxT = np.outer(x, x)
+
+    df = nu + 1
+    mean = M @ x
+    c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
+    var = 1. / c * psi / (df - 2)
+
+    return mean, var, df
+
+
 # data
 def any_none(*args):
     return any(_ is None for _ in args)
@@ -66,6 +97,21 @@ def atleast_2d(data):
 def gi(data):
     out = (np.isnan(atleast_2d(data)).sum(1) == 0).ravel()
     return out if len(out) != 0 else None
+
+
+def normalizedata(data, scaling):
+    # Normalize data to 0 mean, 1 std_deviation, optionally scale data
+    mean = np.mean(data, axis=0)
+    std_deviation = np.std(data, axis=0)
+    data = (data - mean) / (std_deviation * scaling)
+    return data
+
+
+def centerdata(data, scaling):
+    # Center data to 0 mean
+    mean = np.mean(data, axis=0)
+    data = (data - mean) / scaling
+    return data
 
 
 def getdatasize(data):
@@ -153,3 +199,41 @@ def inv_psd(A, return_chol=False):
         return Ainv, L
     else:
         return Ainv
+
+
+def sample_env(env, nb_rollouts, nb_steps,
+               ctl=None, noise_std=0.1,
+               apply_limit=True):
+    obs, act = [], []
+
+    dm_obs = env.observation_space.shape[0]
+    dm_act = env.action_space.shape[0]
+
+    ulim = env.action_space.high
+
+    for n in range(nb_rollouts):
+        _obs = np.zeros((nb_steps, dm_obs))
+        _act = np.zeros((nb_steps, dm_act))
+
+        x = env.reset()
+
+        for t in range(nb_steps):
+            if ctl is None:
+                # unifrom distribution
+                u = np.random.uniform(-ulim, ulim)
+            else:
+                u = ctl(x)
+                u = u + noise_std * npr.randn(1, )
+
+            if apply_limit:
+                u = np.clip(u, -ulim, ulim)
+
+            _obs[t, :] = x
+            _act[t, :] = u
+
+            x, r, _, _ = env.step(u)
+
+        obs.append(_obs)
+        act.append(_act)
+
+    return obs, act
