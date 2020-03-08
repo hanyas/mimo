@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
     ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
                   color='b', linewidth=0.75, density=1,
-                  arrowstyle='->', arrowsize=1.5)  # minlength=0.5 to control minimum length of streams
+                  arrowstyle='->', arrowsize=1.5)
 
     ax = beautify(ax)
     ax.grid(False)
