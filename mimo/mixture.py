@@ -595,9 +595,3 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
                 del c._parameterplot
             if hasattr(c, '_scatterplot') and c._scatterplot is not None:
                 del c._scatterplot
-
-    def predictive_log_likelihood(self, x=None):
-        _label_list = self.add_data(x)
-        _, scores = _label_list.compute_responsibilities()
-        self.labels_list.pop()
-        return logsumexp(scores[:, self.used_labels], axis=1)

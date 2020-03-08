@@ -1,6 +1,7 @@
 import numpy as np
 
-from mimo.util.general import multivariate_t_predictive
+from mimo.util.general import matrix_studentt
+from mimo.util.general import multivariate_t_loglik
 
 import pathos
 from pathos.pools import ThreadPool as Pool
@@ -88,111 +89,141 @@ def meanfield_forcast(dpglm, query, exogenous=None, horizon=1,
         else:
             _query = _output
 
-        _output, _, _ = meanfield_prediction(dpglm, _query,
-                                             prediction, incremental,
-                                             input_scaler, target_scaler)
+        # set target to None while forcasting
+        _output, _, _, = meanfield_prediction(dpglm, _query, None,
+                                              prediction, incremental,
+                                              input_scaler, target_scaler)
         output.append(_output)
 
     return np.vstack(output)
 
 
-def parallel_meanfield_prediction(dpglm, query,
+def parallel_meanfield_prediction(dpglm, query, target=None,
                                   prediction='average', incremental=False,
                                   input_scaler=None, target_scaler=None):
-    query = np.atleast_2d(query)
-
-    def _loop(n):
-        mean, var, std = meanfield_prediction(dpglm, query[n, :],
-                                              prediction, incremental,
-                                              input_scaler, target_scaler)
-        return np.hstack((mean, var, std))
 
     nb_data = len(query)
-    nb_dim = dpglm.components[0].drow
+
+    def _loop(n):
+        _target = None if target is None else target[n, :]
+        return meanfield_prediction(dpglm, query[n, :], _target,
+                                    prediction, incremental,
+                                    input_scaler, target_scaler)
 
     pool = Pool(nodes=nb_cores)
     res = pool.map(_loop, range(nb_data))
     pool.close()
     pool.clear()
 
-    res = np.vstack(res)
-    mean, var, std = res[:, :nb_dim], res[:, nb_dim:2 * nb_dim], res[:, 2 * nb_dim:]
+    mean = np.vstack([_res[0] for _res in res])
+    var = np.vstack([_res[1] for _res in res])
+    std = np.vstack([_res[2] for _res in res])
 
-    return mean, var, std
+    if target is None:
+        return mean, var, std
+    else:
+        nlpd = np.vstack([_res[3] for _res in res])
+        return mean, var, std, nlpd
 
 
-# Marginalize prediction under posterior
-def meanfield_prediction(dpglm, query,
+def meanfield_gating(dpglm, input):
+    nb_models = len(dpglm.components)
+
+    # compute posterior mixing weights
+    weights = dpglm.gating.posterior.mean()
+
+    # calculate the marginal likelihood of query for each cluster
+    # calculate the normalization term for mean function for query
+    marginal_likelihood = np.zeros((nb_models, ))
+    effective_weights = np.zeros((nb_models, ))
+
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            marginal_likelihood[idx] = np.exp(c.log_marginal_likelihood(input))
+            effective_weights[idx] = weights[idx] * marginal_likelihood[idx]
+
+    effective_weights = effective_weights / np.sum(effective_weights)
+
+    return effective_weights
+
+
+def meanfield_predictive_component(component, query):
+    affine = component.posterior.mniw.affine
+    params = component.posterior.mniw.params
+
+    # predictive matrix student-t
+    mu, var, df = matrix_studentt(query, *params, affine)
+
+    return mu, var, df
+
+
+def meanfield_prediction(dpglm, query, target=None,
                          prediction='average', incremental=False,
                          input_scaler=None, target_scaler=None):
+
+    nb_dim = dpglm.components[0].drow
 
     if input_scaler is not None:
         assert target_scaler is not None
     if target_scaler is not None:
         assert input_scaler is not None
 
-    if input_scaler is not None:
-        _input = input_scaler.transform(np.atleast_2d(query)).squeeze()
+    if input_scaler is not None and target_scaler is not None:
+        input = np.squeeze(input_scaler.transform(np.atleast_2d(query)))
     else:
-        _input = query
+        input = query
 
-    nb_models = len(dpglm.components)
-    nb_dim = dpglm.components[0].drow
+    if target is not None and target_scaler is not None:
+        target = np.squeeze(target_scaler.transform(np.atleast_2d(target)))
 
-    # initialize variables
-    mean, var, std = np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, ))
+    mean, variance, stdv, nlpd =\
+        np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, )), 0.
 
-    # compute posterior mixing weights
-    weights = dpglm.gating.posterior.mean()
+    weights = meanfield_gating(dpglm, input)
 
-    # calculate the marginal likelihood of query for each cluster
-    # calculate the normalization term for mean function for xhat
-    marginal_likelihood = np.zeros((nb_models,))
-    effective_weight = np.zeros((nb_models,))
-    for idx, c in enumerate(dpglm.components):
-        if idx in dpglm.used_labels:
-            marginal_likelihood[idx] = np.exp(c.log_predictive_marginal(np.atleast_2d(_input)))
-            effective_weight[idx] = weights[idx] * marginal_likelihood[idx]
-
-    effective_weight = effective_weight / effective_weight.sum()
     if prediction == 'mode':
-        mode = np.argmax(effective_weight)
-        t_mean, t_var, _ = multivariate_t_predictive(_input, dpglm.components[mode].posterior.mniw)
-        t_var = np.diag(t_var)  # consider only diagonal variances for plots
+        mode = np.argmax(weights)
+        mean, variance, df = meanfield_predictive_component(dpglm.components[mode], input)
 
-        mean, var = t_mean, t_var
+        if target is not None:
+            nlpd = np.exp(multivariate_t_loglik(target, mean, df, variance))
 
     elif prediction == 'average':
-        for idx, c in enumerate(dpglm.components):
+        for idx, comp in enumerate(dpglm.components):
             if idx in dpglm.used_labels:
-                t_mean, t_var, _ = multivariate_t_predictive(_input, c.posterior.mniw)
-                t_var = np.diag(t_var)  # consider only diagonal variances for plots
+                _mu, _var, _df = meanfield_predictive_component(comp, input)
+
+                if target is not None:
+                    pd = np.exp(multivariate_t_loglik(target, _mu, _df, _var))
+                    nlpd += pd * weights[idx]
 
                 # Mean of a mixture = sum of weighted means
-                mean += t_mean * effective_weight[idx]
+                mean += _mu * weights[idx]
 
                 # Variance of a mixture = sum of weighted variances + ...
                 # ... + sum of weighted squared means - squared sum of weighted means
-                var += (t_var + t_mean ** 2) * effective_weight[idx]
-        var -= mean ** 2
+                _var = np.diag(_var)  # consider only diagonal variances for plots
+                variance += (_var + _mu**2) * weights[idx]
+        variance -= mean**2
 
-    else:
-        raise NotImplementedError
+    if nlpd > 0.:
+        nlpd = -1.0 * np.log(nlpd)
 
     if target_scaler is not None:
-        mean = target_scaler.inverse_transform(np.atleast_2d(mean)).squeeze()
+        mean = np.squeeze(target_scaler.inverse_transform(np.atleast_2d(mean)))
         trans = (np.sqrt(target_scaler.explained_variance_[:, None]) * target_scaler.components_).T
-        var = np.diag(trans.T @ np.diag(var) @ trans)
+        variance = np.diag(trans.T @ np.diag(variance) @ trans)
 
-        try:
-            np.linalg.cholesky(np.diag(var))
-        except np.linalg.LinAlgError:
-            print('Variance is not PSD')
+    # only diagonal elements
+    stdv = np.sqrt(variance)
 
     if incremental:
-        return query[:nb_dim] + mean, var, np.sqrt(var)
+        mean = query[:nb_dim] + mean
+
+    if target is not None:
+        return mean, variance, stdv, nlpd
     else:
-        return mean, var, np.sqrt(var)
+        return mean, variance, stdv
 
 
 # Weighted EM predictions over all models
@@ -221,13 +252,12 @@ def em_prediction(dpglm, query):
     for idx, c in enumerate(dpglm.components):
         if idx in dpglm.used_labels:
             t_mean = c.predict(query)
-            t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
-
             # Mean of a mixture = sum of weighted means
             mean += t_mean * effective_weight[idx] / normalizer
 
             # Variance of a mixture = sum of weighted variances + ...
             # ... + sum of weighted squared means - squared sum of weighted means
+            t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
             var += (t_var + t_mean ** 2) * effective_weight[idx] / normalizer
     var -= mean ** 2
     std = np.sqrt(var)

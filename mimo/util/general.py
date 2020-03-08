@@ -54,7 +54,7 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_t_loglik(y, nu, mu, lmbda):
+def multivariate_t_loglik(y, mu, nu, lmbda):
     # returns the log value
     d = len(mu)
     yc = np.array(y - mu, ndmin=2)
@@ -65,20 +65,25 @@ def multivariate_t_loglik(y, nu, mu, lmbda):
             - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
 
 
-def multivariate_t_predictive(x, posterior):
-    M, V, psi, nu = posterior.params
-
-    if posterior.affine:
+def matrix_studentt(x, M, V, psi, nu, affine=True):
+    if affine:
         x = np.hstack((x, 1.))
 
     xxT = np.outer(x, x)
 
-    df = nu + 1
-    mean = M @ x
+    # https://tminka.github.io/papers/minka-linear.pdf
     c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
-    var = 1. / c * psi / (df - 2)
 
-    return mean, var, df
+    # https://tminka.github.io/papers/minka-gaussian.pdf
+    df = nu
+    mu = M @ x
+    sigma = (1. / c) * psi / df  # Misleading in Minka
+    var = sigma * df / (df - 2)
+
+    # # variance of approximate Gaussian
+    # var = psi / df
+
+    return mu, var, df
 
 
 # data

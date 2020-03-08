@@ -1,6 +1,9 @@
 from abc import ABC
 
 import numpy as np
+import scipy as sc
+
+from scipy import stats
 
 import copy
 
@@ -146,18 +149,29 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
                - self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) \
                - self.dim / 2. * np.log(2. * np.pi)
 
-    def log_predictive_marginal(self, x):
-        # computes the marginal likelihood of one observation
-        # under the posterior, i.e. posterior plays the role of a prior
-        stats = self.posterior.get_statistics(x)
-        natparam = self.posterior.nat_param + stats
+    def log_marginal_likelihood(self, x):
+        x = np.atleast_2d(x)
+        stats = self.prior.get_statistics(x)
+        natparam = self.prior.nat_param + stats
         params = NormalInverseWishart.nat_to_standard(natparam)
 
-        log_partition_prior = self.posterior.log_partition()
-        log_partition_posterior = self.posterior.log_partition(params)
+        log_partition_prior = self.prior.log_partition()
+        log_partition_posterior = self.prior.log_partition(params)
 
         return log_partition_posterior - log_partition_prior \
-               - 0.5 * 1 * self.dim * np.log(2. * np.pi)
+               - 0.5 * len(x) * self.dcol * np.log(np.pi)
+
+    def log_posterior_predictive(self, x):
+        x = np.atleast_2d(x)
+        stats = self.posterior.get_statistics(x)
+        natparam = self.posterior.nat_param + stats
+        mu, kappa, psi, nu = NormalInverseWishart.nat_to_standard(natparam)
+
+        loc = mu
+        df = nu - self.dcol + 1
+        scale = np.linalg.cholesky((kappa + 1) / (kappa * (nu - self.dcol + 1)) * psi)
+
+        return sc.stats.t(loc=loc, df=df, scale=scale).logpdf(x)
 
 
 class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
@@ -544,9 +558,9 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
 
         return aux + tmp
 
-    def log_predictive_marginal(self, x):
-        # computes the marginal likelihood of one observation
-        # under the posterior, i.e. posterior plays the role of a prior
+    # log marginal likelihood of input
+    def log_marginal_likelihood(self, x):
+        x = np.atleast_2d(x)
         stats = self.posterior.niw.get_statistics(x)
         natparam = self.posterior.niw.nat_param + stats
         params = NormalInverseWishart.nat_to_standard(natparam)
@@ -555,7 +569,20 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         log_partition_posterior = self.posterior.niw.log_partition(params)
 
         return log_partition_posterior - log_partition_prior \
-               - 0.5 * 1 * self.dcol * np.log(2. * np.pi)
+               - 0.5 * len(x) * self.dcol * np.log(np.pi)
+
+    # log posterior predictive of output
+    def log_posterior_predictive(self, x):
+        x = np.atleast_2d(x)
+        stats = self.posterior.niw.get_statistics(x)
+        natparam = self.posterior.niw.nat_param + stats
+        mu, kappa, psi, nu = NormalInverseWishart.nat_to_standard(natparam)
+
+        loc = mu
+        df = nu - self.dcol + 1
+        scale = np.linalg.cholesky((kappa + 1) / (kappa * (nu - self.dcol + 1)) * psi)
+
+        return sc.stats.t(loc=loc, df=df, scale=scale).logpdf(x)
 
 
 class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
