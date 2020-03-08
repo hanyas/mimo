@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     mu_predict, var_predict, std_predict = [], [], []
     for t in range(len(trans_input)):
-        _mean, _var, _ = meanfield_prediction(dpglm, trans_input[t, :], args.prediction)
+        _mean, _var, _ = meanfield_prediction(dpglm, trans_input[t, :], prediction=args.prediction)
 
         mu_predict.append(_mean)
         var_predict.append(_var)

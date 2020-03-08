@@ -190,7 +190,7 @@ if __name__ == "__main__":
     env = gym.make('BouncingBall-DPGLM-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-4
+    env.unwrapped._sigma = 1e-8
     env.seed(args.seed)
 
     dm_obs = env.observation_space.shape[0]
