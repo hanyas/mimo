@@ -7,7 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-
+from mimo.util.general import near_pd
 
 import argparse
 
@@ -45,13 +45,14 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e-1
+            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
-            psi_mniw = 1e-1
+            psi_mniw = 1e0
             V = 1e3 * np.eye(nb_params)
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
@@ -67,11 +68,11 @@ def create_job(kwargs):
         # initialize Normal
         mu_low = np.min(input, axis=0)
         mu_high = np.max(input, axis=0)
-        psi_niw = 1e-1
+        psi_niw = 1e0
         kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e-1
+        psi_mniw = 1e0
         V = 1e3 * np.eye(nb_params)
 
         for n in range(args.nb_models):
@@ -192,8 +193,8 @@ if __name__ == "__main__":
     step = 10. * np.pi / nb_data
     for i in range(data.shape[0]):
         x = i * step
-        data[i, 0] = (x + npr.normal(0, .1))
-        data[i, 1] = (3. * (np.sin(x) + npr.normal(0, .1)))
+        data[i, 0] = x + npr.normal(0, .1) * 0.
+        data[i, 1] = 3 * (np.sin(x) + npr.normal(0, .1))
 
     # shuffle data
     from sklearn.utils import shuffle
@@ -227,20 +228,23 @@ if __name__ == "__main__":
     # predict on training
     from mimo.util.prediction import meanfield_prediction
 
-    train_mu, train_var, train_std = [], [], []
+    train_mu, train_var, train_std, train_nlpd = [], [], [], []
     for t in range(len(train_input)):
-        _mean, _var, _std = meanfield_prediction(dpglm, train_input[t, :],
-                                                 prediction=args.prediction,
-                                                 input_scaler=input_scaler,
-                                                 target_scaler=target_scaler)
+        _mean, _var, _std, _nlpd = meanfield_prediction(dpglm, train_input[t, :],
+                                                        train_target[t, :],
+                                                        prediction=args.prediction,
+                                                        input_scaler=input_scaler,
+                                                        target_scaler=target_scaler)
 
         train_mu.append(_mean)
         train_var.append(_var)
         train_std.append(_std)
+        train_nlpd.append(_nlpd)
 
     train_mu = np.hstack(train_mu)
     train_var = np.hstack(train_var)
     train_std = np.hstack(train_std)
+    train_nlpd = np.hstack(train_nlpd)
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
@@ -248,7 +252,8 @@ if __name__ == "__main__":
     evar = explained_variance_score(train_target, train_mu, multioutput='variance_weighted')
     smse = 1. - r2_score(train_target, train_mu, multioutput='variance_weighted')
 
-    print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+    print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
+          train_nlpd.mean(), 'Compnents:', len(dpglm.used_labels))
 
     # plot prediction
     fig, axes = plt.subplots(2, 1)
@@ -261,27 +266,31 @@ if __name__ == "__main__":
     axes[0].set_ylabel('y_train')
 
     # predict on testing
-    test_mu, test_var, test_std = [], [], []
+    test_mu, test_var, test_std, test_nlpd = [], [], [], []
     for t in range(len(test_input)):
-        _mean, _var, _std = meanfield_prediction(dpglm, test_input[t, :],
-                                                 prediction=args.prediction,
-                                                 input_scaler=input_scaler,
-                                                 target_scaler=target_scaler)
+        _mean, _var, _std, _nlpd = meanfield_prediction(dpglm, test_input[t, :],
+                                                        test_target[t, :],
+                                                        prediction=args.prediction,
+                                                        input_scaler=input_scaler,
+                                                        target_scaler=target_scaler)
 
         test_mu.append(_mean)
         test_var.append(_var)
         test_std.append(_std)
+        test_nlpd.append(_nlpd)
 
     test_mu = np.hstack(test_mu)
     test_var = np.hstack(test_var)
     test_std = np.hstack(test_std)
+    test_nlpd = np.hstack(test_nlpd)
 
     # metrics
     mse = mean_squared_error(test_target, test_mu)
     evar = explained_variance_score(test_target, test_mu, multioutput='variance_weighted')
     smse = 1. - r2_score(test_target, test_mu, multioutput='variance_weighted')
 
-    print('TEST - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+    print('TEST - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
+          test_nlpd.mean(), 'Compnents:', len(dpglm.used_labels))
 
     axes[1].scatter(test_input, test_mu + 2 * test_std, s=0.75, color='g')
     axes[1].scatter(test_input, test_mu - 2 * test_std, s=0.75, color='g')

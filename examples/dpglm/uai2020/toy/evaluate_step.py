@@ -226,7 +226,7 @@ if __name__ == "__main__":
     mu_predict, var_predict, std_predict = [], [], []
     for t in range(len(input)):
         _mean, _var, _ = meanfield_prediction(dpglm, input[t, :],
-                                              args.prediction,
+                                              prediction=args.prediction,
                                               input_scaler=input_scaler,
                                               target_scaler=target_scaler)
 
