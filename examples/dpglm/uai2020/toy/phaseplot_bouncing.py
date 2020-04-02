@@ -7,6 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
+from mimo.util.general import near_pd
 from mimo.util.plot import beautify
 
 import argparse
@@ -45,7 +46,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -65,8 +67,6 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
         psi_niw = 1e0
         kappa = 1e-2
 
@@ -75,7 +75,7 @@ def create_job(kwargs):
         V = 1e3 * np.eye(nb_params)
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
                                         nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
@@ -161,20 +161,20 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=2500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
-    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='mode')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     env = gym.make('BouncingBall-DPGLM-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-16
+    env.unwrapped._sigma = 1e-8
     env.seed(args.seed)
 
     dm_obs = env.observation_space.shape[0]
@@ -278,7 +278,9 @@ if __name__ == "__main__":
             h = XY[0, i, j]
             dh = XY[1, i, j]
             test_obs = np.asarray([h, dh])
-            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
+            prediction = meanfield_prediction(dpglms[0], test_obs,
+                                              prediction=args.prediction,
+                                              incremental=True,
                                               input_scaler=input_scaler,
                                               target_scaler=target_scaler)
             XYn[:, i, j] = prediction[0]

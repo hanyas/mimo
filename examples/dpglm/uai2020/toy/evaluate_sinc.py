@@ -1,5 +1,5 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy as np
 import numpy.random as npr
@@ -7,6 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
+from mimo.util.general import near_pd
 
 import argparse
 
@@ -44,7 +45,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e-2
+            # _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = 1e-2  # np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -64,19 +66,22 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
-        psi_niw = 1e-1
-        kappa = 1e-2
+        psi_niw = 1e0
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        nu_niw=input_dim + 1 + 75,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
                                         nu_mniw=target_dim + 1,
@@ -96,10 +101,12 @@ def create_job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -167,10 +174,10 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=512, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=2500, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=512, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
@@ -237,8 +244,7 @@ if __name__ == "__main__":
     mu_predict, std_predict,  = [], []
     evar, mse, smse = [], [], []
     for dpglm in dpglms:
-        # predict
-        _mu_predict, _var_predict, _std_predict =\
+        _mu_predict, _var_predict, _std_predict, _ =\
             parallel_meanfield_prediction(dpglm, input,
                                           prediction=args.prediction,
                                           input_scaler=input_scaler,
@@ -248,7 +254,8 @@ if __name__ == "__main__":
         _evar = explained_variance_score(target, _mu_predict, multioutput='variance_weighted')
         _smse = 1. - r2_score(target, _mu_predict, multioutput='variance_weighted')
 
-        print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse, 'Compnents:', len(dpglm.used_labels))
+        print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse,
+              'Compnents:', len(dpglm.used_labels))
 
         mu_predict.append(_mu_predict)
         std_predict.append(_std_predict)
@@ -268,17 +275,22 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 1, figsize=(w, h))
 
     # axes[0].scatter(input, target, s=0.75, color='k', alpha=0.5)
-    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
-    axes[0].plot(input, mu_predict_avg, '-r')
-    axes[0].plot(input, mu_predict_avg + 2 * mu_predict_std, '-b')
-    axes[0].plot(input, mu_predict_avg - 2 * mu_predict_std, '-b')
+    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='k')
+    axes[0].plot(input, mu_predict_avg, 'red')
+    for c in [1., 2.]:
+        axes[0].fill_between(input.flatten(),
+                             mu_predict_avg - c * mu_predict_std,
+                             mu_predict_avg + c * mu_predict_std,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     # plot mean and standard deviation of data generation / estimated noise level
-    axes[1].plot(input, std_predict_avg, '-r')
-    axes[1].plot(input, std_predict_avg + 2 * std_predict_std, '-b')
-    axes[1].plot(input, std_predict_avg - 2 * std_predict_std, '-b')
     axes[1].plot(input, noise(input), 'k--')
-
+    axes[1].plot(input, std_predict_avg, 'red')
+    for c in [1., 2.]:
+        axes[1].fill_between(input.flatten(),
+                             std_predict_avg - c * std_predict_std,
+                             std_predict_avg + c * std_predict_std,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
     plt.tight_layout()
 
     # set working directory
@@ -290,7 +302,7 @@ if __name__ == "__main__":
     tikzplotlib.save(path + dataset + '_mean.tex')
     plt.savefig(path + dataset + '_mean.pdf')
 
-    plt.show()
+    # plt.show()
 
     # show on learned example
     choice = np.random.choice(args.nb_seeds, 1)[0]
@@ -299,16 +311,22 @@ if __name__ == "__main__":
 
     # plot data and prediction
     axes[0].plot(input, mean, 'k--')
-    axes[0].plot(input, mean + 2 * noise(input), 'g--')
-    axes[0].plot(input, mean - 2 * noise(input), 'g--')
     axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
+    for c in [1., 2.]:
+        axes[0].fill_between(input.flatten(),
+                             (mean - c * noise(input)).flatten(),
+                             (mean + c * noise(input)).flatten(),
+                             edgecolor=(0.5, 0.5, 0.5, 0.1), facecolor=(0.5, 0.5, 0.5, 0.1))
 
-    axes[0].plot(input, mu_predict[choice], '-r')
-    axes[0].plot(input, mu_predict[choice] + 2 * std_predict[choice], '-b')
-    axes[0].plot(input, mu_predict[choice] - 2 * std_predict[choice], '-b')
+    axes[0].plot(input, mu_predict[choice], 'r-')
+    for c in [1., 2.]:
+        axes[0].fill_between(input.flatten(),
+                             (mu_predict[choice] - c * std_predict[choice]).flatten(),
+                             (mu_predict[choice] + c * std_predict[choice]).flatten(),
+                             edgecolor=(0., 0., 0.1, 0.1), facecolor=(0., 0., 1.0, 0.1))
 
     # plot gaussian activations
-    mu, sigma = [], []
+    mu_basis, sigma_basis = [], []
     for idx, c in enumerate(dpglms[choice].components):
         if idx in dpglms[choice].used_labels:
             _mu, _sigma, _, _ = c.posterior.mode()
@@ -317,15 +335,14 @@ if __name__ == "__main__":
             trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
             _sigma = trans.T @ np.diag(_sigma) @ trans
 
-            mu.append(_mu)
-            sigma.append(_sigma)
+            mu_basis.append(_mu)
+            sigma_basis.append(_sigma)
 
     activations = []
     for i in range(len(dpglms[choice].used_labels)):
-        activations.append(stats.norm.pdf(input, mu[i], np.sqrt(sigma[i])))
+        activations.append(stats.norm.pdf(input, mu_basis[i], np.sqrt(sigma_basis[i])))
 
     activations = np.asarray(activations).squeeze()
-    # activations = activations / np.sum(activations, axis=1, keepdims=True)
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     for i in range(len(dpglms[choice].used_labels)):
@@ -337,7 +354,8 @@ if __name__ == "__main__":
 
     # save figs
     import tikzplotlib
-    path = os.path.join(str(dataset))
-    tikzplotlib.save(path + '_example.tex')
+    path = os.path.join(str(dataset) + '/')
+    tikzplotlib.save(path + dataset + '_example.tex')
     plt.savefig(path + dataset + '_example.pdf')
-    plt.show()
+
+    # plt.show()
