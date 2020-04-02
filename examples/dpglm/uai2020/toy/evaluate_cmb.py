@@ -45,7 +45,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -65,19 +66,22 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
         psi_niw = 1e0
-        kappa = 1e-2
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        nu_niw=input_dim + 1 + 100,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
                                         nu_mniw=target_dim + 1,
@@ -88,7 +92,8 @@ def create_job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -97,10 +102,12 @@ def create_job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -156,28 +163,27 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=500, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=256, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--nb_train', help='size of train dataset', default=2000, type=int)
-    parser.add_argument('--nb_test', help='size of test dataset', default=500, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
@@ -193,13 +199,7 @@ if __name__ == "__main__":
 
     # training data
     nb_train = args.nb_train
-    train_data = data[:nb_train, :]
-    train_input, train_target = train_data[:, :1], train_data[:, 1:]
-
-    # test data
-    nb_test = args.nb_test
-    test_data = data[-nb_test:, :]
-    test_input, test_target = test_data[:, :1], test_data[:, 1:]
+    input, target = data[:nb_train, :1], data[:nb_train, 1:]
 
     # scale training data
     from sklearn.decomposition import PCA
@@ -209,85 +209,79 @@ if __name__ == "__main__":
     input_scaler.fit(data[:, :1])
     target_scaler.fit(data[:, 1:])
 
-    train_data = {'input': input_scaler.transform(train_input),
-                  'target': target_scaler.transform(train_target)}
+    train_data = {'input': input_scaler.transform(input),
+                  'target': target_scaler.transform(target)}
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                      train_data=train_data,
                                      arguments=args)[0]
 
     # predict on training
-    from mimo.util.prediction import meanfield_prediction
+    from mimo.util.prediction import parallel_meanfield_prediction
 
-    train_mu, train_var, train_std, train_nlpd = [], [], [], []
-    for t in range(len(train_input)):
-        _mean, _var, _std, _nlpd = meanfield_prediction(dpglm, train_input[t, :],
-                                                        train_target[t, :],
-                                                        prediction=args.prediction,
-                                                        input_scaler=input_scaler,
-                                                        target_scaler=target_scaler)
+    mu_predict, var_predict, std_predict, nlpd_predict =\
+        parallel_meanfield_prediction(dpglm, input, target,
+                                      prediction=args.prediction,
+                                      input_scaler=input_scaler,
+                                      target_scaler=target_scaler)
 
-        train_mu.append(_mean)
-        train_var.append(_var)
-        train_std.append(_std)
-        train_nlpd.append(_nlpd)
-
-    train_mu = np.hstack(train_mu)
-    train_var = np.hstack(train_var)
-    train_std = np.hstack(train_std)
-    train_nlpd = np.hstack(train_nlpd)
+    mu_predict = np.vstack(mu_predict)
+    var_predict = np.vstack(var_predict)
+    std_predict = np.vstack(std_predict)
+    nlpd_predict = np.vstack(nlpd_predict)
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
-    mse = mean_squared_error(train_target, train_mu)
-    evar = explained_variance_score(train_target, train_mu, multioutput='variance_weighted')
-    smse = 1. - r2_score(train_target, train_mu, multioutput='variance_weighted')
+
+    mse = mean_squared_error(target, mu_predict)
+    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
 
     print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
-          train_nlpd.mean(), 'Compnents:', len(dpglm.used_labels))
+          nlpd_predict.mean(), 'Compnents:', len(dpglm.used_labels))
 
-    # plot prediction
+    import scipy.stats as stats
+
     fig, axes = plt.subplots(2, 1)
 
-    axes[0].scatter(train_input, train_mu + 2 * train_std, s=0.75, color='g')
-    axes[0].scatter(train_input, train_mu - 2 * train_std, s=0.75, color='g')
-    axes[0].scatter(train_input, train_mu, s=0.75, color='r')
-    axes[0].scatter(train_input, train_target, s=0.75, color='k')
+    # plot prediction
+    sorter = np.argsort(input, axis=0).flatten()
+    input, target = input[sorter, 0], target[sorter, 0]
+    mu_predict, std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
 
-    axes[0].set_ylabel('y_train')
+    axes[0].scatter(input, target, s=0.75, color='k')
+    axes[0].plot(input, mu_predict, color='crimson')
+    for c in [1., 2.]:
+        axes[0].fill_between(input, mu_predict - c * std_predict,
+                             mu_predict + c * std_predict,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
-    # predict on testing
-    test_mu, test_var, test_std, test_nlpd = [], [], [], []
-    for t in range(len(test_input)):
-        _mean, _var, _std, _nlpd = meanfield_prediction(dpglm, test_input[t, :],
-                                                        test_target[t, :],
-                                                        prediction=args.prediction,
-                                                        input_scaler=input_scaler,
-                                                        target_scaler=target_scaler)
+    axes[0].set_ylabel('y')
 
-        test_mu.append(_mean)
-        test_var.append(_var)
-        test_std.append(_std)
-        test_nlpd.append(_nlpd)
+    # plot gaussian activations
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
 
-    test_mu = np.hstack(test_mu)
-    test_var = np.hstack(test_var)
-    test_std = np.hstack(test_std)
-    test_nlpd = np.hstack(test_nlpd)
+    mu_basis, sigma_basis = [], []
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            _mu, _sigma, _, _ = c.posterior.mode()
 
-    # metrics
-    mse = mean_squared_error(test_target, test_mu)
-    evar = explained_variance_score(test_target, test_mu, multioutput='variance_weighted')
-    smse = 1. - r2_score(test_target, test_mu, multioutput='variance_weighted')
+            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            _sigma = trans.T @ np.diag(_sigma) @ trans
 
-    print('TEST - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
-          test_nlpd.mean(), 'Compnents:', len(dpglm.used_labels))
+            mu_basis.append(_mu)
+            sigma_basis.append(_sigma)
 
-    axes[1].scatter(test_input, test_mu + 2 * test_std, s=0.75, color='g')
-    axes[1].scatter(test_input, test_mu - 2 * test_std, s=0.75, color='g')
-    axes[1].scatter(test_input, test_mu, s=0.75, color='r')
-    axes[1].scatter(test_input, test_target, s=0.75, color='k')
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(input, mu_basis[i], np.sqrt(sigma_basis[i])))
 
-    axes[1].set_ylabel('y_test')
+    activations = np.asarray(activations).squeeze()
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
+
+    for i in range(len(dpglm.used_labels)):
+        axes[1].plot(input, activations[i])
 
     plt.show()

@@ -4,6 +4,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
+from mimo.util.general import near_pd
 
 import os
 import argparse
@@ -42,7 +43,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -62,19 +64,22 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
         psi_niw = 1e0
-        kappa = 1e-2
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
-        psi_mniw = 1e-1
-        V = 1e3 * np.eye(nb_params)
+        psi_mniw = 1e0
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        nu_niw=input_dim + 1 + 100,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
                                         nu_mniw=target_dim + 1,
@@ -94,10 +99,12 @@ def create_job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -157,7 +164,7 @@ if __name__ == "__main__":
     parser.add_argument('--nb_models', help='Set max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--super_iters', help='Set interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=100, type=int)
+    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
@@ -183,13 +190,6 @@ if __name__ == "__main__":
     target = npr.uniform(0, 1, (200, 1))
     input = target + 0.3 * np.sin(2. * np.pi * target) + noise
 
-    # creat plot for mean vs mode prediction and gaussian activations
-    fig, axes = plt.subplots(2, 1)
-
-    axes[0].scatter(input, target, facecolors='none',
-                    edgecolors='k', linewidth=0.5)
-    plt.ylabel('y')
-
     train_data = {'input': input, 'target': target}
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='average')
+        _mean, _, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='average')
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
@@ -214,14 +214,19 @@ if __name__ == "__main__":
 
     print('MEAN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
 
+    # creat plot for mean vs mode prediction and gaussian activations
+    fig, axes = plt.subplots(2, 1)
+
+    axes[0].scatter(input, target, facecolors='none', edgecolors='k', linewidth=0.5)
     axes[0].scatter(input, mu_predict, marker='x', c='b', linewidth=0.5)
+    plt.ylabel('y')
 
     # mode prediction
     from mimo.util.prediction import meanfield_prediction
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _var, _ = meanfield_prediction(dpglm, input[t, :], prediction='mode')
+        _mean, _var, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='mode')
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
@@ -241,21 +246,20 @@ if __name__ == "__main__":
     axes[1].set_xlabel('x')
     axes[1].set_ylabel('p(x)')
 
-    mu, sigma = [], []
+    mu_basis, sigma_basis = [], []
     for idx, c in enumerate(dpglm.components):
         if idx in dpglm.used_labels:
             _mu, _sigma, _, _ = c.posterior.mode()
-            mu.append(_mu)
-            sigma.append(_sigma)
+            mu_basis.append(_mu)
+            sigma_basis.append(_sigma)
 
     sorting = np.argsort(input, axis=0)  # sort based on input values for plotting
     sorted_input = np.take_along_axis(input, sorting, axis=0)
     activations = []
     for i in range(len(dpglm.used_labels)):
-        activations.append(stats.norm.pdf(sorted_input, mu[i], np.sqrt(sigma[i])))
+        activations.append(stats.norm.pdf(sorted_input, mu_basis[i], np.sqrt(sigma_basis[i])))
 
     activations = np.asarray(activations).squeeze()
-    # activations = activations / np.sum(activations, axis=1, keepdims=True)
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     colours = ['green', 'orange', 'purple']

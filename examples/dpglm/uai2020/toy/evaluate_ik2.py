@@ -7,6 +7,7 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
+from mimo.util.general import near_pd
 
 import argparse
 
@@ -62,7 +63,8 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -82,17 +84,20 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
         psi_niw = 1e0
-        kappa = 1e-2
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
                                         nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
@@ -173,8 +178,8 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -184,12 +189,12 @@ if __name__ == "__main__":
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=256, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
@@ -213,19 +218,20 @@ if __name__ == "__main__":
     input_scaler.fit(input)
     target_scaler.fit(target)
 
-    scaled_train_data = {'input': input_scaler.transform(input),
-                         'target': target_scaler.transform(target)}
+    train_data = {'input': input_scaler.transform(input),
+                  'target': target_scaler.transform(target)}
 
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=scaled_train_data,
+                                      train_data=train_data,
                                       arguments=args)
 
     # predict
     from mimo.util.prediction import parallel_meanfield_prediction
-    mu_predict, var_predict, std_predict = parallel_meanfield_prediction(dpglms[0], input,
-                                                                         prediction=args.prediction,
-                                                                         input_scaler=input_scaler,
-                                                                         target_scaler=target_scaler)
+    mu_predict, var_predict, std_predict, _\
+        = parallel_meanfield_prediction(dpglms[0], input,
+                                        prediction=args.prediction,
+                                        input_scaler=input_scaler,
+                                        target_scaler=target_scaler)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
@@ -238,3 +244,5 @@ if __name__ == "__main__":
     plt.figure()
     plt.scatter(target[:, 0], target[:, 1], s=1)
     plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
+
+    plt.show()
