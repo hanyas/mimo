@@ -103,7 +103,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
             stats = self.posterior.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -111,7 +111,7 @@ class BayesianGaussian(Gaussian, MaxLikelihood, MaxAPosteriori,
                                    + stepsize * (self.prior.nat_param
                                                  + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def _loglmbdatilde(self):
@@ -216,7 +216,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.drow))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-16 * np.eye(self.drow))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -241,7 +241,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             return (A + A.T) / 2.
 
         # numerical stabilization
-        self.sigma = near_pd(symmetrize(self.sigma) + 1e-8 * np.eye(self.drow))
+        self.sigma = near_pd(symmetrize(self.sigma) + 1e-16 * np.eye(self.drow))
 
         assert np.allclose(self.sigma, self.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
@@ -270,7 +270,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
             stats = self.posterior.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.A, self.sigma = self.posterior.rvs()
+        # self.A, self.sigma = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -278,7 +278,7 @@ class BayesianLinearGaussian(LinearGaussian, MaxLikelihood, MaxAPosteriori,
                                    + stepsize * (self.prior.nat_param
                                                  + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
-        self.A, self.sigma = self.posterior.rvs()
+        # self.A, self.sigma = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
@@ -382,7 +382,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             self.gaussian.sigma = xxT / n - np.outer(self.gaussian.mu, self.gaussian.mu)
 
         # numerical stabilization
-        self.gaussian.sigma = near_pd(symmetrize(self.gaussian.sigma) + 1e-8 * np.eye(self.dcol))
+        self.gaussian.sigma = near_pd(symmetrize(self.gaussian.sigma) + 1e-16 * np.eye(self.dcol))
 
         assert np.allclose(self.gaussian.sigma, self.gaussian.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.gaussian.sigma) > 0.)
@@ -398,7 +398,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             self.linear_gaussian.sigma = (yyT - self.linear_gaussian.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        self.linear_gaussian.sigma = near_pd(symmetrize(self.linear_gaussian.sigma) + 1e-8 * np.eye(self.drow))
+        self.linear_gaussian.sigma = near_pd(symmetrize(self.linear_gaussian.sigma) + 1e-16 * np.eye(self.drow))
 
         assert np.allclose(self.linear_gaussian.sigma, self.linear_gaussian.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.linear_gaussian.sigma) > 0.)
@@ -423,7 +423,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         self.gaussian.sigma = xxT / n - np.outer(self.gaussian.mu, self.gaussian.mu)
 
         # numerical stabilization
-        self.gaussian.sigma = near_pd(symmetrize(self.gaussian.sigma) + 1e-8 * np.eye(self.dcol))
+        self.gaussian.sigma = near_pd(symmetrize(self.gaussian.sigma) + 1e-16 * np.eye(self.dcol))
 
         assert np.allclose(self.gaussian.sigma, self.gaussian.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.gaussian.sigma) > 0.)
@@ -435,7 +435,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
         self.linear_gaussian.sigma = (yyT - self.linear_gaussian.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        self.linear_gaussian.sigma = near_pd(symmetrize(self.linear_gaussian.sigma) + 1e-8 * np.eye(self.drow))
+        self.linear_gaussian.sigma = near_pd(symmetrize(self.linear_gaussian.sigma) + 1e-16 * np.eye(self.drow))
 
         assert np.allclose(self.linear_gaussian.sigma, self.linear_gaussian.sigma.T)
         assert np.all(np.linalg.eigvalsh(self.linear_gaussian.sigma) > 0.)
@@ -466,7 +466,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
             stats = self.posterior.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -474,7 +474,7 @@ class BayesianLinearGaussianWithNoisyInputs(LinearGaussianWithNoisyInputs, MaxLi
                                    stepsize * (self.prior.nat_param +
                                                1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def _loglmbdatilde(self):
@@ -664,7 +664,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
             stats = self.posterior.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -672,7 +672,7 @@ class BayesianDiagonalGaussian(DiagonalGaussian, MaxLikelihood, MaxAPosteriori,
                                    + stepsize * (self.prior.nat_param
                                                  + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
-        self.params = self.posterior.rvs()
+        # self.params = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
@@ -760,7 +760,7 @@ class BayesianCategoricalWithDirichlet(Categorical, MaxLikelihood, MaxAPosterior
             counts = self.posterior.get_weighted_statistics(data, weights)
         self.posterior.alphas = self.prior.alphas + counts
 
-        self.probs = self.posterior.rvs()
+        # self.probs = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -768,7 +768,7 @@ class BayesianCategoricalWithDirichlet(Categorical, MaxLikelihood, MaxAPosterior
                                 + stepsize * (self.prior.alphas
                                               + 1. / prob * self.posterior.get_weighted_statistics(data, weights))
 
-        self.probs = self.posterior.rvs()
+        # self.probs = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
@@ -841,7 +841,7 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         self.posterior.gammas = self.prior.gammas + counts
         self.posterior.deltas = self.prior.deltas + cumcounts
 
-        self.probs = self.posterior.rvs()
+        # self.probs = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
@@ -853,7 +853,7 @@ class BayesianCategoricalWithStickBreaking(Categorical, GibbsSampling, MeanField
         self.posterior.deltas = (1. - stepsize) * self.posterior.deltas\
                                 + stepsize * (self.prior.deltas + 1. / prob * cumcounts)
 
-        self.probs = self.posterior.rvs()
+        # self.probs = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):

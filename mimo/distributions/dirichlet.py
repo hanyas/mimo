@@ -103,7 +103,10 @@ class StickBreaking(Distribution):
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
-        return probs / probs.sum()
+
+        # probs = probs / probs.sum()
+        # probs[np.where(probs < 1e-16)[0]] = 0.
+        return probs
 
     def mean(self):
         # mean of stick-breaking
@@ -111,10 +114,13 @@ class StickBreaking(Distribution):
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
-        return probs / probs.sum()
+
+        # probs = probs / probs.sum()
+        # probs[np.where(probs < 1e-16)[0]] = 0.
+        return probs
 
     def mode(self):
-        # mode of beta dist.
+        # mode of stick-breaking
         betas = np.zeros((self.K, ))
         for k in range(self.K):
             if self.gamma[k] > 1. and self.delta[k] > 1.:
@@ -134,7 +140,10 @@ class StickBreaking(Distribution):
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
-        return probs / probs.sum()
+
+        # probs = probs / probs.sum()
+        # probs[np.where(probs < 1e-16)[0]] = 0.
+        return probs
 
     def log_likelihood(self, x):
         raise NotImplementedError

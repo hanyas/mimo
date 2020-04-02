@@ -48,7 +48,8 @@ class Gaussian(Distribution):
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
+            # self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
+            self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
     def rvs(self, size=None):

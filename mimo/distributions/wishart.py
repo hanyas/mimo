@@ -119,7 +119,8 @@ class InverseWishart(Distribution):
     @property
     def psi_chol(self):
         if self._psi_chol is None:
-            self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
+            # self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
+            self._psi_chol = np.linalg.cholesky(self.psi)
         return self._psi_chol
 
     def rvs(self, size=None):
