@@ -1,4 +1,4 @@
-% This file was created by tikzplotlib v0.8.5.
+% This file was created by tikzplotlib v0.9.1.
 \begin{tikzpicture}
 
 \definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
@@ -7,117 +7,187 @@
 tick align=outside,
 tick pos=left,
 title={pendulum},
-x grid style={white!69.01960784313725!black},
+x grid style={white!69.0196078431373!black},
 xlabel={max. number of models - stick-breaking prior},
-xmin=27, xmax=93,
+xmin=27.5, xmax=522.5,
 xtick style={color=red},
-y grid style={white!69.01960784313725!black},
+y grid style={white!69.0196078431373!black},
 ylabel={used models},
-ymin=17.8251715003839, ymax=32.128106806826,
+ymin=4.46587913443033, ymax=125.755522265473,
 ytick style={color=black}
 ]
 \path [draw=red, semithick]
-(axis cs:30,18.475304923404)
---(axis cs:30,20.524695076596);
+(axis cs:50,10.2284111342469)
+--(axis cs:50,13.6915888657531);
 
 \path [draw=red, semithick]
-(axis cs:45,19.1276917076684)
---(axis cs:45,23.0723082923316);
+(axis cs:100,10.6059519299781)
+--(axis cs:100,16.5140480700219);
 
 \path [draw=red, semithick]
-(axis cs:60,21.6)
---(axis cs:60,24.8);
+(axis cs:150,11.4073121960737)
+--(axis cs:150,16.4326878039263);
 
 \path [draw=red, semithick]
-(axis cs:75,23.2154767421335)
---(axis cs:75,25.7845232578665);
+(axis cs:200,11.3121822170828)
+--(axis cs:200,18.6878177829172);
 
 \path [draw=red, semithick]
-(axis cs:90,20.6564404225837)
---(axis cs:90,24.1435595774163);
+(axis cs:250,11.0019725159893)
+--(axis cs:250,16.6780274840107);
+
+\path [draw=red, semithick]
+(axis cs:300,10.8900142450432)
+--(axis cs:300,17.9099857549568);
+
+\path [draw=red, semithick]
+(axis cs:350,9.97904473129591)
+--(axis cs:350,16.2609552687041);
+
+\path [draw=red, semithick]
+(axis cs:400,11.7338343511361)
+--(axis cs:400,16.3461656488639);
+
+\path [draw=red, semithick]
+(axis cs:450,10.3367082089653)
+--(axis cs:450,17.0232917910347);
+
+\path [draw=red, semithick]
+(axis cs:500,11.6155325118801)
+--(axis cs:500,16.5444674881199);
 
 \addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
 table {%
-30 18.475304923404
-45 19.1276917076684
-60 21.6
-75 23.2154767421335
-90 20.6564404225837
+50 10.2284111342469
+100 10.6059519299781
+150 11.4073121960737
+200 11.3121822170828
+250 11.0019725159893
+300 10.8900142450432
+350 9.97904473129591
+400 11.7338343511361
+450 10.3367082089653
+500 11.6155325118801
 };
 \addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
 table {%
-30 20.524695076596
-45 23.0723082923316
-60 24.8
-75 25.7845232578665
-90 24.1435595774163
+50 13.6915888657531
+100 16.5140480700219
+150 16.4326878039263
+200 18.6878177829172
+250 16.6780274840107
+300 17.9099857549568
+350 16.2609552687041
+400 16.3461656488639
+450 17.0232917910347
+500 16.5444674881199
 };
-\addplot [semithick, red, mark=*, mark size=2, mark options={solid}]
+\addplot [semithick, red, mark=*, mark size=2.5, mark options={solid}]
 table {%
-30 19.5
-45 21.1
-60 23.2
-75 24.5
-90 22.4
+50 11.96
+100 13.56
+150 13.92
+200 15
+250 13.84
+300 14.4
+350 13.12
+400 14.04
+450 13.68
+500 14.08
 };
 \end{axis}
 
 \begin{axis}[
 axis x line=top,
 tick align=outside,
-x grid style={white!69.01960784313725!black},
+x grid style={white!69.0196078431373!black},
 xlabel={max. number of models - dirichlet prior},
-xmin=27, xmax=93,
+xmin=27.5, xmax=522.5,
 xtick pos=right,
 xtick style={color=blue},
-y grid style={white!69.01960784313725!black},
-ymin=17.8251715003839, ymax=32.128106806826,
+y grid style={white!69.0196078431373!black},
+ymin=4.46587913443033, ymax=125.755522265473,
 ytick pos=left,
 ytick style={color=black}
 ]
 \path [draw=color0, semithick]
-(axis cs:30,23.6)
---(axis cs:30,25.8);
+(axis cs:50,13.8098128435902)
+--(axis cs:50,17.5501871564098);
 
 \path [draw=color0, semithick]
-(axis cs:45,25.6)
---(axis cs:45,27.2);
+(axis cs:100,18.455080854662)
+--(axis cs:100,26.184919145338);
 
 \path [draw=color0, semithick]
-(axis cs:60,27.031142245955)
---(axis cs:60,29.568857754045);
+(axis cs:150,21.9266714217808)
+--(axis cs:150,31.2733285782192);
 
 \path [draw=color0, semithick]
-(axis cs:75,28.322026616194)
---(axis cs:75,31.4779733838059);
+(axis cs:200,30.3098815176965)
+--(axis cs:200,42.9701184823035);
 
 \path [draw=color0, semithick]
-(axis cs:90,28.8291796067501)
---(axis cs:90,30.1708203932499);
+(axis cs:250,38.612261147627)
+--(axis cs:250,53.867738852373);
+
+\path [draw=color0, semithick]
+(axis cs:300,48.3475665087388)
+--(axis cs:300,65.7324334912612);
+
+\path [draw=color0, semithick]
+(axis cs:350,59.7375322710094)
+--(axis cs:350,81.6224677289906);
+
+\path [draw=color0, semithick]
+(axis cs:400,69.0947518733949)
+--(axis cs:400,89.1452481266052);
+
+\path [draw=color0, semithick]
+(axis cs:450,86.3753972797127)
+--(axis cs:450,105.064602720287);
+
+\path [draw=color0, semithick]
+(axis cs:500,96.4776433313925)
+--(axis cs:500,120.242356668607);
 
 \addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
 table {%
-30 23.6
-45 25.6
-60 27.031142245955
-75 28.322026616194
-90 28.8291796067501
+50 13.8098128435902
+100 18.455080854662
+150 21.9266714217808
+200 30.3098815176965
+250 38.612261147627
+300 48.3475665087388
+350 59.7375322710094
+400 69.0947518733949
+450 86.3753972797127
+500 96.4776433313925
 };
 \addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
 table {%
-30 25.8
-45 27.2
-60 29.568857754045
-75 31.4779733838059
-90 30.1708203932499
+50 17.5501871564098
+100 26.184919145338
+150 31.2733285782192
+200 42.9701184823035
+250 53.867738852373
+300 65.7324334912612
+350 81.6224677289906
+400 89.1452481266052
+450 105.064602720287
+500 120.242356668607
 };
 \addplot [semithick, color0, mark=x, mark size=3, mark options={solid}]
 table {%
-30 24.7
-45 26.4
-60 28.3
-75 29.9
-90 29.5
+50 15.68
+100 22.32
+150 26.6
+200 36.64
+250 46.24
+300 57.04
+350 70.68
+400 79.12
+450 95.72
+500 108.36
 };
 \end{axis}
 

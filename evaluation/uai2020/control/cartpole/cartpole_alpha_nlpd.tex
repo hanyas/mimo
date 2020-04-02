@@ -1,0 +1,148 @@
+% This file was created by tikzplotlib v0.9.1.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+log basis x={10},
+tick align=outside,
+tick pos=left,
+title={cartpole},
+x grid style={white!69.0196078431373!black},
+xlabel={log(alpha) - stick-breaking prior},
+xmin=0.707945784384138, xmax=1412.53754462275,
+xmode=log,
+xtick style={color=red},
+xtick={0.01,0.1,1,10,100,1000,10000,100000},
+xticklabels={\(\displaystyle {10^{-2}}\),\(\displaystyle {10^{-1}}\),\(\displaystyle {10^{0}}\),\(\displaystyle {10^{1}}\),\(\displaystyle {10^{2}}\),\(\displaystyle {10^{3}}\),\(\displaystyle {10^{4}}\),\(\displaystyle {10^{5}}\)},
+y grid style={white!69.0196078431373!black},
+ylabel={nlpd},
+ymin=5.23699904858184, ymax=6.2814308969486,
+ytick style={color=black},
+ytick={5.2,5.4,5.6,5.8,6,6.2,6.4},
+yticklabels={5.2,5.4,5.6,5.8,6.0,6.2,6.4}
+]
+\path [draw=red, semithick]
+(axis cs:1,5.71062956697608)
+--(axis cs:1,6.23395672202284);
+
+\path [draw=red, semithick]
+(axis cs:10,5.45022136050217)
+--(axis cs:10,5.84642472815904);
+
+\path [draw=red, semithick]
+(axis cs:50,5.34472473912277)
+--(axis cs:50,5.76462729813905);
+
+\path [draw=red, semithick]
+(axis cs:100,5.35030310924973)
+--(axis cs:100,5.70046250979784);
+
+\path [draw=red, semithick]
+(axis cs:500,5.4005440527563)
+--(axis cs:500,5.73119724144899);
+
+\path [draw=red, semithick]
+(axis cs:1000,5.42211413825025)
+--(axis cs:1000,5.7083701351819);
+
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 5.71062956697608
+10 5.45022136050217
+50 5.34472473912277
+100 5.35030310924973
+500 5.4005440527563
+1000 5.42211413825025
+};
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 6.23395672202284
+10 5.84642472815904
+50 5.76462729813905
+100 5.70046250979784
+500 5.73119724144899
+1000 5.7083701351819
+};
+\addplot [semithick, red, mark=*, mark size=2.5, mark options={solid}]
+table {%
+1 5.97229314449946
+10 5.64832304433061
+50 5.55467601863091
+100 5.52538280952378
+500 5.56587064710264
+1000 5.56524213671607
+};
+\end{axis}
+
+\begin{axis}[
+axis x line=top,
+log basis x={10},
+tick align=outside,
+x grid style={white!69.0196078431373!black},
+xlabel={log(alpha) - dirichlet prior},
+xmin=0.0653208007180445, xmax=765.452956031933,
+xmode=log,
+xtick pos=right,
+xtick style={color=blue},
+xtick={0.001,0.01,0.1,1,10,100,1000,10000},
+xticklabels={\(\displaystyle {10^{-3}}\),\(\displaystyle {10^{-2}}\),\(\displaystyle {10^{-1}}\),\(\displaystyle {10^{0}}\),\(\displaystyle {10^{1}}\),\(\displaystyle {10^{2}}\),\(\displaystyle {10^{3}}\),\(\displaystyle {10^{4}}\)},
+y grid style={white!69.0196078431373!black},
+ymin=5.23699904858184, ymax=6.2814308969486,
+ytick pos=left,
+ytick style={color=black}
+]
+\path [draw=color0, semithick]
+(axis cs:0.1,5.37389798883099)
+--(axis cs:0.1,5.69624796235048);
+
+\path [draw=color0, semithick]
+(axis cs:1,5.38491009135028)
+--(axis cs:1,5.73730503463242);
+
+\path [draw=color0, semithick]
+(axis cs:10,5.41559662923445)
+--(axis cs:10,5.87081856125831);
+
+\path [draw=color0, semithick]
+(axis cs:50,5.48896434670359)
+--(axis cs:50,5.88388568482098);
+
+\path [draw=color0, semithick]
+(axis cs:100,5.4761505713631)
+--(axis cs:100,5.85796027875408);
+
+\path [draw=color0, semithick]
+(axis cs:500,5.2844732235076)
+--(axis cs:500,5.79660390980416);
+
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+0.1 5.37389798883099
+1 5.38491009135028
+10 5.41559662923445
+50 5.48896434670359
+100 5.4761505713631
+500 5.2844732235076
+};
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+0.1 5.69624796235048
+1 5.73730503463242
+10 5.87081856125831
+50 5.88388568482098
+100 5.85796027875408
+500 5.79660390980416
+};
+\addplot [semithick, color0, mark=x, mark size=3, mark options={solid}]
+table {%
+0.1 5.53507297559073
+1 5.56110756299135
+10 5.64320759524638
+50 5.68642501576228
+100 5.66705542505859
+500 5.54053856665588
+};
+\end{axis}
+
+\end{tikzpicture}

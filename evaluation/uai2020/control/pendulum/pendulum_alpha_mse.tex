@@ -1,0 +1,148 @@
+% This file was created by tikzplotlib v0.9.1.
+\begin{tikzpicture}
+
+\definecolor{color0}{rgb}{0.12156862745098,0.466666666666667,0.705882352941177}
+
+\begin{axis}[
+log basis x={10},
+tick align=outside,
+tick pos=left,
+title={pendulum},
+x grid style={white!69.0196078431373!black},
+xlabel={log(alpha) - stick-breaking prior},
+xmin=0.707945784384138, xmax=1412.53754462275,
+xmode=log,
+xtick style={color=red},
+xtick={0.01,0.1,1,10,100,1000,10000,100000},
+xticklabels={\(\displaystyle {10^{-2}}\),\(\displaystyle {10^{-1}}\),\(\displaystyle {10^{0}}\),\(\displaystyle {10^{1}}\),\(\displaystyle {10^{2}}\),\(\displaystyle {10^{3}}\),\(\displaystyle {10^{4}}\),\(\displaystyle {10^{5}}\)},
+y grid style={white!69.0196078431373!black},
+ylabel={mse},
+ymin=0.00688495254474493, ymax=0.0077053020174603,
+ytick style={color=black},
+ytick={0.0068,0.0069,0.007,0.0071,0.0072,0.0073,0.0074,0.0075,0.0076,0.0077,0.0078},
+yticklabels={0.0068,0.0069,0.0070,0.0071,0.0072,0.0073,0.0074,0.0075,0.0076,0.0077,0.0078}
+]
+\path [draw=red, semithick]
+(axis cs:1,0.00692224115714108)
+--(axis cs:1,0.00727741641919342);
+
+\path [draw=red, semithick]
+(axis cs:10,0.00710859186928131)
+--(axis cs:10,0.00722905173098643);
+
+\path [draw=red, semithick]
+(axis cs:50,0.00713623561527247)
+--(axis cs:50,0.007239778896934);
+
+\path [draw=red, semithick]
+(axis cs:100,0.00712466153305679)
+--(axis cs:100,0.00723793210081812);
+
+\path [draw=red, semithick]
+(axis cs:500,0.00714163818260942)
+--(axis cs:500,0.0072503029232798);
+
+\path [draw=red, semithick]
+(axis cs:1000,0.00711976067610842)
+--(axis cs:1000,0.00720775066433472);
+
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.00692224115714108
+10 0.00710859186928131
+50 0.00713623561527247
+100 0.00712466153305679
+500 0.00714163818260942
+1000 0.00711976067610842
+};
+\addplot [semithick, red, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+1 0.00727741641919342
+10 0.00722905173098643
+50 0.007239778896934
+100 0.00723793210081812
+500 0.0072503029232798
+1000 0.00720775066433472
+};
+\addplot [semithick, red, mark=*, mark size=2.5, mark options={solid}]
+table {%
+1 0.00709982878816725
+10 0.00716882180013387
+50 0.00718800725610324
+100 0.00718129681693745
+500 0.00719597055294461
+1000 0.00716375567022157
+};
+\end{axis}
+
+\begin{axis}[
+axis x line=top,
+log basis x={10},
+tick align=outside,
+x grid style={white!69.0196078431373!black},
+xlabel={log(alpha) - dirichlet prior},
+xmin=0.0653208007180445, xmax=765.452956031933,
+xmode=log,
+xtick pos=right,
+xtick style={color=blue},
+xtick={0.001,0.01,0.1,1,10,100,1000,10000},
+xticklabels={\(\displaystyle {10^{-3}}\),\(\displaystyle {10^{-2}}\),\(\displaystyle {10^{-1}}\),\(\displaystyle {10^{0}}\),\(\displaystyle {10^{1}}\),\(\displaystyle {10^{2}}\),\(\displaystyle {10^{3}}\),\(\displaystyle {10^{4}}\)},
+y grid style={white!69.0196078431373!black},
+ymin=0.00688495254474493, ymax=0.0077053020174603,
+ytick pos=left,
+ytick style={color=black}
+]
+\path [draw=color0, semithick]
+(axis cs:0.1,0.00704943491524904)
+--(axis cs:0.1,0.00722165840446342);
+
+\path [draw=color0, semithick]
+(axis cs:1,0.00713429845539613)
+--(axis cs:1,0.00724261137759278);
+
+\path [draw=color0, semithick]
+(axis cs:10,0.00713676018344326)
+--(axis cs:10,0.00725235207930886);
+
+\path [draw=color0, semithick]
+(axis cs:50,0.00725131666383034)
+--(axis cs:50,0.00741114147523296);
+
+\path [draw=color0, semithick]
+(axis cs:100,0.00725545699532913)
+--(axis cs:100,0.00753139603802151);
+
+\path [draw=color0, semithick]
+(axis cs:500,0.00741856303732058)
+--(axis cs:500,0.00766801340506415);
+
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+0.1 0.00704943491524904
+1 0.00713429845539613
+10 0.00713676018344326
+50 0.00725131666383034
+100 0.00725545699532913
+500 0.00741856303732058
+};
+\addplot [semithick, color0, mark=-, mark size=7, mark options={solid}, only marks]
+table {%
+0.1 0.00722165840446342
+1 0.00724261137759278
+10 0.00725235207930886
+50 0.00741114147523296
+100 0.00753139603802151
+500 0.00766801340506415
+};
+\addplot [semithick, color0, mark=x, mark size=3, mark options={solid}]
+table {%
+0.1 0.00713554665985623
+1 0.00718845491649446
+10 0.00719455613137606
+50 0.00733122906953165
+100 0.00739342651667532
+500 0.00754328822119236
+};
+\end{axis}
+
+\end{tikzpicture}
