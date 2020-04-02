@@ -27,15 +27,15 @@ class Pendulum(gym.Env):
         self._goal_weight = - np.array([1e0, 1e-1])
 
         # x = [th, thd]
-        self._state_max = np.array([np.inf, 8.0])
+        self._state_max = np.array([np.inf, 8.])
 
         # o = [th, thd]
-        self._obs_max = np.array([np.inf, 8.0])
+        self._obs_max = np.array([np.inf, 8.])
         self.observation_space = spaces.Box(low=-self._obs_max,
                                             high=self._obs_max)
 
         self._act_weight = - np.array([1e-3])
-        self._act_max = 2.5
+        self._act_max = 2.
         self.action_space = spaces.Box(low=-self._act_max,
                                        high=self._act_max, shape=(1,))
 
@@ -147,7 +147,7 @@ class PendulumWithCartesianObservation(Pendulum):
         self.dm_obs = 3
 
         # o = [cos, sin, thd]
-        self._obs_max = np.array([1., 1., 8.0])
+        self._obs_max = np.array([1., 1., 8.])
         self.observation_space = spaces.Box(low=-self._obs_max,
                                             high=self._obs_max)
 
