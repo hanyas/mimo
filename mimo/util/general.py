@@ -54,7 +54,7 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_t_loglik(y, mu, nu, lmbda):
+def multivariate_t_loglik(y, mu, lmbda, nu):
     # returns the log value
     d = len(mu)
     yc = np.array(y - mu, ndmin=2)
@@ -65,7 +65,7 @@ def multivariate_t_loglik(y, mu, nu, lmbda):
             - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
 
 
-def matrix_studentt(x, M, V, psi, nu, affine=True):
+def matrix_linear_studentt(x, M, V, psi, nu, affine=True):
     if affine:
         x = np.hstack((x, 1.))
 
@@ -77,13 +77,25 @@ def matrix_studentt(x, M, V, psi, nu, affine=True):
     # https://tminka.github.io/papers/minka-gaussian.pdf
     df = nu
     mu = M @ x
+
+    # # variance of a student-t
     sigma = (1. / c) * psi / df  # Misleading in Minka
     var = sigma * df / (df - 2)
 
-    # # variance of approximate Gaussian
-    # var = psi / df
+    return mu, sigma, df
 
-    return mu, var, df
+
+def matrix_linear_gaussian(x, M, V, psi, nu, affine=True):
+    if affine:
+        x = np.hstack((x, 1.))
+
+    # https://tminka.github.io/papers/minka-gaussian.pdf
+    mu = M @ x
+
+    # variance of approximate Gaussian
+    sigma = psi / nu  # Misleading in Minka
+
+    return mu, sigma, nu
 
 
 # data
