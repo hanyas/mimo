@@ -1,5 +1,5 @@
 import os
-# os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy as np
 import numpy.random as npr
@@ -7,15 +7,16 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
+from mimo.util.general import near_pd
 
 import argparse
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 
-def create_job(kwargs):
+def _job(kwargs):
     train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
@@ -42,14 +43,20 @@ def create_job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(train_data['input'][km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+            if args.affine:
+                X = np.hstack((input, np.ones((len(input), 1))))
+            else:
+                X = input
+
+            V = X.T @ X
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=np.eye(input_dim) * psi_niw,
@@ -62,22 +69,25 @@ def create_job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
-        psi_niw = 1e0
+        psi_niw = 1e-2
         kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        psi_mniw = 1e-1
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
                                         nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1,
+                                        nu_mniw=target_dim + 23,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
 
             aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
@@ -85,7 +95,8 @@ def create_job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -111,7 +122,7 @@ def create_job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         for _ in gibbs_iter:
-            dpglm.resample_model(nb_cores)
+            dpglm.resample_model()
 
         if args.stochastic:
             # Stochastic meanfield VI
@@ -144,8 +155,10 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    return Parallel(n_jobs=min(nb_jobs, nb_cores),
-                    verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+        res = p.map(_job, kwargs_list)
+
+    return res
 
 
 if __name__ == "__main__":
@@ -153,33 +166,34 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=500, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=2500, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=2500, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
-    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=25, type=int)
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=5000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
-    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of train dataset', default=20000, type=int)
-    parser.add_argument('--nb_test', help='size of test dataset', default=3000, type=int)
-    parser.add_argument('--seed', help='choose seed', default=1, type=int)
+    parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
+
+    import json
+    print(json.dumps(vars(args), indent=4))
 
     np.random.seed(args.seed)
 
@@ -187,79 +201,80 @@ if __name__ == "__main__":
     from scipy import io
 
     # load all available data
-    _data0 = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
-    _data1 = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
-    all_data = np.vstack((_data0, _data1))
+    _train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
+    _test_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
-    # shuffle data
-    from sklearn.utils import shuffle
-    all_data = shuffle(all_data)
+    data = np.vstack((_train_data, _test_data))
 
-    # training data
-    nb_train = args.nb_train
-    train_data = all_data[:nb_train, :]
-    train_input, train_target = train_data[:, :21], train_data[:, 21:22]
-
-    # test data
-    nb_test = args.nb_test
-    test_data = all_data[-nb_test:, :]
-    test_input, test_target = test_data[:, :21], test_data[:, 21:22]
-
-    # scale training data
+    # scale data
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=21, whiten=True)
     target_scaler = PCA(n_components=1, whiten=True)
 
-    input_scaler.fit(all_data[:, :21])
-    target_scaler.fit(all_data[:, 21:22])
+    input_scaler.fit(data[:, :21])
+    target_scaler.fit(data[:, 21:22])
 
-    train_data = {'input': input_scaler.transform(train_input),
-                  'target': target_scaler.transform(train_target)}
+    train_data = {'input': input_scaler.transform(_train_data[:, :21]),
+                  'target': target_scaler.transform(_train_data[:, 21:22])}
+
+    test_data = {'input': _test_data[:, :21],
+                 'target': _test_data[:, 21:22]}
 
     # train
-    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_data=train_data,
-                                     arguments=args)[0]
+    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                      train_data=train_data,
+                                      arguments=args)
 
     from mimo.util.prediction import parallel_meanfield_prediction
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    # # predict on train data
-    # train_predict, _, _ = parallel_meanfield_prediction(dpglm, train_input,
-    #                                                     prediction=args.prediction,
-    #                                                     input_scaler=input_scaler,
-    #                                                     target_scaler=target_scaler)
-    #
-    # train_evar = explained_variance_score(train_target, train_predict)
-    # train_mse = mean_squared_error(train_target, train_predict)
-    # train_smse = 1. - r2_score(train_target, train_predict)
-    #
-    # train_nlpd = - 1.0 * dpglm.predictive_log_likelihood(np.hstack((input_scaler.transform(train_input),
-    #                                                                 target_scaler.transform(train_target)))).mean()
-    #
-    # print('TRAIN - EVAR:', train_evar, 'MSE:', train_mse,
-    #       'SMSE:', train_smse, 'NLPD:', train_nlpd,
-    #       'Compnents:', len(dpglm.used_labels))
+    test_evar, test_mse, test_smse, test_nlpd, nb_models = [], [], [], [], []
+    for dpglm in dpglms:
+        _nb_models = len(dpglm.used_labels)
+        dpglm.clear_data()
 
-    # predict on test data
-    test_predict, _, _ = parallel_meanfield_prediction(dpglm, test_input,
-                                                       prediction=args.prediction,
-                                                       input_scaler=input_scaler,
-                                                       target_scaler=target_scaler)
+        _test_predict, _, _, _test_nlpd =\
+            parallel_meanfield_prediction(dpglm, test_data['input'],
+                                          target=test_data['target'],
+                                          prediction=args.prediction,
+                                          input_scaler=input_scaler,
+                                          target_scaler=target_scaler)
 
-    test_evar = explained_variance_score(test_target, test_predict)
-    test_mse = mean_squared_error(test_target, test_predict)
-    test_smse = 1. - r2_score(test_target, test_predict)
+        _test_mse = mean_squared_error(test_data['target'], _test_predict)
+        _test_evar = explained_variance_score(test_data['target'], _test_predict, multioutput='variance_weighted')
+        _test_smse = 1. - r2_score(test_data['target'], _test_predict, multioutput='variance_weighted')
 
-    test_nlpd = - 1.0 * dpglm.predictive_log_likelihood(np.hstack((input_scaler.transform(test_input),
-                                                                   target_scaler.transform(test_target)))).mean()
+        print('TEST - EVAR:', _test_evar, 'MSE:', _test_mse,
+              'SMSE:', _test_smse, 'NLPD:', _test_nlpd.mean(),
+              'Compnents:', _nb_models)
 
-    print('TEST - EVAR:', test_evar, 'MSE:', test_mse,
-          'SMSE:', test_smse, 'NLPD:', test_nlpd,
-          'Compnents:', len(dpglm.used_labels))
+        test_evar.append(_test_evar)
+        test_mse.append(_test_mse)
+        test_smse.append(_test_smse)
+        test_nlpd.append(_test_nlpd.mean())
+        nb_models.append(_nb_models)
 
-    arr = np.hstack([test_evar, test_mse,
-                     test_smse, test_nlpd,
-                     len(dpglm.used_labels)])
+    mean_mse = np.mean(test_mse)
+    std_mse = np.std(test_mse)
 
-    np.savetxt('sarcos_' + str(args.prior) + '_' + str(args.nb_train) + '_alpha_' + str(args.alpha) + '_seed_' + str(args.seed) + '.csv', arr, delimiter=',')
+    mean_smse = np.mean(test_smse)
+    std_smse = np.std(test_smse)
+
+    mean_evar = np.mean(test_evar)
+    std_evar = np.std(test_evar)
+
+    mean_nb_models = np.mean(nb_models)
+    std_nb_models = np.std(nb_models)
+
+    mean_nlpd = np.mean(test_nlpd)
+    std_nlpd = np.std(test_nlpd)
+
+    arr = np.array([mean_mse, std_mse,
+                    mean_smse, std_smse,
+                    mean_evar, std_evar,
+                    mean_nb_models, std_nb_models,
+                    mean_nlpd, std_nlpd])
+
+    np.savetxt('sarcos_' + str(args.prior) +
+               '_alpha_' + str(args.alpha) +
+               '.csv', arr, delimiter=',')
