@@ -51,10 +51,14 @@ class NormalInverseWishart(Distribution):
 
     def log_partition(self, params=None):
         mu, kappa, psi, nu = params if params is not None else self.params
+        # return 0.5 * nu * self.dim * np.log(2)\
+        #        + multigammaln(nu / 2., self.dim)\
+        #        + 0.5 * self.dim * np.log(2. * np.pi / kappa)\
+        #        - 0.5 * nu * np.linalg.slogdet(near_pd(psi))[1]
         return 0.5 * nu * self.dim * np.log(2)\
                + multigammaln(nu / 2., self.dim)\
                + 0.5 * self.dim * np.log(2. * np.pi / kappa)\
-               - 0.5 * nu * np.linalg.slogdet(near_pd(psi))[1]
+               - 0.5 * nu * np.linalg.slogdet(psi)[1]
 
     def entropy(self):
         raise NotImplementedError
@@ -270,11 +274,16 @@ class MatrixNormalInverseWishart(Distribution):
 
     def log_partition(self, params=None):
         M, V, psi, nu = params if params is not None else self.params
+        # return 0.5 * nu * self.drow * np.log(2)\
+        #        + multigammaln(nu / 2., self.drow)\
+        #        + 0.5 * self.drow * np.log(2. * np.pi)\
+        #        - 0.5 * self.drow * np.linalg.slogdet(near_pd(V))[1]\
+        #        - 0.5 * nu * np.linalg.slogdet(near_pd(psi))[1]
         return 0.5 * nu * self.drow * np.log(2)\
                + multigammaln(nu / 2., self.drow)\
                + 0.5 * self.drow * np.log(2. * np.pi)\
-               - 0.5 * self.drow * np.linalg.slogdet(near_pd(V))[1]\
-               - 0.5 * nu * np.linalg.slogdet(near_pd(psi))[1]
+               - 0.5 * self.drow * np.linalg.slogdet(V)[1]\
+               - 0.5 * nu * np.linalg.slogdet(psi)[1]
 
     def entropy(self):
         raise NotImplementedError
@@ -308,11 +317,14 @@ class MatrixNormalInverseWishart(Distribution):
         psi = natparam[2] - M.dot(natparam[0].T)
 
         # numerical paddcolg here...
-        V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
-        psi = near_pd(psi + 1e-8 * np.eye(psi.shape[0]))
+        # V = near_pd(V + 1e-16 * np.eye(V.shape[0]))
+        # psi = near_pd(psi + 1e-16 * np.eye(psi.shape[0]))
 
-        assert np.all(0 < np.linalg.eigvalsh(psi))
-        assert np.all(0 < np.linalg.eigvalsh(V))
+        V = V + 1e-16 * np.eye(V.shape[0])
+        psi = psi + 1e-16 * np.eye(psi.shape[0])
+
+        # assert np.all(0 < np.linalg.eigvalsh(psi))
+        # assert np.all(0 < np.linalg.eigvalsh(V))
 
         return M, V, psi, nu
 
@@ -453,14 +465,18 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         # It does not necessarily return a PSD matrix
         psi_mniw = natparam[6] - M.dot(natparam[4].T)
 
-        # numerical paddcolg here...
-        psi_niw = near_pd(psi_niw + 1e-8 * np.eye(psi_niw.shape[0]))
-        V = near_pd(V + 1e-8 * np.eye(V.shape[0]))
-        psi_mniw = near_pd(psi_mniw + 1e-8 * np.eye(psi_mniw.shape[0]))
+        # # numerical paddcolg here...
+        # psi_niw = near_pd(psi_niw + 1e-16 * np.eye(psi_niw.shape[0]))
+        # V = near_pd(V + 1e-16 * np.eye(V.shape[0]))
+        # psi_mniw = near_pd(psi_mniw + 1e-16 * np.eye(psi_mniw.shape[0]))
 
-        assert np.all(0 < np.linalg.eigvalsh(psi_niw))
-        assert np.all(0 < np.linalg.eigvalsh(psi_mniw))
-        assert np.all(0 < np.linalg.eigvalsh(V))
+        psi_niw = psi_niw + 1e-16 * np.eye(psi_niw.shape[0])
+        V = V + 1e-16 * np.eye(V.shape[0])
+        psi_mniw = psi_mniw + 1e-16 * np.eye(psi_mniw.shape[0])
+
+        # assert np.all(0 < np.linalg.eigvalsh(psi_niw))
+        # assert np.all(0 < np.linalg.eigvalsh(psi_mniw))
+        # assert np.all(0 < np.linalg.eigvalsh(V))
 
         return mu, kappa, psi_niw, nu_niw, M, V, psi_mniw, nu_mniw
 
