@@ -12,15 +12,15 @@ from mimo.util.general import sample_discrete_from_log
 from mimo.distributions.bayesian import BayesianCategoricalWithDirichlet
 from mimo.distributions.bayesian import BayesianCategoricalWithStickBreaking
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 
 # labels class assuming a dirichlet prior
 class LabelsWithDirichlet:
     def __init__(self, model, data=None, N=None,
-                 z=None, initialize_from_prior=True):
+                 z=None, initialize_from_prior=False):
 
         assert data is not None or (N is not None and z is None)
 
@@ -155,7 +155,7 @@ class LabelsWithDirichlet:
 # labels class assuming a stick-breaking prior
 class LabelsWithStickBreaking:
     def __init__(self, model, data=None, N=None,
-                 z=None, initialize_from_prior=True):
+                 z=None, initialize_from_prior=False):
 
         assert data is not None or (N is not None and z is None)
 
@@ -306,7 +306,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
         return self.labels_list[-1]
 
     def clear_data(self):
-        self.labels_list = []
+        self.labels_list.clear()
 
     @property
     def N(self):
@@ -370,7 +370,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             for idx, c in enumerate(self.components):
                 c.resample(data=[l.data[l.z == idx] for l in self.labels_list])
         else:
-            self._resample_components_joblib(num_procs)
+            self._resample_components_parallel(num_procs)
         self.clear_caches()
 
     def resample_labels(self, num_procs=0):
@@ -378,31 +378,33 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
             for l in self.labels_list:
                 l.resample()
         else:
-            self._resample_labels_joblib(num_procs)
+            self._resample_labels_parallel(num_procs)
 
-    def _resample_components_joblib(self, num_procs):
+    def _resample_components_parallel(self, num_procs):
         from . import parallel_mixture
 
         parallel_mixture.model = self
         parallel_mixture.labels_list = self.labels_list
 
         if len(self.components) > 0:
-            params = Parallel(n_jobs=num_procs, backend='threading')\
-                    (delayed(parallel_mixture._get_sampled_component_params)(idx)
-                     for idx in range(len(self.components)))
+            with Pool(processes=num_procs) as p:
+                params = p.map(parallel_mixture._get_sampled_component_params,
+                               np.arange(len(self.components)),
+                               chunksize=int(len(self.components) / nb_cores))
 
         for c, p in zip(self.components, params):
             c.parameters = p
 
-    def _resample_labels_joblib(self, num_procs):
+    def _resample_labels_parallel(self, num_procs):
         from . import parallel_mixture
 
         if len(self.labels_list) > 0:
             parallel_mixture.model = self
 
-            raw = Parallel(n_jobs=num_procs, backend='threading')\
-                (delayed(parallel_mixture._get_sampled_labels)(idx)
-                 for idx in range(len(self.labels_list)))
+            with Pool(processes=num_procs) as p:
+                raw = p.map(parallel_mixture._get_sampled_labels,
+                            np.arange(len(self.labels_list)),
+                            chunksize=int(len(self.components) / nb_cores))
 
             for l, (z, normalizer) in zip(self.labels_list, raw):
                 l.z, l._normalizer = z, normalizer
@@ -538,7 +540,7 @@ class Mixture(ModelEM, ModelGibbsSampling, ModelMeanField):
     def used_labels(self):
         if len(self.labels_list) > 0:
             label_usages = sum(np.bincount(l.z, minlength=self.N) for l in self.labels_list)
-            used_labels, = np.where(label_usages > 0)
+            used_labels, = np.where(label_usages > 1e-16)
         else:
             used_labels = np.argsort(self.gating.probs)[-1:-11:-1]
         return used_labels
