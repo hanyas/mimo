@@ -1,38 +1,34 @@
 import os
+import numpy as np
 
 import mimo
 
-import numpy as np
 import matplotlib.pyplot as plt
 
 
 # set working directory
-# evalpath = os.path.abspath(mimo.__file__ + '/../../examples/dpglm/uai2020/control')
 evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control')
 
 os.chdir(evalpath)
 
 # set parameters for plot
-y_axis = 'used-models'             # nmse, used-models, nlpd, evar, mse
+datasets = ['pendulum', 'cartpole']                         # pendulum, cartpole
+priors = ['stick-breaking', 'dirichlet']        # stick-breaking, dirichlet
 
-datasets = ['cartpole']        # pendulum, cartpole
-priors = ['stick-breaking', 'dirichlet']   # dirichlet, stick-breaking
-x_axises = ['alpha']   # alpha, models, horizon
+x_axis = 'horizon'                               # alpha, models, horizon
+y_labels = ['mse', 'nmse', 'evar',
+            'used-models', 'nlpd']
 
-
-# iterate all 4 plots:
-for n in range(len(x_axises)):
-    for l in range(len(datasets)):
-
+# iterate all plots:
+for y_axis in y_labels:
+    for dataset in datasets:
         # create a figure for each choice of x_axis and dataset
         fig, ax2 = plt.subplots()
-        dataset = datasets[l]
         plt.title(dataset)
 
         # two priors in one plot (dirichlet / stick-breaking)
         for m in range(len(priors)):
             prior = priors[m]
-            x_axis = x_axises[n]
 
             # set x-ticks
             alpha = []
@@ -41,7 +37,13 @@ for n in range(len(x_axises)):
             if prior == 'stick-breaking':
                 alpha = [1.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
 
-            models = [50, 75, 100, 125, 150]
+            models = []
+            if dataset == 'pendulum':
+                models = [50, 100, 150, 200, 250,
+                          300, 350, 400, 450, 500]
+            elif dataset == 'cartpole':
+                models = [250, 300, 350, 400, 450, 500, 550, 600,
+                          650, 700, 750, 800, 850, 900, 950, 1000]
 
             horizon = [1, 5, 10, 15, 20, 25]
 
@@ -73,7 +75,7 @@ for n in range(len(x_axises)):
             # 4, 5 = mean_evar, std_evar
             # 6, 7 = mean_nb_models, std_nb_models
             # 8, 9 = mean_duration, std_duration
-            # 10, 11 = mean_nlpd, std_nlpd (negative log predictive density)
+            # 10, 11 = mean_nlpd, std_nlpd
 
             # plot nmse or used models on y-axis
             x, y = [], []
@@ -146,13 +148,12 @@ for n in range(len(x_axises)):
 
         # save tikz and pdf
         import tikzplotlib
-        # path = os.path.join(str(dataset) + '/' + dataset + '_' + x_axis + '/')
         path = os.path.join(str(dataset) + '/')
 
         plt.tight_layout()  # otherwise title is clipped off
 
-        # print(path, dataset, x_axis, y_axis)
-        # tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
-        # plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
+        print(path, dataset, x_axis, y_axis)
+        tikzplotlib.save(path + dataset + '_' + x_axis + '_' + y_axis + '.tex')
+        plt.savefig(path + dataset + '_' + x_axis + '_' + y_axis + '.pdf')
 
         plt.show()

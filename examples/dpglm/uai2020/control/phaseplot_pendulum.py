@@ -30,8 +30,8 @@ def create_job(kwargs):
     input_dim = input.shape[-1]
     target_dim = target.shape[-1]
 
-    # set random seed
-    np.random.seed(seed)
+    # # set random seed
+    # np.random.seed(seed)
 
     nb_params = input_dim
     if args.affine:
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
     import gym
 
-    from mimo.util.data import sample_env
+    from mimo.util.general import sample_env
 
     np.random.seed(args.seed)
 
