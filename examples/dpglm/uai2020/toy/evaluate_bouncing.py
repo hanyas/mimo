@@ -13,12 +13,12 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 
-def create_job(kwargs):
+def _job(kwargs):
     train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
@@ -142,12 +142,14 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
         _kwargs = {'seed': kwargs['arguments'].seed,
-                   'train_data': kwargs['data_dicts'][n],
+                   'train_data': kwargs['train_data'][n],
                    'arguments': kwargs['arguments']}
         kwargs_list.append(_kwargs)
 
-    return Parallel(n_jobs=min(nb_jobs, nb_cores),
-                    verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+        res = p.map(_job, kwargs_list)
+
+    return res
 
 
 if __name__ == "__main__":
@@ -204,36 +206,36 @@ if __name__ == "__main__":
     _input = np.vstack([_x[:-1, :] for _x in train_obs])
     _target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
 
-    train_data = np.hstack((_input, _target))
+    _train_data = np.hstack((_input, _target))
 
     # shuffle data
     from sklearn.utils import shuffle
-    train_data = shuffle(train_data)
+    _train_data = shuffle(_train_data)
 
     from sklearn.decomposition import PCA
     input_scaler = PCA(n_components=dm_obs, whiten=True)
     target_scaler = PCA(n_components=dm_obs, whiten=True)
 
-    input_scaler.fit(train_data[:, :dm_obs])
-    target_scaler.fit(train_data[:, dm_obs:])
+    input_scaler.fit(_train_data[:, :dm_obs])
+    target_scaler.fit(_train_data[:, dm_obs:])
 
     # split to nb_seeds train datasets
     from sklearn.model_selection import ShuffleSplit
     spliter = ShuffleSplit(n_splits=args.nb_seeds, test_size=0.2)
 
     train_inputs, train_targets = [], []
-    for train_index, _ in spliter.split(train_data):
-        train_inputs.append(train_data[train_index, :dm_obs])
-        train_targets.append(train_data[train_index, dm_obs:])
+    for train_index, _ in spliter.split(_train_data):
+        train_inputs.append(_train_data[train_index, :dm_obs])
+        train_targets.append(_train_data[train_index, dm_obs:])
 
-    train_dicts = []
+    train_data = []
     for train_input, train_target in zip(train_inputs, train_targets):
-        train_dicts.append({'input': input_scaler.transform(train_input),
+        train_data.append({'input': input_scaler.transform(train_input),
                             'target': target_scaler.transform(train_target)})
 
     # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      data_dicts=train_dicts,
+                                      train_data=train_data,
                                       arguments=args)
 
     from mimo.util.prediction import meanfield_forcast

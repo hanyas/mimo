@@ -14,12 +14,12 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 
-def create_job(kwargs):
+def _job(kwargs):
     train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
@@ -145,8 +145,10 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    return Parallel(n_jobs=min(nb_jobs, nb_cores),
-                    verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+        res = p.map(_job, kwargs_list)
+
+    return res
 
 
 if __name__ == "__main__":
@@ -209,11 +211,11 @@ if __name__ == "__main__":
     input_scaler.fit(train_input)
     target_scaler.fit(train_target)
 
-    scaled_train_data = {'input': input_scaler.transform(train_input),
-                         'target': target_scaler.transform(train_target)}
+    train_data = {'input': input_scaler.transform(train_input),
+                  'target': target_scaler.transform(train_target)}
 
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=scaled_train_data,
+                                      train_data=train_data,
                                       arguments=args)
 
     # create meshgrid
