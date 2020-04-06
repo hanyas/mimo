@@ -22,7 +22,6 @@ dependencies:
   - icu=58.2=h9c2bf20_1
   - imageio=2.6.1=py37_0
   - intel-openmp=2020.0=166
-  - joblib=0.14.1=py_0
   - jpeg=9b=h024ee3a_2
   - kiwisolver=1.1.0=py37he6710b0_0
   - ld_impl_linux-64=2.33.1=h53a641e_7
