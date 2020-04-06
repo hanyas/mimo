@@ -13,9 +13,9 @@ import argparse
 
 import matplotlib.pyplot as plt
 
-import joblib
-from joblib import Parallel, delayed
-nb_cores = joblib.parallel.cpu_count()
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
 
 
 def generate_2d_kinematics(grid=(10, 10), l1=1., l2=1., seed=1337):
@@ -36,7 +36,7 @@ def generate_2d_kinematics(grid=(10, 10), l1=1., l2=1., seed=1337):
                       x.flatten(), y.flatten())).T
 
 
-def create_job(kwargs):
+def _job(kwargs):
     train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
@@ -167,8 +167,10 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    return Parallel(n_jobs=min(nb_jobs, nb_cores),
-                    verbose=10, backend='loky')(map(delayed(create_job), kwargs_list))
+    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+        res = p.map(_job, kwargs_list)
+
+    return res
 
 
 if __name__ == "__main__":

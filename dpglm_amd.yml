@@ -15,7 +15,6 @@ dependencies:
   - gst-plugins-base=1.14.0=hbbd80ab_1
   - gstreamer=1.14.0=hb453b48_1
   - icu=58.2=h9c2bf20_1
-  - joblib=0.14.1=py_0
   - jpeg=9b=h024ee3a_2
   - kiwisolver=1.0.1=py38he6710b0_0
   - ld_impl_linux-64=2.33.1=h53a641e_7
