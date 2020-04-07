@@ -100,4 +100,3 @@ dependencies:
     - tikzplotlib==0.8.5
     - traitlets==4.3.3
     - wcwidth==0.1.8
-
