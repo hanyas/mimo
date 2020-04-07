@@ -70,5 +70,3 @@ dependencies:
     - ppft==1.6.6.1
     - pyglet==1.5.0
     - tikzplotlib==0.9.1
-prefix: /home/hany/.miniconda3/envs/dpglm
-
