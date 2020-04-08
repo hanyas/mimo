@@ -15,67 +15,71 @@ nb_cores = pathos.multiprocessing.cpu_count()
 import time
 
 
-def kstep_error(dpglm, query, exogenous=None, horizon=1,
+def kstep_error(dpglm, state, exogenous=None, horizon=1,
                 prediction='average', incremental=True,
-                input_scaler=None, target_scaler=None):
+                input_scaler=None, target_scaler=None,
+                type='gaussian', sparse=False):
 
-    start = time.clock()
+    start = time.process_time()
 
     from sklearn.metrics import mean_squared_error, explained_variance_score, r2_score
 
     mse, smse, evar = [], [], []
-    for _query, _exo in zip(query, exogenous):
-        _query_list, _exo_list,  = [], []
+    for _state, _exo in zip(state, exogenous):
+        _state_list, _exo_list,  = [], []
 
-        nb_steps = _query.shape[0] - horizon
+        nb_steps = _state.shape[0] - horizon
         for t in range(nb_steps):
-            _query_list.append(_query[t, :])
+            _state_list.append(_state[t, :])
             _exo_list.append(_exo[t: t + horizon, :])
 
-        _output = parallel_meanfield_forcast(dpglm, _query_list,
-                                             _exo_list, horizon,
-                                             prediction, incremental,
-                                             input_scaler, target_scaler)
+        _forcast = parallel_meanfield_forcast(dpglm, _state_list,
+                                              _exo_list, horizon,
+                                              prediction, incremental,
+                                              input_scaler, target_scaler,
+                                              type, sparse)
 
-        target, output = [], []
+        target, forcast = [], []
         for t in range(nb_steps):
-            target.append(_query[t + horizon, :])
-            output.append(_output[t][-1, :])
+            target.append(_state[t + horizon, :])
+            forcast.append(_forcast[t][-1, :])
 
         target = np.vstack(target)
-        output = np.vstack(output)
+        forcast = np.vstack(forcast)
 
-        _mse = mean_squared_error(target, output)
-        _smse = 1. - r2_score(target, output, multioutput='variance_weighted')
-        _evar = explained_variance_score(target, output, multioutput='variance_weighted')
+        _mse = mean_squared_error(target, forcast)
+        _smse = 1. - r2_score(target, forcast, multioutput='variance_weighted')
+        _evar = explained_variance_score(target, forcast, multioutput='variance_weighted')
 
         mse.append(_mse)
         smse.append(_smse)
         evar.append(_evar)
 
-    finish = time.clock()
+    finish = time.process_time()
     return np.mean(mse), np.mean(smse), np.mean(evar), finish - start
 
 
-def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=1,
+def parallel_meanfield_forcast(dpglm, state, exogenous=None, horizon=1,
                                prediction='average', incremental=True,
-                               input_scaler=None, target_scaler=None):
+                               input_scaler=None, target_scaler=None,
+                               type='gaussian', sparse=False):
 
-    assert isinstance(query, list)
+    assert isinstance(state, list)
 
     def _loop(kwargs):
-        return meanfield_forcast(dpglm, kwargs['query'],
+        return meanfield_forcast(dpglm, kwargs['state'],
                                  kwargs['exogenous'], horizon,
                                  prediction, incremental,
-                                 input_scaler, target_scaler)
+                                 input_scaler, target_scaler,
+                                 type, sparse)
 
-    nb_traj = len(query)
+    nb_traj = len(state)
 
     kwargs_list = []
     for n in range(nb_traj):
-        _query = query[n, :]
-        _exogenous = None if exogenous is None else exogenous[n, :]
-        kwargs = {'query': query, 'exogenous': exogenous}
+        _state = state[n]
+        _exo = None if exogenous is None else exogenous[n]
+        kwargs = {'state': _state, 'exogenous': _exo}
         kwargs_list.append(kwargs)
 
     with Pool(processes=nb_cores) as p:
@@ -84,36 +88,41 @@ def parallel_meanfield_forcast(dpglm, query, exogenous=None, horizon=1,
     return res
 
 
-def meanfield_forcast(dpglm, query, exogenous=None, horizon=1,
+def meanfield_forcast(dpglm, state, exogenous=None, horizon=1,
                       prediction='average', incremental=True,
-                      input_scaler=None, target_scaler=None):
+                      input_scaler=None, target_scaler=None,
+                      type='gaussian', sparse=False):
 
     if exogenous is not None:
         assert horizon <= len(exogenous)
 
-    _output = query
-    output = [query]
+    _state = state
+    forcast = [_state]
     for h in range(horizon):
-        _query = _output
+        _query = _state
         if exogenous is not None:
-            _query = np.hstack((_query, exogenous[h, :]))
+            _exo = exogenous[h, :]
+            _query = np.hstack((_state, _exo))
 
-        _output, _, _, _ = meanfield_prediction(dpglm, _query, None,
-                                                prediction, incremental,
-                                                input_scaler, target_scaler)
-        output.append(_output)
+        _state = meanfield_prediction(dpglm, _query, None,
+                                      prediction, incremental,
+                                      input_scaler, target_scaler,
+                                      type, sparse)[0]
+        forcast.append(_state)
 
-    return np.vstack(output)
+    return np.vstack(forcast)
 
 
 def parallel_meanfield_prediction(dpglm, query, target=None,
                                   prediction='average', incremental=False,
-                                  input_scaler=None, target_scaler=None):
+                                  input_scaler=None, target_scaler=None,
+                                  type='gaussian', sparse=False):
 
     def _loop(kwargs):
         return meanfield_prediction(dpglm, kwargs['x'], kwargs['y'],
                                     prediction, incremental,
-                                    input_scaler, target_scaler)
+                                    input_scaler, target_scaler,
+                                    type, sparse)
 
     nb_data = len(query)
 
@@ -131,7 +140,7 @@ def parallel_meanfield_prediction(dpglm, query, target=None,
     return mean, var, std, nlpd
 
 
-def meanfield_gating(dpglm, input):
+def meanfield_gating(dpglm, input, sparse=False):
     nb_models = len(dpglm.components)
 
     # compute posterior mixing weights
@@ -142,9 +151,9 @@ def meanfield_gating(dpglm, input):
     marginal_likelihood = np.zeros((nb_models, ))
     effective_weights = np.zeros((nb_models, ))
 
-    for idx, c in enumerate(dpglm.components):
-        # if idx in dpglm.used_labels:
-        marginal_likelihood[idx] = np.exp(c.log_marginal_likelihood(input))
+    _labels = dpglm.used_labels if sparse else range(nb_models)
+    for idx in _labels:
+        marginal_likelihood[idx] = np.exp(dpglm.components[idx].log_marginal_likelihood(input))
         effective_weights[idx] = weights[idx] * marginal_likelihood[idx]
 
     effective_weights = effective_weights / np.sum(effective_weights)
@@ -152,7 +161,7 @@ def meanfield_gating(dpglm, input):
     return effective_weights
 
 
-def meanfield_predictive_component(component, query, type='student-t'):
+def meanfield_predictive_component(component, query, type='gaussian'):
     affine = component.posterior.mniw.affine
     params = component.posterior.mniw.params
 
@@ -171,9 +180,11 @@ def meanfield_predictive_component(component, query, type='student-t'):
 def meanfield_prediction(dpglm, query, target=None,
                          prediction='average', incremental=False,
                          input_scaler=None, target_scaler=None,
-                         type='gaussian'):
+                         type='gaussian', sparse=False):
 
     nb_dim = dpglm.components[0].drow
+
+    nb_models = len(dpglm.components)
 
     if input_scaler is not None:
         assert target_scaler is not None
@@ -191,7 +202,7 @@ def meanfield_prediction(dpglm, query, target=None,
     mean, variance, stdv, nlpd =\
         np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, )), 0.
 
-    weights = meanfield_gating(dpglm, input)
+    weights = meanfield_gating(dpglm, input, sparse)
 
     if prediction == 'mode':
         mode = np.argmax(weights)
@@ -211,9 +222,9 @@ def meanfield_prediction(dpglm, query, target=None,
             raise NotImplementedError
 
     elif prediction == 'average':
-        for idx, comp in enumerate(dpglm.components):
-            # if idx in dpglm.used_labels:
-            _mu, _sigma, _df = meanfield_predictive_component(comp, input, type)
+        _labels = dpglm.used_labels if sparse else range(nb_models)
+        for idx in _labels:
+            _mu, _sigma, _df = meanfield_predictive_component(dpglm.components[idx], input, type)
 
             if type == 'student-t':
                 # consider only diagonal variances for plots
