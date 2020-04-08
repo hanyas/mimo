@@ -186,20 +186,14 @@ if __name__ == "__main__":
                                                    progprint=args.verbose)
 
         # predict on all data
-        from mimo.util.prediction import meanfield_prediction
+        from mimo.util.prediction import parallel_meanfield_prediction
 
-        mu, var, std, nlpd = [], [], [], []
-        for t in range(len(input)):
-            _mean, _var, _std, _nlpd = meanfield_prediction(dpglm, input[t, :],
-                                                            target[t, :],
-                                                            prediction=args.prediction,
-                                                            input_scaler=input_scaler,
-                                                            target_scaler=target_scaler)
-
-            mu.append(_mean)
-            var.append(_var)
-            std.append(_std)
-            nlpd.append(_nlpd)
+        sparse = False if (n + 1) < args.nb_splits else True
+        mu, var, std, nlpd = parallel_meanfield_prediction(dpglm, input, target,
+                                                           prediction=args.prediction,
+                                                           input_scaler=input_scaler,
+                                                           target_scaler=target_scaler,
+                                                           sparse=sparse)
 
         mu = np.hstack(mu)
         var = np.hstack(var)
