@@ -1,5 +1,5 @@
 import os
-# os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy as np
 import numpy.random as npr
@@ -53,7 +53,12 @@ def _job(kwargs):
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+            if args.affine:
+                X = np.hstack((input, np.ones((len(input), 1))))
+            else:
+                X = input
+
+            V = 50 * X.T @ X
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=np.eye(input_dim) * psi_niw,
@@ -66,25 +71,25 @@ def _job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        psi_niw = 1e0
-        kappa = (1. / (input.T @ input)).item()
+        psi_niw = 1e-1
+        kappa = 1e-2  # (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
-        psi_mniw = 1e0
+        psi_mniw = 1e-1
         if args.affine:
             X = np.hstack((input, np.ones((len(input), 1))))
         else:
             X = input
 
-        V = 10 * X.T @ X
+        V = X.T @ X
 
         for n in range(args.nb_models):
             components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1 + 75,
+                                        nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1,
+                                        nu_mniw=target_dim + 37,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
 
             aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
@@ -167,12 +172,12 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=25, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=500, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
@@ -250,7 +255,8 @@ if __name__ == "__main__":
             parallel_meanfield_prediction(dpglm, input,
                                           prediction=args.prediction,
                                           input_scaler=input_scaler,
-                                          target_scaler=target_scaler)
+                                          target_scaler=target_scaler,
+                                          sparse=True)
 
         _mse = mean_squared_error(target, _mu_predict)
         _evar = explained_variance_score(target, _mu_predict, multioutput='variance_weighted')
@@ -276,23 +282,24 @@ if __name__ == "__main__":
     w, h = plt.figaspect(0.67)
     fig, axes = plt.subplots(2, 1, figsize=(w, h))
 
-    # axes[0].scatter(input, target, s=0.75, color='k', alpha=0.5)
-    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='k')
-    axes[0].plot(input, mu_predict_avg, 'red')
+    # plot data and prediction
+    axes[0].plot(input, mean, 'k--', zorder=10)
+    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey', zorder=1)
+    axes[0].plot(input, mu_predict_avg, '-r', zorder=5)
     for c in [1., 2.]:
         axes[0].fill_between(input.flatten(),
                              mu_predict_avg - c * mu_predict_std,
                              mu_predict_avg + c * mu_predict_std,
-                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1), zorder=1)
 
     # plot mean and standard deviation of data generation / estimated noise level
-    axes[1].plot(input, noise(input), 'k--')
-    axes[1].plot(input, std_predict_avg, 'red')
+    axes[1].plot(input, noise(input), 'k--', zorder=10)
+    axes[1].plot(input, std_predict_avg, '-r', zorder=5)
     for c in [1., 2.]:
         axes[1].fill_between(input.flatten(),
                              std_predict_avg - c * std_predict_std,
                              std_predict_avg + c * std_predict_std,
-                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1), zorder=1)
     plt.tight_layout()
 
     # set working directory
@@ -312,20 +319,14 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 1, figsize=(w, h))
 
     # plot data and prediction
-    axes[0].plot(input, mean, 'k--')
-    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey')
-    for c in [1., 2.]:
-        axes[0].fill_between(input.flatten(),
-                             (mean - c * noise(input)).flatten(),
-                             (mean + c * noise(input)).flatten(),
-                             edgecolor=(0.5, 0.5, 0.5, 0.1), facecolor=(0.5, 0.5, 0.5, 0.1))
+    axes[0].plot(input, mean, 'k--', zorder=10)
+    axes[0].plot(input, mean + 2 * noise(input), 'g--', zorder=10)
+    axes[0].plot(input, mean - 2 * noise(input), 'g--', zorder=10)
+    axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey', zorder=1)
 
-    axes[0].plot(input, mu_predict[choice], 'r-')
-    for c in [1., 2.]:
-        axes[0].fill_between(input.flatten(),
-                             (mu_predict[choice] - c * std_predict[choice]).flatten(),
-                             (mu_predict[choice] + c * std_predict[choice]).flatten(),
-                             edgecolor=(0., 0., 0.1, 0.1), facecolor=(0., 0., 1.0, 0.1))
+    axes[0].plot(input, mu_predict[choice], '-r', zorder=5)
+    axes[0].plot(input, mu_predict[choice] + 2 * std_predict[choice], '-b', zorder=5)
+    axes[0].plot(input, mu_predict[choice] - 2 * std_predict[choice], '-b', zorder=5)
 
     # plot gaussian activations
     mu_basis, sigma_basis = [], []
