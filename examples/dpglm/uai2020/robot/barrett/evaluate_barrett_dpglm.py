@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=2500, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=2500, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=5000, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -277,6 +277,6 @@ if __name__ == "__main__":
                     mean_nb_models, std_nb_models,
                     mean_nlpd, std_nlpd])
 
-    np.savetxt('barrett_test_' + str(args.prior) +
+    np.savetxt('barrett_' + str(args.prior) +
                '_alpha_' + str(args.alpha) +
                '.csv', arr, delimiter=',')
