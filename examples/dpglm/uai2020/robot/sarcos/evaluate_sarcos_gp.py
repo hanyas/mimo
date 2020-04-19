@@ -37,7 +37,7 @@ if __name__ == "__main__":
     test_target = _test_data[:, 21]
 
     gp = GPRegressor(input_size=21, device='gpu')
-    gp.fit(train_target, train_input, nb_iter=75, lr=0.05, preprocess=True)
+    gp.fit(train_target, train_input, nb_iter=500, lr=0.05, preprocess=True)
 
     test_predict = gp.predict(test_input)
 
