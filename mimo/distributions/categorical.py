@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.random as npr
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 
 
 class Categorical(Distribution):
@@ -19,14 +19,14 @@ class Categorical(Distribution):
         self.K, self.probs = values
 
     @property
-    def num_parameters(self):
+    def nb_params(self):
         return len(self.probs) - 1
 
     @property
     def dim(self):
         return self.K
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         return npr.choice(a=self.K, p=self.probs, size=size)
 
     def mean(self):
