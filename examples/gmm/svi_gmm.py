@@ -33,27 +33,28 @@ gating_prior = distributions.Dirichlet(**gating_hypparams)
 components_hypparams = dict(mu=np.mean(data, axis=0), kappa=0.01, psi=np.eye(2), nu=3)
 components_prior = distributions.NormalInverseWishart(**components_hypparams)
 
-gmm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                      components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
+gmm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                         components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
 
 gmm.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(1):
+for superitr in range(5):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
-    for _ in progprint_xrange(250):
-        gmm.resample_model()
+    for _ in progprint_xrange(25):
+        gmm.resample()
 
     print('Stochastic Mean Field')
+    gmm.resample()
     minibatchsize = 128
     prob = minibatchsize / float(n_samples)
-    for _ in progprint_xrange(2500):
+    for _ in progprint_xrange(100):
         minibatch = npr.permutation(n_samples)[:minibatchsize]
         gmm.meanfield_sgdstep(minibatch=data[minibatch, :], prob=prob, stepsize=5e-4)
 
-    allscores.append(gmm.meanfield_coordinate_descent_step())
+    allscores.append(gmm.meanfield_update())
     allmodels.append(copy.deepcopy(gmm))
 
 models_and_scores = sorted([(m, s) for m, s in zip(allmodels, allscores)],
