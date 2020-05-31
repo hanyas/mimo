@@ -165,7 +165,7 @@ def meanfield_predictive_component(component, query, type='gaussian'):
     affine = component.posterior.mniw.affine
     params = component.posterior.mniw.params
 
-    if type == 'student-t':
+    if type == 'studentt':
         # predictive matrix student-t
         mu, sigma, df = matrix_linear_studentt(query, *params, affine)
     elif type == 'gaussian':
@@ -208,7 +208,7 @@ def meanfield_prediction(dpglm, query, target=None,
         mode = np.argmax(weights)
         mean, _sigma, df = meanfield_predictive_component(dpglm.components[mode], input, type)
 
-        if type == 'student-t':
+        if type == 'studentt':
             # consider only diagonal variances for plots
             variance = np.diag(_sigma * df / (df - 2))
             if target is not None:
@@ -226,7 +226,7 @@ def meanfield_prediction(dpglm, query, target=None,
         for idx in _labels:
             _mu, _sigma, _df = meanfield_predictive_component(dpglm.components[idx], input, type)
 
-            if type == 'student-t':
+            if type == 'studentt':
                 # consider only diagonal variances for plots
                 _var = np.diag(_sigma * _df / (_df - 2))
                 if target is not None:
