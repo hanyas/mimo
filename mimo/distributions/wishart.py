@@ -5,7 +5,7 @@ import numpy.random as npr
 from scipy import stats
 from scipy.special import multigammaln, digamma
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 from mimo.util.general import near_pd
 
 
@@ -44,7 +44,7 @@ class Wishart(Distribution):
             self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
         return self._psi_chol
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # use matlab's heuristic for choosing between the two different sampling schemes
         if (self.nu <= 81 + self.dim) and (self.nu == round(self.nu)):
             # direct
@@ -123,7 +123,7 @@ class InverseWishart(Distribution):
             self._psi_chol = np.linalg.cholesky(self.psi)
         return self._psi_chol
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         if (self.nu <= 81 + self.dim) and (self.nu == np.round(self.nu)):
             x = npr.randn(int(self.nu), self.dim)
         else:

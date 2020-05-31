@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random as npr
 from scipy.special import digamma, gammaln
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 
 import warnings
 
@@ -25,18 +25,16 @@ class Dirichlet(Distribution):
     def dim(self):
         return self.K
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
+        size = None if size is 1 else size
         return npr.dirichlet(self.alphas, size)
 
     def mean(self):
         return self.alphas / np.sum(self.alphas)
 
     def mode(self):
-        if np.all(self.alphas > 1.):
-            return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
-        else:
-            warnings.warn("Mode of Dirichlet distribution not defined")
-            return None
+        assert np.all(self.alphas > 1.), "Make sure alphas < 1."
+        return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
 
     def log_likelihood(self, x):
         return gammaln(np.sum(self.alphas))\
@@ -97,14 +95,14 @@ class StickBreaking(Distribution):
     def dim(self):
         return self.K
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # stick-breaking construction
         betas = npr.beta(self.gammas, self.deltas)
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        # probs = probs / probs.sum()
+        probs = probs / probs.sum()
         # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
@@ -115,7 +113,7 @@ class StickBreaking(Distribution):
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        # probs = probs / probs.sum()
+        probs = probs / probs.sum()
         # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
@@ -135,13 +133,13 @@ class StickBreaking(Distribution):
                 betas[k] = 1.
             else:
                 warnings.warn("Mode of Dirichlet process not defined")
-                return None
+                raise ValueError
 
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        # probs = probs / probs.sum()
+        probs = probs / probs.sum()
         # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
@@ -180,4 +178,3 @@ class StickBreaking(Distribution):
                 data = data if data else [None] * len(weights)
                 counts = sum(self.get_weighted_statistics(d, w) for d, w in zip(data, weights))
         return counts
-

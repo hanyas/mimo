@@ -4,7 +4,7 @@ import numpy.random as npr
 from numpy.core.umath_tests import inner1d
 from scipy import linalg
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 from mimo.util.general import flattendata
 from mimo.util.general import near_pd
 
@@ -17,9 +17,6 @@ class Gaussian(Distribution):
         self._sigma = sigma
         self._sigma_chol = None
 
-        self._parameterplot = None
-        self._scatterplot = None
-
     @property
     def params(self):
         return self.mu, self.sigma
@@ -29,7 +26,7 @@ class Gaussian(Distribution):
         self.mu, self.sigma = values
 
     @property
-    def num_parameters(self):
+    def nb_params(self):
         return self.dim + self.dim * (self.dim + 1) / 2
 
     @property
@@ -52,8 +49,8 @@ class Gaussian(Distribution):
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
-    def rvs(self, size=None):
-        if size is None:
+    def rvs(self, size=1):
+        if size == 1:
             return self.mu + npr.normal(size=self.dim).dot(self.sigma_chol.T)
         else:
             size = tuple([size, self.dim])
@@ -82,24 +79,26 @@ class Gaussian(Distribution):
         return 0.5 * self.dim * np.log(2. * np.pi) + self.dim\
                + np.sum(np.log(np.diag(self.sigma_chol)))
 
-    def plot(self, ax=None, data=None, color='b', label='', alpha=1., update=False, draw=True):
+    def plot(self, ax=None, data=None, color='b', label='',
+             alpha=1., update=False, draw=True):
 
         import matplotlib.pyplot as plt
         from mimo.util.plot import plot_gaussian
 
         ax = ax if ax else plt.gca()
 
+        _scatterplot = None
         if data is not None:
             data = flattendata(data)
-            self._scatterplot = ax.scatter(data[:, 0], data[:, 1], marker='.', color=color)
+            _scatterplot = ax.scatter(data[:, 0], data[:, 1], marker='.', color=color)
 
-        self._parameterplot = plot_gaussian(self.mu, self.sigma, color=color, label=label,
-                                            alpha=min(1 - 1e-3, alpha), ax=ax,
-                                            artists=self._parameterplot if update else None)
+        _parameterplot = plot_gaussian(self.mu, self.sigma, color=color, label=label,
+                                       alpha=min(1 - 1e-3, alpha), ax=ax,
+                                       artists=self._parameterplot if update else None)
         if draw:
             plt.draw()
 
-        return [self._scatterplot] + list(self._parameterplot)
+        return [_scatterplot] + list(_parameterplot)
 
 
 class DiagonalGaussian(Gaussian):
@@ -111,7 +110,7 @@ class DiagonalGaussian(Gaussian):
         super(DiagonalGaussian, self).__init__(mu=mu, sigma=self.sigma)
 
     @property
-    def num_parameters(self):
+    def nb_params(self):
         return self.dim + self.dim
 
     @property
