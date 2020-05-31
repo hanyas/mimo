@@ -9,7 +9,7 @@ from mimo.util.text import progprint_xrange
 
 import operator
 
-npr.seed(124)
+npr.seed(1337)
 
 n_samples = 2500
 
@@ -33,23 +33,23 @@ gating_prior = distributions.Dirichlet(**gating_hypparams)
 components_hypparams = dict(mu=np.mean(data, axis=0), kappa=0.01, psi=np.eye(2), nu=3)
 components_prior = distributions.NormalInverseWishart(**components_hypparams)
 
-gmm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                      components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
+gmm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                         components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
 
 gmm.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(5):
+for superitr in range(3):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
-    for _ in progprint_xrange(100):
-        gmm.resample_model()
+    for _ in progprint_xrange(25):
+        gmm.resample()
 
     # mean field to lock onto a mode
     print('Mean Field')
-    gmm.resample_model()  # sample once to initialize posterior
-    scores = [gmm.meanfield_coordinate_descent_step() for _ in progprint_xrange(100)]
+    gmm.resample()  # sample once to initialize posterior
+    scores = [gmm.meanfield_update() for _ in progprint_xrange(100)]
 
     allscores.append(scores)
     allmodels.append(copy.deepcopy(gmm))
