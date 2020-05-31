@@ -1,3 +1,6 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy as np
 import numpy.random as npr
 
@@ -98,13 +101,13 @@ def _job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
     else:
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -116,7 +119,7 @@ def _job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         for _ in gibbs_iter:
-            dpglm.resample_model()
+            dpglm.resample()
 
         if args.stochastic:
             # Stochastic meanfield VI
@@ -130,7 +133,7 @@ def _job(kwargs):
             prob = batch_size / float(len(data))
             for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
-                dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
+                dpglm.meanfield_sgdstep(obs=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
         if args.deterministic:
             # Meanfield VI
@@ -158,25 +161,25 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
-    parser.add_argument('--datapath', help='Set path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='Set path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
-    parser.add_argument('--nb_seeds', help='Set number of seeds', default=1, type=int)
-    parser.add_argument('--prior', help='Set prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='Set concentration parameter', default=25, type=float)
-    parser.add_argument('--nb_models', help='Set max number of models', default=50, type=int)
+    parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
+    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--prior', help='prior type', default='stick-breaking')
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=10, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
-    parser.add_argument('--super_iters', help='Set interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Set Gibbs iterations', default=1, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=25, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='Set max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='Set stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='Set SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='Set SVI batch size', default=256, type=int)
-    parser.add_argument('--prediction', help='Set prediction to mode or average', default='mode')
-    parser.add_argument('--earlystop', help='Set stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=250, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
+    parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -203,7 +206,7 @@ if __name__ == "__main__":
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='average')
+        _mean, _, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='average', sparse=True)
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
@@ -228,7 +231,7 @@ if __name__ == "__main__":
 
     mu_predict = []
     for t in range(len(input)):
-        _mean, _var, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='mode')
+        _mean, _var, _, _ = meanfield_prediction(dpglm, input[t, :], prediction='mode', sparse=True)
         mu_predict.append(np.atleast_2d(_mean))
 
     mu_predict = np.vstack(mu_predict)
@@ -293,7 +296,7 @@ if __name__ == "__main__":
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
         _mu_predict = (regcoeff[0] @ q).tolist()
-        mu_predict.append(_mu_predict )
+        mu_predict.append(_mu_predict)
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
     plt.plot(axis, mu_predict, linewidth=2, c='green')
 
@@ -301,7 +304,7 @@ if __name__ == "__main__":
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
         _mu_predict = (regcoeff[1] @ q).tolist()
-        mu_predict.append(_mu_predict )
+        mu_predict.append(_mu_predict)
     mu_predict = np.asarray(mu_predict).reshape(-1, 1)
     plt.plot(axis, mu_predict, linewidth=2, c='orange')
 

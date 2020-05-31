@@ -96,11 +96,13 @@ def _job(kwargs):
 
     # define model
     if args.prior == 'stick-breaking':
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
     else:
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -112,7 +114,7 @@ def _job(kwargs):
             else progprint_xrange(args.gibbs_iters)
 
         for _ in gibbs_iter:
-            dpglm.resample_model()
+            dpglm.resample()
 
         if args.stochastic:
             # Stochastic meanfield VI
@@ -126,7 +128,7 @@ def _job(kwargs):
             prob = batch_size / float(len(data))
             for _ in svi_iter:
                 minibatch = npr.permutation(len(data))[:batch_size]
-                dpglm.meanfield_sgdstep(minibatch=data[minibatch, :],
+                dpglm.meanfield_sgdstep(obs=data[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
         if args.deterministic:
             # Meanfield VI

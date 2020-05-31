@@ -52,7 +52,7 @@ for superitr in range(5):
     prob = minibatchsize / float(n_samples)
     for _ in progprint_xrange(100):
         minibatch = npr.permutation(n_samples)[:minibatchsize]
-        gmm.meanfield_sgdstep(minibatch=data[minibatch, :], prob=prob, stepsize=5e-4)
+        gmm.meanfield_sgdstep(obs=data[minibatch, :], prob=prob, stepsize=5e-4)
 
     allscores.append(gmm.meanfield_update())
     allmodels.append(copy.deepcopy(gmm))
