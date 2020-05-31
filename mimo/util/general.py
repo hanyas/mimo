@@ -54,8 +54,7 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_t_loglik(y, mu, lmbda, nu):
-    # returns the log value
+def multivariate_studentt_loglik(y, mu, lmbda, nu):
     d = len(mu)
     yc = np.array(y - mu, ndmin=2)
     L = np.linalg.cholesky(lmbda)
@@ -65,24 +64,13 @@ def multivariate_t_loglik(y, mu, lmbda, nu):
             - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
 
 
-def matrix_linear_studentt(x, M, V, psi, nu, affine=True):
-    if affine:
-        x = np.hstack((x, 1.))
-
-    xxT = np.outer(x, x)
-
-    # https://tminka.github.io/papers/minka-linear.pdf
-    c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
-
-    # https://tminka.github.io/papers/minka-gaussian.pdf
-    df = nu
-    mu = M @ x
-
-    # # variance of a student-t
-    sigma = (1. / c) * psi / df  # Misleading in Minka
-    var = sigma * df / (df - 2)
-
-    return mu, sigma, df
+def multivariate_gaussian_loglik(y, mu, scale):
+    d = len(mu)
+    yc = np.nan_to_num(y).reshape((-1, d)) - mu
+    L = np.linalg.cholesky(scale)
+    ys = sc.linalg.solve_triangular(L, yc.T, overwrite_b=True, lower=True)
+    return - 0.5 * d * np.log(2. * np.pi)\
+           - np.sum(np.log(np.diag(L))) - 0.5 * inner1d(ys.T, ys.T)
 
 
 def matrix_linear_gaussian(x, M, V, psi, nu, affine=True):
@@ -98,14 +86,32 @@ def matrix_linear_gaussian(x, M, V, psi, nu, affine=True):
     return mu, sigma, nu
 
 
+def matrix_linear_studentt(x, M, V, psi, nu, affine=True):
+    if affine:
+        x = np.hstack((x, 1.))
+
+    xxT = np.outer(x, x)
+
+    # https://tminka.github.io/papers/minka-linear.pdf
+    c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
+
+    # https://tminka.github.io/papers/minka-gaussian.pdf
+    df = nu
+    mu = M @ x
+
+    # variance of a student-t
+    sigma = (1. / c) * psi / df  # Misleading in Minka
+    var = sigma * df / (df - 2)
+
+    return mu, sigma, df
+
+
 # data
 def any_none(*args):
     return any(_ is None for _ in args)
 
 
 def atleast_2d(data):
-    # NOTE: can't use np.atleast_2d because if it's 1D we want axis 1 to be the
-    # singleton and axis 0 to be the sequence index
     if data.ndim == 1:
         return data.reshape((-1, 1))
     return data
