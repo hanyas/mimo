@@ -11,6 +11,8 @@ from mimo.util.general import near_pd
 
 import argparse
 
+import matplotlib.pyplot as plt
+
 import pathos
 from pathos.pools import _ProcessPool as Pool
 nb_cores = pathos.multiprocessing.cpu_count()
@@ -74,10 +76,10 @@ def _job(kwargs):
         for n in range(args.nb_models):
             components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1 + 100,
+                                        nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1 + 100,
+                                        nu_mniw=target_dim + 1,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
 
             aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
@@ -94,12 +96,10 @@ def _job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -156,11 +156,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/control'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=25, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=250, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -169,19 +169,17 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=5000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=512, type=int)
-    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='mode')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
-    parser.add_argument('--horizon', help='horizon prediction', default=1, type=int)
-    parser.add_argument('--task', help='add task name suffix', default='')
 
     args = parser.parse_args()
 
@@ -191,22 +189,21 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    env = gym.make('Cartpole-DPGLM-v1')
+    env = gym.make('BouncingBall-DPGLM-v0')
     env._max_episode_steps = 5000
     env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-2
+    env.unwrapped._sigma = 1e-8
     env.seed(args.seed)
 
     dm_obs = env.observation_space.shape[0]
-    dm_act = env.action_space.shape[0]
 
     nb_train_rollouts, nb_train_steps = 25, 250
     nb_test_rollouts, nb_test_steps = 5, 250
 
-    train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
-    test_obs, test_act = sample_env(env, nb_test_rollouts, nb_test_steps)
+    train_obs, _ = sample_env(env, nb_train_rollouts, nb_train_steps)
+    test_obs, _ = sample_env(env, nb_test_rollouts, nb_test_steps)
 
-    _input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(train_obs, train_act)])
+    _input = np.vstack([_x[:-1, :] for _x in train_obs])
     _target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
 
     _train_data = np.hstack((_input, _target))
@@ -216,11 +213,11 @@ if __name__ == "__main__":
     _train_data = shuffle(_train_data)
 
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=dm_obs + dm_act, whiten=True)
+    input_scaler = PCA(n_components=dm_obs, whiten=True)
     target_scaler = PCA(n_components=dm_obs, whiten=True)
 
-    input_scaler.fit(_train_data[:, :dm_obs + dm_act])
-    target_scaler.fit(_train_data[:, dm_obs + dm_act:])
+    input_scaler.fit(_train_data[:, :dm_obs])
+    target_scaler.fit(_train_data[:, dm_obs:])
 
     # split to nb_seeds train datasets
     from sklearn.model_selection import ShuffleSplit
@@ -228,87 +225,28 @@ if __name__ == "__main__":
 
     train_inputs, train_targets = [], []
     for train_index, _ in spliter.split(_train_data):
-        train_inputs.append(_train_data[train_index, :dm_obs + dm_act])
-        train_targets.append(_train_data[train_index, dm_obs + dm_act:])
+        train_inputs.append(_train_data[train_index, :dm_obs])
+        train_targets.append(_train_data[train_index, dm_obs:])
 
     train_data = []
     for train_input, train_target in zip(train_inputs, train_targets):
         train_data.append({'input': input_scaler.transform(train_input),
-                           'target': target_scaler.transform(train_target)})
+                            'target': target_scaler.transform(train_target)})
 
     # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                       train_data=train_data,
                                       arguments=args)
 
-    # from mimo.util.prediction import meanfield_forcast
-    #
-    # idx = np.random.choice(len(test_obs))
-    # prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
-    #                                exogenous=test_act[idx],
-    #                                horizon=len(test_act[idx]),
-    #                                incremental=True,
-    #                                input_scaler=input_scaler,
-    #                                target_scaler=target_scaler)
-    #
-    # plt.figure()
-    # plt.plot(test_obs[idx][1:, :])
-    # plt.plot(prediction)
-    #
-    # plt.show()
+    from mimo.util.prediction import meanfield_forcast
 
-    from mimo.util.prediction import kstep_error, parallel_meanfield_prediction
+    idx = np.random.choice(len(test_obs))
+    prediction = meanfield_forcast(dpglms[0], test_obs[idx][0, :],
+                                   prediction=args.prediction,
+                                   horizon=250, incremental=True,
+                                   input_scaler=input_scaler,
+                                   target_scaler=target_scaler)
 
-    test_input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(test_obs, test_act)])
-    test_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in test_obs])
-
-    mse, smse, evar, nb_models, duration, nlpd = [], [], [], [], [], []
-    for dpglm in dpglms:
-        _nb_models = len(dpglm.used_labels)
-        _mse, _smse, _evar, _dur =\
-            kstep_error(dpglm, test_obs, test_act, horizon=args.horizon,
-                        input_scaler=input_scaler, target_scaler=target_scaler)
-
-        _nlpd = parallel_meanfield_prediction(dpglm, test_input, target=test_target,
-                                              input_scaler=input_scaler, target_scaler=target_scaler)[3]
-
-        mse.append(_mse)
-        smse.append(_smse)
-        evar.append(_evar)
-        nb_models.append(_nb_models)
-        duration.append(_dur)
-        nlpd.append(_nlpd.mean())
-
-    mean_mse = np.mean(mse)
-    std_mse = np.std(mse)
-
-    mean_smse = np.mean(smse)
-    std_smse = np.std(smse)
-
-    mean_evar = np.mean(evar)
-    std_evar = np.std(evar)
-
-    mean_nb_models = np.mean(nb_models)
-    std_nb_models = np.std(nb_models)
-
-    mean_duration = np.mean(duration)
-    std_duration = np.std(duration)
-
-    mean_nlpd = np.mean(nlpd)
-    std_nlpd = np.std(nlpd)
-
-    arr = np.array([mean_mse, std_mse,
-                    mean_smse, std_smse,
-                    mean_evar, std_evar,
-                    mean_nb_models, std_nb_models,
-                    mean_duration, std_duration,
-                    mean_nlpd, std_nlpd])
-
-    if str(args.task) == 'alpha':
-        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.alpha) + '.csv', arr, delimiter=',')
-    elif str(args.task) == 'models':
-        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.nb_models) + '.csv', arr, delimiter=',')
-    elif str(args.task) == 'horizon':
-        np.savetxt('cartpole_' + str(args.prior) + '_' + str(args.task) + '_' + str(args.horizon) + '.csv', arr, delimiter=',')
-    else:
-        raise NotImplementedError
+    plt.plot(test_obs[idx][1:, :])
+    plt.plot(prediction)
+    plt.show()

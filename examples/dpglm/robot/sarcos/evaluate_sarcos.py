@@ -7,11 +7,9 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-from mimo.util.plot import beautify
+from mimo.util.general import near_pd
 
 import argparse
-
-import matplotlib.pyplot as plt
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
@@ -45,14 +43,20 @@ def _job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            psi_niw = 1e0
+            _psi_niw = np.cov(train_data['input'][km.labels_ == n], bias=False, rowvar=False)
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+            if args.affine:
+                X = np.hstack((input, np.ones((len(input), 1))))
+            else:
+                X = input
+
+            V = X.T @ X
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=np.eye(input_dim) * psi_niw,
@@ -65,22 +69,25 @@ def _job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        mu_low = np.min(input, axis=0)
-        mu_high = np.max(input, axis=0)
-        psi_niw = 1e0
+        psi_niw = 1e-2
         kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        psi_mniw = 1e-1
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
-            components_hypparams = dict(mu=npr.uniform(mu_low, mu_high, size=input_dim),
+            components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
                                         nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1,
+                                        nu_mniw=target_dim + 23,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
 
             aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
@@ -88,7 +95,8 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -97,10 +105,12 @@ def _job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -155,26 +165,26 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=25, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=2500, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=5000, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
-    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_iters', help='stochastic VI iterations', default=1000, type=int)
-    parser.add_argument('--svi_stepsize', help='svi step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='svi batch size', default=1024, type=int)
-    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=5000, type=int)
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=True)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
+    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
@@ -182,163 +192,89 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    import gym
-
-    from mimo.util.general import sample_env
+    import json
+    print(json.dumps(vars(args), indent=4))
 
     np.random.seed(args.seed)
 
-    env = gym.make('Pendulum-DPGLM-v1')
-    env._max_episode_steps = 5000
-    env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-4
-    env.seed(args.seed)
+    import scipy as sc
+    from scipy import io
 
-    dm_obs = env.observation_space.shape[0]
-    dm_act = env.action_space.shape[0]
+    # load all available data
+    _train_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv.mat')['sarcos_inv']
+    _test_data = sc.io.loadmat(args.datapath + '/Sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
-    nb_train_rollouts, nb_train_steps = 25, 250
-    nb_test_rollouts, nb_test_steps = 5, 250
+    data = np.vstack((_train_data, _test_data))
 
-    train_obs, train_act = sample_env(env, nb_train_rollouts, nb_train_steps)
-
-    train_input = np.vstack([np.hstack((_x[:-1, :], _u[:-1, :])) for _x, _u in zip(train_obs, train_act)])
-    train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
-
+    # scale data
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=dm_obs + dm_act, whiten=True)
-    target_scaler = PCA(n_components=dm_obs, whiten=True)
+    input_scaler = PCA(n_components=21, whiten=True)
+    target_scaler = PCA(n_components=1, whiten=True)
 
-    input_scaler.fit(train_input)
-    target_scaler.fit(train_target)
+    input_scaler.fit(data[:, :21])
+    target_scaler.fit(data[:, 21:22])
 
-    train_data = {'input': input_scaler.transform(train_input),
-                  'target': target_scaler.transform(train_target)}
+    train_data = {'input': input_scaler.transform(_train_data[:, :21]),
+                  'target': target_scaler.transform(_train_data[:, 21:22])}
 
+    test_data = {'input': _test_data[:, :21],
+                 'target': _test_data[:, 21:22]}
+
+    # train
     dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                       train_data=train_data,
                                       arguments=args)
 
-    # create meshgrid
-    xlim = (-np.pi, np.pi)
-    ylim = (-8.0, 8.0)
+    from mimo.util.prediction import parallel_meanfield_prediction
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    npts = 26
+    test_evar, test_mse, test_smse, test_nlpd, nb_models = [], [], [], [], []
+    for dpglm in dpglms:
+        _nb_models = len(dpglm.used_labels)
+        dpglm.clear_data()
 
-    x = np.linspace(*xlim, npts)
-    y = np.linspace(*ylim, npts)
+        _test_predict, _, _, _test_nlpd =\
+            parallel_meanfield_prediction(dpglm, test_data['input'],
+                                          target=test_data['target'],
+                                          prediction=args.prediction,
+                                          input_scaler=input_scaler,
+                                          target_scaler=target_scaler)
 
-    X, Y = np.meshgrid(x, y)
-    XY = np.stack((X, Y))
+        _test_mse = mean_squared_error(test_data['target'], _test_predict)
+        _test_evar = explained_variance_score(test_data['target'], _test_predict, multioutput='variance_weighted')
+        _test_smse = 1. - r2_score(test_data['target'], _test_predict, multioutput='variance_weighted')
 
-    XYn = np.zeros((3, npts, npts))
+        print('TEST - EVAR:', _test_evar, 'MSE:', _test_mse,
+              'SMSE:', _test_smse, 'NLPD:', _test_nlpd.mean(),
+              'Compnents:', _nb_models)
 
-    env.reset()
-    for i in range(npts):
-        for j in range(npts):
-            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+        test_evar.append(_test_evar)
+        test_mse.append(_test_mse)
+        test_smse.append(_test_smse)
+        test_nlpd.append(_test_nlpd.mean())
+        nb_models.append(_nb_models)
 
-    Yn = XYn[2, :, :]
+    mean_mse = np.mean(test_mse)
+    std_mse = np.std(test_mse)
 
-    # Transform to angle
-    cos_x = XYn[0, :, :]
-    sin_x = XYn[1, :, :]
-    Xn = np.arctan2(sin_x, cos_x)
+    mean_smse = np.mean(test_smse)
+    std_smse = np.std(test_smse)
 
-    XYn = np.stack((Xn, Yn))
+    mean_evar = np.mean(test_evar)
+    std_evar = np.std(test_evar)
 
-    dydt = XYn - XY
+    mean_nb_models = np.mean(nb_models)
+    std_nb_models = np.std(nb_models)
 
-    # streamplot for environment
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
+    mean_nlpd = np.mean(test_nlpd)
+    std_nlpd = np.std(test_nlpd)
 
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='b', linewidth=0.75, density=1.,
-                  arrowstyle='->', arrowsize=1.5)
+    arr = np.array([mean_mse, std_mse,
+                    mean_smse, std_smse,
+                    mean_evar, std_evar,
+                    mean_nb_models, std_nb_models,
+                    mean_nlpd, std_nlpd])
 
-    ax = beautify(ax)
-    ax.grid(False)
-
-    ax.set_xlim(xlim)
-    ax.set_xlabel('Angle')
-
-    ax.set_ylim(ylim)
-    ax.set_ylabel('Velocity')
-
-    plt.title('Pendulum - Phase Plot of True Dynamics')
-
-    # set working directory
-    os.chdir(args.evalpath)
-    dataset = 'pendulum'
-
-    # save tikz and pdf
-    import tikzplotlib
-
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_phaseplot_env.tex')
-    plt.savefig(path + dataset + '_phaseplot_env.pdf')
-
-    plt.show()
-
-    # streamplot for predicted next states
-    from mimo.util.prediction import meanfield_prediction
-
-    # transform to angle to cos / sin
-    X1 = np.cos(X)
-    X2 = np.sin(X)
-
-    XY = np.stack((X1, X2, Y))
-
-    # next states from environment
-    XYn = np.zeros((3, npts, npts))
-    for i in range(npts):
-        for j in range(npts):
-            _cos_x = XY[0, i, j]
-            _sin_x = XY[1, i, j]
-            _vel = XY[2, i, j]
-            _action = 0
-            test_obs = np.asarray([_cos_x, _sin_x, _vel, _action])
-
-            prediction = meanfield_prediction(dpglms[0], test_obs, incremental=True,
-                                              input_scaler=input_scaler,
-                                              target_scaler=target_scaler)
-            XYn[:, i, j] = prediction[0]
-
-    # retransform to angle
-    cos_x = XYn[0, :, :]
-    sin_x = XYn[1, :, :]
-    Xn = np.arctan2(sin_x, cos_x)
-    Yn = XYn[2, :, :]
-
-    XYn = np.stack((Xn, Yn))
-    XY = np.stack((X, Y))
-
-    dydt = XYn - XY
-
-    # streamplot prediction
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='r', linewidth=0.75, density=1.,
-                  arrowstyle='->', arrowsize=1.5)
-
-    ax = beautify(ax)
-    ax.grid(False)
-
-    ax.set_xlim(xlim)
-    ax.set_xlabel('Angle')
-
-    ax.set_ylim(ylim)
-    ax.set_ylabel('Angular Velocity')
-
-    plt.title('Pendulum - Phase Plot of Learned Dynamics')
-
-    # save tikz and pdf
-    import tikzplotlib
-
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_phaseplot_learned.tex')
-    plt.savefig(path + dataset + '_phaseplot_learned.pdf')
-
-    plt.show()
+    np.savetxt('sarcos_' + str(args.prior) +
+               '_alpha_' + str(args.alpha) +
+               '.csv', arr, delimiter=',')
