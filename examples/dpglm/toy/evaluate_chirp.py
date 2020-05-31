@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=20, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
@@ -107,17 +107,17 @@ if __name__ == "__main__":
                                 deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
 
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
 
     elif args.prior == 'dirichlet':
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-        dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
-                                            for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
+                                                               for i in range(args.nb_models)])
 
     else:
         raise NotImplementedError
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
         # # remove old data
         # try:
-        #     dpglm.labels_list.pop()
+        #     dpglm.clear_data()
         # except IndexError:
         #     print('Model has no data')
 
@@ -161,7 +161,7 @@ if __name__ == "__main__":
                 else progprint_xrange(args.gibbs_iters)
 
             for _ in gibbs_iter:
-                dpglm.resample_model()
+                dpglm.resample()
 
             if args.stochastic:
                 # Stochastic meanfield VI
@@ -175,7 +175,7 @@ if __name__ == "__main__":
                 prob = batch_size / float(len(_data_scaled))
                 for _ in svi_iter:
                     minibatch = npr.permutation(len(_data_scaled))[:batch_size]
-                    dpglm.meanfield_sgdstep(minibatch=_data_scaled[minibatch, :],
+                    dpglm.meanfield_sgdstep(obs=_data_scaled[minibatch, :],
                                             prob=prob, stepsize=args.svi_stepsize)
             if args.deterministic:
                 # Meanfield VI
@@ -216,16 +216,16 @@ if __name__ == "__main__":
         plt.show()
         plt.pause(1)
 
-        # # set working directory
-        # os.chdir(args.evalpath)
-        # dataset = 'chirp'
-        #
-        # # save tikz and pdf
-        # import tikzplotlib
-        #
-        # path = os.path.join(str(dataset) + '/')
-        # tikzplotlib.save(path + dataset + '_' + str(n) + '.tex')
-        # plt.savefig(path + dataset + '_' + str(n) + '.pdf')
+        # set working directory
+        os.chdir(args.evalpath)
+        dataset = 'chirp'
+
+        # save tikz and pdf
+        import tikzplotlib
+
+        path = os.path.join(str(dataset) + '/')
+        tikzplotlib.save(path + dataset + '_' + str(n) + '.tex')
+        plt.savefig(path + dataset + '_' + str(n) + '.pdf')
 
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
