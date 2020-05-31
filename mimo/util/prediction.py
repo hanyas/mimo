@@ -6,7 +6,7 @@ from scipy.stats import multivariate_normal as mvn
 
 from mimo.util.general import matrix_linear_studentt
 from mimo.util.general import matrix_linear_gaussian
-from mimo.util.general import multivariate_t_loglik as mvt_logpdf
+from mimo.util.general import multivariate_studentt_loglik as mvt_logpdf
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
@@ -33,11 +33,11 @@ def kstep_error(dpglm, state, exogenous=None, horizon=1,
             _state_list.append(_state[t, :])
             _exo_list.append(_exo[t: t + horizon, :])
 
-        _forcast = parallel_meanfield_forcast(dpglm, _state_list,
-                                              _exo_list, horizon,
-                                              prediction, incremental,
-                                              input_scaler, target_scaler,
-                                              type, sparse)
+        _forcast = parallel_meanfield_predictive_forcast(dpglm, _state_list,
+                                                         _exo_list, horizon,
+                                                         prediction, incremental,
+                                                         input_scaler, target_scaler,
+                                                         type, sparse)
 
         target, forcast = [], []
         for t in range(nb_steps):
@@ -59,19 +59,19 @@ def kstep_error(dpglm, state, exogenous=None, horizon=1,
     return np.mean(mse), np.mean(smse), np.mean(evar), finish - start
 
 
-def parallel_meanfield_forcast(dpglm, state, exogenous=None, horizon=1,
-                               prediction='average', incremental=True,
-                               input_scaler=None, target_scaler=None,
-                               type='gaussian', sparse=False):
+def parallel_meanfield_predictive_forcast(dpglm, state, exogenous=None, horizon=1,
+                                          prediction='average', incremental=True,
+                                          input_scaler=None, target_scaler=None,
+                                          type='gaussian', sparse=False):
 
     assert isinstance(state, list)
 
     def _loop(kwargs):
-        return meanfield_forcast(dpglm, kwargs['state'],
-                                 kwargs['exogenous'], horizon,
-                                 prediction, incremental,
-                                 input_scaler, target_scaler,
-                                 type, sparse)
+        return meanfield_predictive_forcast(dpglm, kwargs['state'],
+                                            kwargs['exogenous'], horizon,
+                                            prediction, incremental,
+                                            input_scaler, target_scaler,
+                                            type, sparse)
 
     nb_traj = len(state)
 
@@ -88,10 +88,10 @@ def parallel_meanfield_forcast(dpglm, state, exogenous=None, horizon=1,
     return res
 
 
-def meanfield_forcast(dpglm, state, exogenous=None, horizon=1,
-                      prediction='average', incremental=True,
-                      input_scaler=None, target_scaler=None,
-                      type='gaussian', sparse=False):
+def meanfield_predictive_forcast(dpglm, state, exogenous=None, horizon=1,
+                                 prediction='average', incremental=True,
+                                 input_scaler=None, target_scaler=None,
+                                 type='gaussian', sparse=False):
 
     if exogenous is not None:
         assert horizon <= len(exogenous)
@@ -140,7 +140,7 @@ def parallel_meanfield_prediction(dpglm, query, target=None,
     return mean, var, std, nlpd
 
 
-def meanfield_gating(dpglm, input, sparse=False):
+def meanfield_predictive_gating(dpglm, input, sparse=False):
     nb_models = len(dpglm.components)
 
     # compute posterior mixing weights
@@ -153,7 +153,7 @@ def meanfield_gating(dpglm, input, sparse=False):
 
     _labels = dpglm.used_labels if sparse else range(nb_models)
     for idx in _labels:
-        marginal_likelihood[idx] = np.exp(dpglm.components[idx].log_marginal_likelihood(input))
+        marginal_likelihood[idx] = np.exp(dpglm.components[idx].log_posterior_predictive_gaussian(input))
         effective_weights[idx] = weights[idx] * marginal_likelihood[idx]
 
     effective_weights = effective_weights / np.sum(effective_weights)
@@ -202,7 +202,7 @@ def meanfield_prediction(dpglm, query, target=None,
     mean, variance, stdv, nlpd =\
         np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, )), 0.
 
-    weights = meanfield_gating(dpglm, input, sparse)
+    weights = meanfield_predictive_gating(dpglm, input, sparse)
 
     if prediction == 'mode':
         mode = np.argmax(weights)
@@ -264,90 +264,3 @@ def meanfield_prediction(dpglm, query, target=None,
         mean = query[:nb_dim] + mean
 
     return mean, variance, stdv, nlpd
-
-
-# Weighted EM predictions over all models
-def em_prediction(dpglm, query):
-    nb_models = len(dpglm.components)
-    nb_dim = dpglm.components[0].drow
-
-    # initialize variables
-    mean, var, std = np.zeros((nb_dim, )), np.zeros((nb_dim, )), np.zeros((nb_dim, ))
-
-    # mixing weights
-    weights = dpglm.gating.probs
-
-    # calculate the marginal likelihood of test data query for each cluster
-    # calculate the normalization term for mean function for query
-    normalizer = 0.
-    lklhd = np.zeros((nb_models,))
-    effective_weight = np.zeros((nb_models,))
-    for idx, c in enumerate(dpglm.components):
-        if idx in dpglm.used_labels:
-            lklhd[idx] = np.exp(c.gaussian.log_likelihood(query))
-            effective_weight[idx] = weights[idx] * lklhd[idx]
-            normalizer = normalizer + weights[idx] * lklhd[idx]
-
-    # calculate contribution of each cluster to mean function
-    for idx, c in enumerate(dpglm.components):
-        if idx in dpglm.used_labels:
-            t_mean = c.predict(query)
-            # Mean of a mixture = sum of weighted means
-            mean += t_mean * effective_weight[idx] / normalizer
-
-            # Variance of a mixture = sum of weighted variances + ...
-            # ... + sum of weighted squared means - squared sum of weighted means
-            t_var = np.diag(c.sigma)  # consider only diagonal variances for plots
-            var += (t_var + t_mean ** 2) * effective_weight[idx] / normalizer
-    var -= mean ** 2
-    std = np.sqrt(var)
-
-    return mean, var, std
-
-
-# Single-model predictions after EM
-# assume single input and output
-def single_prediction(dpglm, data):
-    nb_data = len(data)
-
-    inputs = data[:, :1]
-    outputs = data[:, 1:]
-    prediction = np.zeros((nb_data, 1))
-
-    for i in range(nb_data):
-        idx = dpglm.labels_list[0].z[i]
-        prediction[i, :] = dpglm.components[idx].predict(inputs[i, :])
-
-    import matplotlib.pyplot as plt
-    plt.scatter(inputs, outputs[:, 0], s=1)
-    plt.scatter(inputs, prediction[:, 0], color='red', s=1)
-    plt.show()
-
-
-# Sample single-model predictions from posterior
-# assume single input and output
-def sample_prediction(dpglm, data, n_draws=25):
-    nb_data = len(data)
-
-    inputs = data[:, :1]
-    outputs = data[:, 1:]
-    prediction_samples = np.zeros((n_draws, nb_data, 1))
-
-    import matplotlib.pyplot as plt
-    fig = plt.figure(figsize=(25, 12))
-    for d in range(n_draws):
-        dpglm.resample_model()
-        for i in range(nb_data):
-            idx = dpglm.labels_list[0].z[i]
-            prediction_samples[d, i, :] = dpglm.components[idx].predict(inputs[i, :])
-
-        ax = fig.add_subplot(5, 5, d + 1)
-        ax.scatter(inputs, outputs, s=1)
-        ax.scatter(inputs, prediction_samples[d, ...], color='red', s=1)
-    plt.show()
-
-    prediction_mean = np.mean(prediction_samples, axis=0)
-    plt.figure(figsize=(16, 6))
-    plt.scatter(inputs, outputs, s=1)
-    plt.scatter(inputs, prediction_mean, color='red', s=1)
-    plt.show()
