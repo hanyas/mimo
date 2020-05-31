@@ -8,7 +8,6 @@ import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
 from mimo.util.general import near_pd
-from mimo.util.plot import beautify
 
 import argparse
 
@@ -68,16 +67,21 @@ def _job(kwargs):
     else:
         # initialize Normal
         psi_niw = 1e0
-        kappa = 1e-2
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
-        V = 1e3 * np.eye(nb_params)
+        if args.affine:
+            X = np.hstack((input, np.ones((len(input), 1))))
+        else:
+            X = input
+
+        V = 10 * X.T @ X
 
         for n in range(args.nb_models):
             components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        nu_niw=input_dim + 1 + 100,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
                                         nu_mniw=target_dim + 1,
@@ -88,7 +92,8 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -97,10 +102,12 @@ def _job(kwargs):
     # define model
     if args.prior == 'stick-breaking':
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     else:
         dpglm = mixture.Mixture(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i]) for i in range(args.nb_models)])
+                                components=[distributions.BayesianLinearGaussianWithNoisyInputs(components_prior[i])
+                                            for i in range(args.nb_models)])
     dpglm.add_data(data)
 
     for _ in range(args.super_iters):
@@ -155,15 +162,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=500, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
@@ -171,147 +178,112 @@ if __name__ == "__main__":
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
-    parser.add_argument('--prediction', help='prediction w/ mode or average', default='mode')
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--nb_train', help='size of train dataset', default=2000, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
 
-    import gym
-
-    from mimo.util.general import sample_env
-
     np.random.seed(args.seed)
 
-    env = gym.make('BouncingBall-DPGLM-v0')
-    env._max_episode_steps = 5000
-    env.unwrapped._dt = 0.01
-    env.unwrapped._sigma = 1e-8
-    env.seed(args.seed)
+    # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
+    data = np.loadtxt(args.datapath + '/cmb.csv', delimiter=",", skiprows=1)
 
-    dm_obs = env.observation_space.shape[0]
+    # shuffle data
+    from sklearn.utils import shuffle
+    data = shuffle(data)
 
-    nb_train_rollouts, nb_train_steps = 25, 250
-    nb_test_rollouts, nb_test_steps = 5, 250
+    # training data
+    nb_train = args.nb_train
+    input, target = data[:nb_train, :1], data[:nb_train, 1:]
 
-    train_obs, _ = sample_env(env, nb_train_rollouts, nb_train_steps)
-
-    train_input = np.vstack([_x[:-1, :] for _x in train_obs])
-    train_target = np.vstack([_x[1:, :] - _x[:-1, :] for _x in train_obs])
-
+    # scale training data
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=dm_obs, whiten=True)
-    target_scaler = PCA(n_components=dm_obs, whiten=True)
+    input_scaler = PCA(n_components=1, whiten=True)
+    target_scaler = PCA(n_components=1, whiten=True)
 
-    input_scaler.fit(train_input)
-    target_scaler.fit(train_target)
+    input_scaler.fit(data[:, :1])
+    target_scaler.fit(data[:, 1:])
 
-    train_data = {'input': input_scaler.transform(train_input),
-                  'target': target_scaler.transform(train_target)}
+    train_data = {'input': input_scaler.transform(input),
+                  'target': target_scaler.transform(target)}
 
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=train_data,
-                                      arguments=args)
+    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                     train_data=train_data,
+                                     arguments=args)[0]
 
-    # create meshgrid
-    xlim = (0.1, 5.0)
-    ylim = (-8.0, 8.0)
+    # predict on training
+    from mimo.util.prediction import parallel_meanfield_prediction
 
-    npts = 26
+    mu_predict, var_predict, std_predict, nlpd_predict =\
+        parallel_meanfield_prediction(dpglm, input, target,
+                                      prediction=args.prediction,
+                                      input_scaler=input_scaler,
+                                      target_scaler=target_scaler)
 
-    x = np.linspace(*xlim, npts)
-    y = np.linspace(*ylim, npts)
+    mu_predict = np.vstack(mu_predict)
+    var_predict = np.vstack(var_predict)
+    std_predict = np.vstack(std_predict)
+    nlpd_predict = np.vstack(nlpd_predict)
 
-    X, Y = np.meshgrid(x, y)
-    XY = np.stack((X, Y))
+    # metrics
+    from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    # next states from environment
-    XYn = np.zeros((2, npts, npts))
+    mse = mean_squared_error(target, mu_predict)
+    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
 
-    env.reset()
-    for i in range(npts):
-        for j in range(npts):
-            XYn[:, i, j] = env.unwrapped.fake_step(XY[:, i, j], np.array([0.0]))
+    print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
+          nlpd_predict.mean(), 'Compnents:', len(dpglm.used_labels))
 
-    dydt = XYn - XY
+    import scipy.stats as stats
 
-    # streamplot environment
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
+    fig, axes = plt.subplots(2, 1)
 
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='b', linewidth=0.75, density=1,
-                  arrowstyle='->', arrowsize=1.5)
+    # plot prediction
+    sorter = np.argsort(input, axis=0).flatten()
+    input, target = input[sorter, 0], target[sorter, 0]
+    mu_predict, std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
 
-    ax = beautify(ax)
-    ax.grid(False)
+    axes[0].scatter(input, target, s=0.75, color='k')
+    axes[0].plot(input, mu_predict, color='crimson')
+    for c in [1., 2.]:
+        axes[0].fill_between(input, mu_predict - c * std_predict,
+                             mu_predict + c * std_predict,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
-    ax.set_xlim(xlim)
-    ax.set_xlabel('height')
+    axes[0].set_ylabel('y')
 
-    ax.set_ylim(ylim)
-    ax.set_ylabel('velocity')
+    # plot gaussian activations
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
 
-    plt.title('Bouncing Ball - Phase Plot of True Dynamics')
+    mu_basis, sigma_basis = [], []
+    for idx, c in enumerate(dpglm.components):
+        if idx in dpglm.used_labels:
+            _mu, _sigma, _, _ = c.posterior.mode()
 
-    # set working directory
-    os.chdir(args.evalpath)
-    dataset = 'bouncing'
+            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            _sigma = trans.T @ np.diag(_sigma) @ trans
 
-    # save tikz and pdf
-    import tikzplotlib
+            mu_basis.append(_mu)
+            sigma_basis.append(_sigma)
 
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_phaseplot_env.tex')
-    plt.savefig(path + dataset + '_phaseplot_env.pdf')
+    activations = []
+    for i in range(len(dpglm.used_labels)):
+        activations.append(stats.norm.pdf(input, mu_basis[i], np.sqrt(sigma_basis[i])))
 
-    plt.show()
+    activations = np.asarray(activations).squeeze()
+    activations = activations / np.sum(activations, axis=0, keepdims=True)
 
-    # streamplot for predicted next states
-    from mimo.util.prediction import meanfield_prediction
-
-    for i in range(npts):
-        for j in range(npts):
-            h = XY[0, i, j]
-            dh = XY[1, i, j]
-            test_obs = np.asarray([h, dh])
-            prediction = meanfield_prediction(dpglms[0], test_obs,
-                                              prediction=args.prediction,
-                                              incremental=True,
-                                              input_scaler=input_scaler,
-                                              target_scaler=target_scaler)
-            XYn[:, i, j] = prediction[0]
-
-    dydt = XYn - XY
-
-    # streamplot prediction
-    fig = plt.figure(figsize=(5, 5), frameon=True)
-    ax = fig.gca()
-    ax.streamplot(x, y, dydt[0, ...], dydt[1, ...],
-                  color='r', linewidth=0.75, density=1.,
-                  arrowstyle='->', arrowsize=1.5)
-
-    ax = beautify(ax)
-    ax.grid(False)
-
-    ax.set_xlim(xlim)
-    ax.set_xlabel('Height')
-
-    ax.set_ylim(ylim)
-    ax.set_ylabel('Velocity')
-
-    plt.title('Bouncing Ball - Phase Plot of Learned Dynamics')
-
-    # save tikz and pdf
-    import tikzplotlib
-
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '_phaseplot_learned.tex')
-    plt.savefig(path + dataset + '_phaseplot_learned.pdf')
+    for i in range(len(dpglm.used_labels)):
+        axes[1].plot(input, activations[i])
 
     plt.show()

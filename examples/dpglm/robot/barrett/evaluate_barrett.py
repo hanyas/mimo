@@ -11,8 +11,6 @@ from mimo.util.general import near_pd
 
 import argparse
 
-import matplotlib.pyplot as plt
-
 import pathos
 from pathos.pools import _ProcessPool as Pool
 nb_cores = pathos.multiprocessing.cpu_count()
@@ -45,15 +43,20 @@ def _job(kwargs):
         for n in range(args.nb_models):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
-            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
-            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
+            _psi_niw = np.cov(train_data['input'][km.labels_ == n], bias=False, rowvar=False)
+            psi_niw =np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
             mu_output = np.zeros((target_dim, nb_params))
             mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
             psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+            if args.affine:
+                X = np.hstack((input, np.ones((len(input), 1))))
+            else:
+                X = input
+
+            V = X.T @ X
 
             components_hypparams = dict(mu=mu_input, kappa=kappa,
                                         psi_niw=np.eye(input_dim) * psi_niw,
@@ -66,11 +69,11 @@ def _job(kwargs):
             components_prior.append(aux)
     else:
         # initialize Normal
-        psi_niw = 1e0
-        kappa = (1. / (input.T @ input)).item()
+        psi_niw = 1e-2
+        kappa = 1e-2
 
         # initialize Matrix-Normal
-        psi_mniw = 1e0
+        psi_mniw = 1e-1
         if args.affine:
             X = np.hstack((input, np.ones((len(input), 1))))
         else:
@@ -81,10 +84,10 @@ def _job(kwargs):
         for n in range(args.nb_models):
             components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1 + 10,
+                                        nu_niw=input_dim + 1,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1,
+                                        nu_mniw=target_dim + 23,
                                         psi_mniw=np.eye(target_dim) * psi_mniw)
 
             aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
@@ -92,7 +95,8 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -148,7 +152,7 @@ def _job(kwargs):
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
-        kwargs['seed'] = n
+        kwargs['seed'] = npr.randint(1337, 6174)
         kwargs_list.append(kwargs.copy())
 
     with Pool(processes=min(nb_jobs, nb_cores)) as p:
@@ -161,25 +165,25 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation'))
+    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=2500, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=5000, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
-    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=5000, type=int)
+    parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
-    parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
-    parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
+    parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
     parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -188,121 +192,91 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    import json
+    print(json.dumps(vars(args), indent=4))
+
     np.random.seed(args.seed)
 
-    # create data
-    nb_train = 160
+    import scipy as sc
+    from scipy import io
 
-    input, mean = [], []
+    # load all available data
+    _data = sc.io.loadmat(args.datapath + '/Barrett/ias_real_barrett_data.mat')
 
-    input.append(np.linspace(-2., -1, int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(-1., 0, int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(0, 1., int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(1, 2., int(nb_train / 4)).reshape(int(nb_train / 4), 1))
+    _train_data = np.hstack((_data['X_train'], _data['Y_train']))
+    _test_data = np.hstack((_data['X_test'], _data['Y_test']))
 
-    mean.append(np.ones((int(nb_train / 4), 1)) * 1.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 2.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 0.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 4.)
+    data = np.vstack((_train_data, _test_data))
 
-    input, mean = np.vstack(input), np.vstack(mean)
-    noise = 0.1 * npr.randn(nb_train).reshape(nb_train, 1)
-    target = mean + noise
-
-    # Scaled Data
+    # scale data
     from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=1, whiten=True)
-    target_scaler = PCA(n_components=1, whiten=True)
+    input_scaler = PCA(n_components=21, whiten=True)
+    target_scaler = PCA(n_components=7, whiten=True)
 
-    input_scaler.fit(input)
-    target_scaler.fit(target)
+    input_scaler.fit(data[:, :21])
+    target_scaler.fit(data[:, 21:])
 
-    train_data = {'input': input_scaler.transform(input),
-                  'target': target_scaler.transform(target)}
+    train_data = {'input': input_scaler.transform(_train_data[:, :21]),
+                  'target': target_scaler.transform(_train_data[:, 21:])}
 
-    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_data=train_data,
-                                     arguments=args)[0]
+    test_data = {'input': _test_data[:, :21],
+                 'target': _test_data[:, 21:]}
 
-    # predict
-    from mimo.util.prediction import meanfield_prediction
+    # train
+    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                      train_data=train_data,
+                                      arguments=args)
 
-    mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(input)):
-        _mean, _var, _, _ = meanfield_prediction(dpglm, input[t, :],
-                                                 prediction=args.prediction,
-                                                 input_scaler=input_scaler,
-                                                 target_scaler=target_scaler)
-
-        mu_predict.append(_mean)
-        var_predict.append(_var)
-        std_predict.append(np.sqrt(_var))
-
-    mu_predict = np.vstack(mu_predict)
-    var_predict = np.vstack(var_predict)
-    std_predict = np.vstack(std_predict)
-
-    # metrics
+    from mimo.util.prediction import parallel_meanfield_prediction
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    mse = mean_squared_error(target, mu_predict)
-    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
-    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
+    test_evar, test_mse, test_smse, test_nlpd, nb_models = [], [], [], [], []
+    for dpglm in dpglms:
+        _nb_models = len(dpglm.used_labels)
+        dpglm.clear_data()
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+        _test_predict, _, _, _test_nlpd =\
+            parallel_meanfield_prediction(dpglm, test_data['input'],
+                                          target=test_data['target'],
+                                          prediction=args.prediction,
+                                          input_scaler=input_scaler,
+                                          target_scaler=target_scaler)
 
-    import scipy.stats as stats
+        _test_mse = mean_squared_error(test_data['target'], _test_predict)
+        _test_evar = explained_variance_score(test_data['target'], _test_predict, multioutput='variance_weighted')
+        _test_smse = 1. - r2_score(test_data['target'], _test_predict, multioutput='variance_weighted')
 
-    fig, axes = plt.subplots(2, 1)
+        print('TEST - EVAR:', _test_evar, 'MSE:', _test_mse,
+              'SMSE:', _test_smse, 'NLPD:', _test_nlpd.mean(),
+              'Compnents:', _nb_models)
 
-    # plot prediction
-    sorter = np.argsort(input, axis=0).flatten()
-    input, target = input[sorter, 0], target[sorter, 0]
-    mu_predict, std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
+        test_evar.append(_test_evar)
+        test_mse.append(_test_mse)
+        test_smse.append(_test_smse)
+        test_nlpd.append(_test_nlpd.mean())
+        nb_models.append(_nb_models)
 
-    axes[0].scatter(input, target, s=0.75, color='k')
-    axes[0].plot(input, mu_predict, color='crimson')
-    for c in [1., 2.]:
-        axes[0].fill_between(input, mu_predict - c * std_predict,
-                             mu_predict + c * std_predict,
-                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+    mean_mse = np.mean(test_mse)
+    std_mse = np.std(test_mse)
 
-    axes[0].set_ylabel('y')
+    mean_smse = np.mean(test_smse)
+    std_smse = np.std(test_smse)
 
-    # plot gaussian activations
-    axes[1].set_xlabel('x')
-    axes[1].set_ylabel('p(x)')
+    mean_evar = np.mean(test_evar)
+    std_evar = np.std(test_evar)
 
-    mu_basis, sigma_basis = [], []
-    for idx, c in enumerate(dpglm.components):
-        if idx in dpglm.used_labels:
-            _mu, _sigma, _, _ = c.posterior.mode()
+    mean_nb_models = np.mean(nb_models)
+    std_nb_models = np.std(nb_models)
 
-            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
-            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
-            _sigma = trans.T @ np.diag(_sigma) @ trans
+    mean_nlpd = np.mean(test_nlpd)
+    std_nlpd = np.std(test_nlpd)
 
-            mu_basis.append(_mu)
-            sigma_basis.append(_sigma)
+    arr = np.array([mean_mse, std_mse,
+                    mean_smse, std_smse,
+                    mean_evar, std_evar,
+                    mean_nb_models, std_nb_models,
+                    mean_nlpd, std_nlpd])
 
-    activations = []
-    for i in range(len(dpglm.used_labels)):
-        activations.append(stats.norm.pdf(input, mu_basis[i], np.sqrt(sigma_basis[i])))
-
-    activations = np.asarray(activations).squeeze()
-    activations = activations / np.sum(activations, axis=0, keepdims=True)
-
-    for i in range(len(dpglm.used_labels)):
-        axes[1].plot(input, activations[i])
-
-    # set working directory
-    os.chdir(args.evalpath)
-    dataset = 'step'
-
-    # save tikz and pdf
-    import tikzplotlib
-    path = os.path.join(str(dataset) + '/')
-    tikzplotlib.save(path + dataset + '.tex')
-    plt.savefig(path + dataset + '.pdf')
-
-    plt.show()
+    np.savetxt('barrett_' + str(args.prior) +
+               '_alpha_' + str(args.alpha) +
+               '.csv', arr, delimiter=',')

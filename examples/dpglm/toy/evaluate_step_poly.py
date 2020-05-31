@@ -46,7 +46,7 @@ def _job(kwargs):
             # initialize Normal
             mu_input = km.cluster_centers_[n, :input_dim]
             _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
-            psi_niw = 1e0  # np.diag(near_pd(np.atleast_2d(_psi_niw)))
+            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
             kappa = 1e-2
 
             # initialize Matrix-Normal
@@ -67,7 +67,7 @@ def _job(kwargs):
     else:
         # initialize Normal
         psi_niw = 1e0
-        kappa = 1e-2
+        kappa = (1. / (input.T @ input)).item()
 
         # initialize Matrix-Normal
         psi_mniw = 1e0
@@ -81,7 +81,7 @@ def _job(kwargs):
         for n in range(args.nb_models):
             components_hypparams = dict(mu=np.zeros((input_dim, )),
                                         kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
+                                        nu_niw=input_dim + 1 + 10,
                                         M=np.zeros((target_dim, nb_params)),
                                         affine=args.affine, V=V,
                                         nu_mniw=target_dim + 1,
@@ -161,11 +161,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/toy'))
+    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=1, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=5, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -207,12 +207,16 @@ if __name__ == "__main__":
     noise = 3.0 * npr.randn(nb_train).reshape(nb_train, 1)
     target = mean + noise
 
-    # polynomial features
-    from sklearn.preprocessing import PolynomialFeatures
-    poly = PolynomialFeatures(degree=3, interaction_only=False, include_bias=True)
-    trans_input = poly.fit_transform(np.atleast_2d(input))
+    # Scaled Data
+    from sklearn.decomposition import PCA
+    input_scaler = PCA(n_components=1, whiten=True)
+    target_scaler = PCA(n_components=1, whiten=True)
 
-    train_data = {'input': trans_input, 'target': target}
+    input_scaler.fit(input)
+    target_scaler.fit(target)
+
+    train_data = {'input': input_scaler.transform(input),
+                  'target': target_scaler.transform(target)}
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                      train_data=train_data,
@@ -222,8 +226,11 @@ if __name__ == "__main__":
     from mimo.util.prediction import meanfield_prediction
 
     mu_predict, var_predict, std_predict = [], [], []
-    for t in range(len(trans_input)):
-        _mean, _var, _, _ = meanfield_prediction(dpglm, trans_input[t, :], prediction=args.prediction)
+    for t in range(len(input)):
+        _mean, _var, _, _ = meanfield_prediction(dpglm, input[t, :],
+                                                 prediction=args.prediction,
+                                                 input_scaler=input_scaler,
+                                                 target_scaler=target_scaler)
 
         mu_predict.append(_mean)
         var_predict.append(_var)
@@ -269,22 +276,26 @@ if __name__ == "__main__":
         if idx in dpglm.used_labels:
             _mu, _sigma, _, _ = c.posterior.mode()
 
+            _mu = input_scaler.inverse_transform(np.atleast_2d(_mu))
+            trans = (np.sqrt(input_scaler.explained_variance_[:, None]) * input_scaler.components_).T
+            _sigma = trans.T @ np.diag(_sigma) @ trans
+
             mu_basis.append(_mu)
             sigma_basis.append(_sigma)
 
     activations = []
     for i in range(len(dpglm.used_labels)):
-        activations.append(stats.norm.pdf(trans_input[:, 1], mu_basis[i][1], np.sqrt(sigma_basis[i][1, 1])))
+        activations.append(stats.norm.pdf(input, mu_basis[i], np.sqrt(sigma_basis[i])))
 
     activations = np.asarray(activations).squeeze()
     activations = activations / np.sum(activations, axis=0, keepdims=True)
 
     for i in range(len(dpglm.used_labels)):
-        axes[1].plot(trans_input[:, 1], activations[i])
+        axes[1].plot(input, activations[i])
 
     # set working directory
     os.chdir(args.evalpath)
-    dataset = 'step_poly_features'
+    dataset = 'step_poly'
 
     # save tikz and pdf
     import tikzplotlib

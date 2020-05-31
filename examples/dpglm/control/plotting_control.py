@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 
 # set working directory
-evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/uai2020/control')
+evalpath = os.path.abspath(mimo.__file__ + '/../../evaluation/control')
 
 os.chdir(evalpath)
 
