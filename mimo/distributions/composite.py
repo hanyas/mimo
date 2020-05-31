@@ -1,6 +1,6 @@
 import numpy as np
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 from mimo.distributions import InverseWishart
 from mimo.distributions import InverseGamma
 from mimo.distributions import Gaussian, DiagonalGaussian
@@ -30,7 +30,7 @@ class NormalInverseWishart(Distribution):
     def params(self, values):
         self.gaussian.mu, self.kappa, self.invwishart.psi, self.invwishart.nu = values
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # sample sigma from inverse wishart
         sigma = self.invwishart.rvs()
         # sample mean from gaussian
@@ -46,8 +46,7 @@ class NormalInverseWishart(Distribution):
 
     def log_likelihood(self, x):
         mu, sigma = x
-        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu)\
-               + self.invwishart.log_likelihood(sigma)
+        return Gaussian(mu=self.gaussian.mu, sigma=sigma / self.kappa).log_likelihood(mu) + self.invwishart.log_likelihood(sigma)
 
     def log_partition(self, params=None):
         mu, kappa, psi, nu = params if params is not None else self.params
@@ -145,7 +144,7 @@ class NormalInverseGamma(Distribution):
     def params(self, values):
         self.gaussian.mu, self.kappas, self.invgamma.alphas, self.invgamma.betas = values
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # sample sigma from inverse wishart
         sigmas = self.invgamma.rvs()
         # sample mean from gaussian
@@ -161,8 +160,7 @@ class NormalInverseGamma(Distribution):
 
     def log_likelihood(self, x):
         mu, sigmas = x
-        return DiagonalGaussian(mu=self.gaussian.mu, sigmas=sigmas/self.kappa).log_likelihood(mu)\
-               + self.invgamma.log_likelihood(sigmas)
+        return DiagonalGaussian(mu=self.gaussian.mu, sigmas=sigmas / self.kappa).log_likelihood(mu) + self.invgamma.log_likelihood(sigmas)
 
     def log_partition(self, params=None):
         mu, kappas, alphas, betas = params if params is not None else self.params
@@ -253,7 +251,7 @@ class MatrixNormalInverseWishart(Distribution):
         self.matnorm.params = values[:2]
         self.invwishart.params = values[2:]
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # sample sigma from inverse wishart
         sigma = self.invwishart.rvs()
         # sample mean from matrix-normal
@@ -328,12 +326,14 @@ class MatrixNormalInverseWishart(Distribution):
 
         return M, V, psi, nu
 
-    def get_statistics(self, data):
-        if isinstance(data, np.ndarray):
-            # data passed in like np.hstack((x, y))
-            data = data[~np.isnan(data).any(1)]
-            n, drow, dcol = data.shape[0], self.drow, self.dcol
+    def get_statistics(self, y, x):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(1),
+                                 ~np.isnan(x).any(1))
+            y, x = y[idx], x[idx]
+            n, drow, dcol = y.shape[0], self.drow, self.dcol
 
+            data = np.hstack((x, y))
             stats = data.T.dot(data)
             xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
@@ -346,15 +346,16 @@ class MatrixNormalInverseWishart(Distribution):
 
             return np.array([yxT, xxT, yyT, n])
         else:
-            return sum(list(map(self.get_statistics, data)), self._empty_statistics())
+            return sum(list(map(self.get_statistics, y, x)), self._empty_statistics())
 
-    def get_weighted_statistics(self, data, weights):
-        if isinstance(data, np.ndarray):
-            # data passed in like np.hstack((x, y))
-            gi = ~np.isnan(data).any(1)
-            data, weights = data[gi], weights[gi]
+    def get_weighted_statistics(self, y, x, weights):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(1),
+                                 ~np.isnan(x).any(1))
+            y, x, weights = y[idx], x[idx], weights[idx]
             n, drow, dcol = weights.sum(), self.drow, self.dcol
 
+            data = np.hstack((x, y))
             stats = data.T.dot(weights[:, np.newaxis] * data)
             xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
@@ -366,7 +367,7 @@ class MatrixNormalInverseWishart(Distribution):
 
             return np.array([yxT, xxT, yyT, n])
         else:
-            return sum(list(map(self.get_weighted_statistics, data, weights)), self._empty_statistics())
+            return sum(list(map(self.get_weighted_statistics, y, x, weights)), self._empty_statistics())
 
     def _empty_statistics(self):
         return np.array([np.zeros((self.drow, self.dcol)),
@@ -386,7 +387,8 @@ class MatrixNormalInverseWishart(Distribution):
 
 class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
 
-    def __init__(self, mu, kappa, psi_niw, nu_niw, M, V, affine, psi_mniw, nu_mniw):
+    def __init__(self, mu, kappa, psi_niw, nu_niw,
+                 M, V, affine, psi_mniw, nu_mniw):
         self.niw = NormalInverseWishart(mu=mu, kappa=kappa, psi=psi_niw, nu=nu_niw)
         self.mniw = MatrixNormalInverseWishart(M=M, V=V, affine=affine, psi=psi_mniw, nu=nu_mniw)
 
@@ -411,7 +413,7 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         self.niw.params = values[:4]
         self.mniw.params = values[4:]
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # sample mu, sigma from normal inverse wishart (niw)
         mu, sigma_niw = self.niw.rvs()
         # sample A, sigma from matrix inverse wishart (mniw)
@@ -484,11 +486,10 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         if isinstance(data, np.ndarray):
             # data passed in like np.hstack((x, y))
             drow, dcol = self.drow, self.dcol
-
-            x, xy = data[:, :-drow], data
+            x, y = data[:, :-drow], data[:, -drow:]
 
             niw_stats = self.niw.get_statistics(x)
-            mniw_stats = self.mniw.get_statistics(xy)
+            mniw_stats = self.mniw.get_statistics(y, x)
 
             return np.hstack((niw_stats, mniw_stats))
         else:
@@ -498,10 +499,10 @@ class NormalInverseWishartMatrixNormalInverseWishart(Distribution):
         if isinstance(data, np.ndarray):
             # data passed in like np.hstack((x, y))
             drow, dcol = self.drow, self.dcol
-            x, xy = data[:, :-drow], data
+            x, y = data[:, :-drow], data[:, -drow:]
 
             niw_stats = self.niw.get_weighted_statistics(x, weights)
-            mniw_stats = self.mniw.get_weighted_statistics(xy, weights)
+            mniw_stats = self.mniw.get_weighted_statistics(y, x, weights)
 
             return np.hstack((niw_stats, mniw_stats))
         else:

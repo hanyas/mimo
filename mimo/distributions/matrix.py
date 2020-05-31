@@ -4,7 +4,7 @@ import numpy.random as npr
 from scipy import linalg
 from numpy.core.umath_tests import inner1d
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 from mimo.util.general import near_pd
 
 
@@ -29,7 +29,7 @@ class MatrixNormal(Distribution):
         self.M, self.V = values
 
     @property
-    def num_parameters(self):
+    def nb_params(self):
         num = self.dcol * self.drow
         return num + num * (num + 1) / 2
 
@@ -88,13 +88,13 @@ class MatrixNormal(Distribution):
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
 
-    def rvs(self, size=None):
-        if size is None:
+    def rvs(self, size=1):
+        if size == 1:
             aux = npr.normal(size=self.drow * self.dcol).dot(self.sigma_chol.T)
             return self.M + np.reshape(aux, (self.drow, self.dcol), order='F')
         else:
             size = tuple([size, self.drow * self.dcol])
-            aux = npr.normal(size=self.size).dot(self.sigma_chol.T)
+            aux = npr.normal(size=size).dot(self.sigma_chol.T)
             return self.M + np.reshape(aux, (size, self.drow, self.dcol), order='F')
 
     def mean(self):

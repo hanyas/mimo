@@ -3,7 +3,7 @@ import numpy.random as npr
 
 from scipy.special import gammaln, digamma
 
-from mimo.abstractions import Distribution
+from mimo.distribution import Distribution
 
 import warnings
 
@@ -26,7 +26,7 @@ class Gamma(Distribution):
     def dim(self):
         return len(self.alphas)
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # numpy uses a different parameterization
         return npr.gamma(self.alphas, 1. / self.betas)
 
@@ -72,7 +72,7 @@ class InverseGamma(Distribution):
     def dim(self):
         return len(self.alphas)
 
-    def rvs(self, size=None):
+    def rvs(self, size=1):
         # numpy uses a different parameterization
         return 1. / npr.gamma(self.alphas, 1. / self.betas)
 

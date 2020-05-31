@@ -5,7 +5,7 @@ from mimo import distributions
 
 npr.seed(1337)
 
-in_dim = 2
+in_dim = 1
 out_dim = 1
 
 _A = 1. * npr.randn(out_dim, in_dim)
@@ -33,11 +33,11 @@ hypparams = dict(mu=np.zeros((in_dim,)),
                  nu_mniw=out_dim + 1)
 
 prior = distributions.NormalInverseWishartMatrixNormalInverseWishart(**hypparams)
-model = distributions.BayesianLinearGaussianWithNoisyInputs(prior)
-model = model.meanfield_update(data)
+model = distributions.BayesianJointLinearGaussian(prior)
+model = model.max_likelihood(data)
 
 print("True transf. x"+"\n", input_dist.mu, "\n"+"True covariance x"+"\n", input_dist.sigma)
-print("ML transf. x"+"\n", model.gaussian.mu, "\n"+"ML covariance x"+"\n", model.gaussian.sigma)
+print("MF transf. x"+"\n", model.gaussian.mu, "\n"+"MF covariance x"+"\n", model.gaussian.sigma)
 print("------------------------------------------------------------------------------------------------")
 print("True transf. y"+"\n", output_dist.A, "\n"+"True covariance y"+"\n", output_dist.sigma)
-print("ML transf. y"+"\n", model.linear_gaussian.A, "\n"+"ML covariance y"+"\n", model.linear_gaussian.sigma)
+print("MF transf. y"+"\n", model.linear_gaussian.A, "\n"+"MF covariance y"+"\n", model.linear_gaussian.sigma)
