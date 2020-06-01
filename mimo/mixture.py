@@ -15,6 +15,10 @@ from mimo.util.general import sample_discrete_from_log
 from mimo.util.general import multivariate_studentt_loglik as mvt_logpdf
 from mimo.util.general import multivariate_gaussian_loglik as mvn_logpdf
 
+import pathos
+from pathos.pools import _ProcessPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
+
 
 def pass_obs_arg(f):
     def wrapper(self, obs=None, **kwargs):
@@ -750,8 +754,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                                             for _y, _x in zip(self.target, self.input))
 
     def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
+        x = np.atleast_2d(x).T
+
         _x = x if not self.whitend\
-            else self.input_transform.transform(np.atleast_2d(x).T)
+            else self.input_transform.transform(x)
 
         _labels = self.used_labels if sparse else range(self.size)
 
@@ -787,11 +793,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         effective_weights = effective_weights / np.sum(effective_weights)
         return effective_weights
 
-    def meanfield_prediction(self, x, y=None, return_nlpd=False,
+    def meanfield_prediction(self, x, y=None, compute_nlpd=False,
                              prediction='average', incremental=False,
                              type='gaussian', sparse=False):
 
-        if return_nlpd:
+        if compute_nlpd:
             assert y is not None
 
         if self.whitend:
@@ -812,12 +818,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             if type == 'gaussian':
                 mu, _sigma, df = self.models[mode].predictive_posterior_gaussian(input)
                 var = np.diag(_sigma)  # consider only diagonal variances for plots
-                if return_nlpd:
+                if compute_nlpd:
                     nlpd = np.exp(mvn_logpdf(target, mu, _sigma))
             else:
                 mu, _sigma, df = self.models[mode].predictive_posterior_studentt(input)
                 var = np.diag(_sigma * df / (df - 2))  # consider only diagonal variances for plots
-                if return_nlpd:
+                if compute_nlpd:
                     nlpd = np.exp(mvt_logpdf(target, mu, _sigma, df))
 
         elif prediction == 'average':
@@ -826,12 +832,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 if type == 'gaussian':
                     _mu, _sigma, _df = self.models[idx].predictive_posterior_gaussian(input)
                     _var = np.diag(_sigma)  # consider only diagonal variances for plots
-                    if return_nlpd:
-                        nlpd += weights[idx] * np.exp(mvt_logpdf(target, _mu, _sigma))
+                    if compute_nlpd:
+                        nlpd += weights[idx] * np.exp(mvn_logpdf(target, _mu, _sigma))
                 else:
                     _mu, _sigma, _df = self.models[idx].predictive_posterior_studentt(input)
                     _var = np.diag(_sigma * _df / (_df - 2))  # consider only diagonal variances for plots
-                    if return_nlpd:
+                    if compute_nlpd:
                         nlpd += weights[idx] * np.exp(mvt_logpdf(target, _mu, _sigma, _df))
 
                 # Mean of a mixture = sum of weighted means
@@ -842,7 +848,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 var += (_var + _mu**2) * weights[idx]
             var -= mu**2
 
-        nlpd = - 1.0 * np.log(nlpd) if return_nlpd else None
+        nlpd = - 1.0 * np.log(nlpd) if compute_nlpd else None
 
         if self.whitend:
             mu = np.squeeze(self.target_transform.inverse_transform(np.atleast_2d(mu)))
@@ -857,3 +863,24 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             mu += x[:dim]
 
         return mu, var, stdv, nlpd
+
+    def parallel_meanfield_prediction(self, x, y=None, compute_nlpd=False,
+                                      prediction='average', incremental=False,
+                                      type='gaussian', sparse=False):
+
+        def _loop(kwargs):
+            return self.meanfield_prediction(kwargs['x'], kwargs['y'],
+                                             compute_nlpd, prediction,
+                                             incremental, type, sparse)
+
+        kwargs_list = []
+        for n in range(len(x)):
+            _x = x[n, :]
+            _y = None if y is None else y[n, :]
+            kwargs_list.append({'x': _x, 'y': _y})
+
+        with Pool(processes=nb_cores) as p:
+            res = p.map(_loop, kwargs_list, chunksize=int(len(x) / nb_cores))
+
+        mean, var, std, nlpd = list(map(np.vstack, zip(*res)))
+        return mean, var, std, nlpd
