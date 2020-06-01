@@ -196,8 +196,6 @@ if __name__ == "__main__":
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
-    parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
@@ -212,28 +210,13 @@ if __name__ == "__main__":
     plt.figure()
     plt.scatter(input[:, 0], input[:, 1], s=1)
 
-    # Scaled Data
-    from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=2, whiten=True)
-    target_scaler = PCA(n_components=2, whiten=True)
-
-    input_scaler.fit(input)
-    target_scaler.fit(target)
-
-    train_data = {'input': input_scaler.transform(input),
-                  'target': target_scaler.transform(target)}
-
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_data=train_data,
-                                      arguments=args)
+    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                     train_data=input,
+                                     arguments=args)[0]
 
     # predict
-    from mimo.util.prediction import parallel_meanfield_prediction
     mu_predict, var_predict, std_predict, _\
-        = parallel_meanfield_prediction(dpglms[0], input,
-                                        prediction=args.prediction,
-                                        input_scaler=input_scaler,
-                                        target_scaler=target_scaler)
+        = dpglm.parallel_meanfield_prediction(input, prediction=args.prediction)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
@@ -241,7 +224,7 @@ if __name__ == "__main__":
     evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
     smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglms[0].used_labels))
+    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
     plt.figure()
     plt.scatter(target[:, 0], target[:, 1], s=1)
