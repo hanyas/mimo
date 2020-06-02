@@ -30,15 +30,13 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=20, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--kmeans', help='init with KMEANS', action='store_true', default=False)
-    parser.add_argument('--no_kmeans', help='do not use KMEANS', dest='kmeans', action='store_false')
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--nb_train', help='size of train dataset', default=500, type=int)
     parser.add_argument('--nb_splits', help='number of dataset splits', default=25, type=int)
@@ -64,8 +62,10 @@ if __name__ == "__main__":
     input_scaler = PCA(n_components=1, whiten=True)
     target_scaler = PCA(n_components=1, whiten=True)
 
-    input_scaler.fit(data[:, :1])
-    target_scaler.fit(data[:, 1:])
+    input_scaler.fit(input)
+    target_scaler.fit(target)
+
+    input_scaled = input_scaler.transform(input)
 
     # prepare model
     input_dim, target_dim = 1, 1
@@ -74,53 +74,49 @@ if __name__ == "__main__":
     if args.affine:
         nb_params += 1
 
-    components_prior = []
+    basis_prior = []
+    models_prior = []
 
     # initialize Normal
-    psi_niw = 5 * 1e-2
-    kappa = 1e-2  # (1. / (input.T @ input)).item()
+    psi_niw = 1 * 1e-1
+    kappa = 1e-2
 
     # initialize Matrix-Normal
     psi_mniw = 1e0
-    if args.affine:
-        X = np.hstack((input, np.ones((len(input), 1))))
-    else:
-        X = input
-
-    V = 10 * X.T @ X
+    V = 1e3 * np.eye(nb_params)
 
     for n in range(args.nb_models):
-        components_hypparams = dict(mu=np.zeros((input_dim, )),
-                                    kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                    nu_niw=input_dim + 1,
-                                    M=np.zeros((target_dim, nb_params)),
-                                    affine=args.affine, V=V,
-                                    nu_mniw=target_dim + 1,
-                                    psi_mniw=np.eye(target_dim) * psi_mniw)
+        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+                               psi=np.eye(input_dim) * psi_niw,
+                               kappa=kappa, nu=input_dim + 1)
 
-        aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
-        components_prior.append(aux)
+        aux = distributions.NormalInverseWishart(**basis_hypparams)
+        basis_prior.append(aux)
 
-    # define prior
+        models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
+                                affine=args.affine, V=V,
+                                nu=target_dim + 1,
+                                psi=np.eye(target_dim) * psi_mniw)
+
+        aux = distributions.MatrixNormalInverseWishart(**models_hypparams)
+        models_prior.append(aux)
+
+    # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
-                                deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
 
-        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
-                                                               for i in range(args.nb_models)])
+        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
+                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
 
-    elif args.prior == 'dirichlet':
+    else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i])
-                                                               for i in range(args.nb_models)])
-
-    else:
-        raise NotImplementedError
+        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
+                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
 
     anim = []
 
@@ -137,19 +133,16 @@ if __name__ == "__main__":
         _input = input[n * split_size: (n + 1) * split_size, :]
         _target = target[n * split_size: (n + 1) * split_size, :]
 
-        # ada new data
-        _input_scaled = input_scaler.transform(_input)
-        _target_scaled = target_scaler.transform(_target)
-
-        _data_scaled = np.hstack((_input_scaled, _target_scaled))
-
-        dpglm.add_data(_data_scaled)
+        dpglm.add_data(y=_target, x=_input, whiten=True,
+                       target_transform=target_scaler,
+                       input_transform=input_scaler)
 
         # set posterior to prior
         import copy
         dpglm.gating.prior = copy.deepcopy(dpglm.gating.posterior)
-        for i in range(len(dpglm.components)):
-            dpglm.components[i].prior = copy.deepcopy(dpglm.components[i].posterior)
+        for i in range(dpglm.size):
+            dpglm.basis[i].prior = copy.deepcopy(dpglm.basis[i].posterior)
+            dpglm.models[i].prior = copy.deepcopy(dpglm.models[i].posterior)
 
         # train model
         for _ in range(args.super_iters):
@@ -172,10 +165,10 @@ if __name__ == "__main__":
                     else progprint_xrange(args.svi_iters)
 
                 batch_size = args.svi_batchsize
-                prob = batch_size / float(len(_data_scaled))
+                prob = batch_size / float(len(_input))
                 for _ in svi_iter:
-                    minibatch = npr.permutation(len(_data_scaled))[:batch_size]
-                    dpglm.meanfield_sgdstep(obs=_data_scaled[minibatch, :],
+                    minibatch = npr.permutation(len(_input))[:batch_size]
+                    dpglm.meanfield_sgdstep(y=_target[minibatch, :], x=_input[minibatch, :],
                                             prob=prob, stepsize=args.svi_stepsize)
             if args.deterministic:
                 # Meanfield VI
@@ -186,19 +179,13 @@ if __name__ == "__main__":
                                                    progprint=args.verbose)
 
         # predict on all data
-        from mimo.util.prediction import parallel_meanfield_prediction
-
         sparse = False if (n + 1) < args.nb_splits else True
-        mu, var, std, nlpd = parallel_meanfield_prediction(dpglm, input, target,
-                                                           prediction=args.prediction,
-                                                           input_scaler=input_scaler,
-                                                           target_scaler=target_scaler,
-                                                           sparse=sparse)
+        mu, var, std, _ = dpglm.parallel_meanfield_prediction(x=input, sparse=sparse,
+                                                              prediction=args.prediction)
 
         mu = np.hstack(mu)
         var = np.hstack(var)
         std = np.hstack(std)
-        nlpd = np.hstack(nlpd)
 
         # plot prediction
         fig = plt.figure(figsize=(12, 4))
@@ -217,15 +204,17 @@ if __name__ == "__main__":
         plt.pause(1)
 
         # set working directory
-        os.chdir(args.evalpath)
         dataset = 'chirp'
+        try:
+            os.chdir(args.evalpath + '/' + dataset)
+        except FileNotFoundError:
+            os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
+            os.chdir(args.evalpath + '/' + dataset)
 
         # save tikz and pdf
         import tikzplotlib
-
-        path = os.path.join(str(dataset) + '/')
-        tikzplotlib.save(path + dataset + '_' + str(n) + '.tex')
-        plt.savefig(path + dataset + '_' + str(n) + '.pdf')
+        tikzplotlib.save(dataset + '_' + str(n) + '.tex')
+        plt.savefig(dataset + '_' + str(n) + '.pdf')
 
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
