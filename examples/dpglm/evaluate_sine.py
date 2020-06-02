@@ -38,17 +38,12 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_niw = 1e0
+    psi_niw = 1e-2
     kappa = 1e-2
 
     # initialize Matrix-Normal
-    psi_mniw = 1e0
-    if args.affine:
-        X = np.hstack((input, np.ones((len(input), 1))))
-    else:
-        X = input
-
-    V = 10 * X.T @ X
+    psi_mniw = 10.0
+    V = 1e3 * np.eye(nb_params)
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -117,6 +112,7 @@ def _job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
 
+        dpglm.gating.prior = dpglm.gating.posterior
         for i in range(dpglm.size):
             dpglm.basis[i].prior = dpglm.basis[i].posterior
             dpglm.models[i].prior = dpglm.models[i].posterior
@@ -143,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -153,35 +149,43 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=512, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of train dataset', default=2000, type=int)
+    parser.add_argument('--nb_train', help='size of train dataset', default=1500, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
 
     np.random.seed(args.seed)
 
-    # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
-    data = np.loadtxt(args.datapath + '/cmb.csv', delimiter=",", skiprows=1)
+    # create Sine data
+    nb_train = args.nb_train
 
-    # shuffle data
-    from sklearn.utils import shuffle
-    data = shuffle(data)
+    data = np.zeros((nb_train, 2))
+    step = 10. * np.pi / nb_train
+    for i in range(data.shape[0]):
+        x = i * step
+        data[i, 0] = x + 0.1 * npr.randn()
+        data[i, 1] = 3 * np.sin(x) + 0.3 * npr.randn()
+
+    from itertools import chain
+    r = list(chain(range(0, 500), range(1000, 1500)))
+    train_data = data[r, :]
 
     # training data
     nb_train = args.nb_train
-    input, target = data[:nb_train, :1], data[:nb_train, 1:]
+    input, target = data[:, :1], data[:, 1:]
+    train_input, train_target = train_data[:, :1], train_data[:, 1:]
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_input=input,
-                                     train_target=target,
+                                     train_input=train_input,
+                                     train_target=train_target,
                                      arguments=args)[0]
 
     # predict on training
