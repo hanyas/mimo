@@ -7,7 +7,6 @@ import numpy.random as npr
 import mimo
 from mimo import distributions, mixture
 from mimo.util.text import progprint_xrange
-from mimo.util.general import near_pd
 
 import argparse
 
@@ -18,32 +17,12 @@ from pathos.pools import _ProcessPool as Pool
 nb_cores = pathos.multiprocessing.cpu_count()
 
 
-def generate_2d_kinematics(grid=(10, 10), l1=1., l2=1., seed=1337):
-
-    # set random seed
-    np.random.seed(seed)
-
-    # joint angles
-    q1 = np.linspace(0., np.pi, grid[0])
-    q2 = np.linspace(0., np.pi, grid[1])
-
-    q1, q2 = np.meshgrid(q1, q2)
-
-    x = l1 * np.cos(q1) + l2 * np.cos(q1 + q2)
-    y = l1 * np.sin(q1) + l2 * np.sin(q1 + q2)
-
-    return np.vstack((q1.flatten(), q2.flatten(),
-                      x.flatten(), y.flatten())).T
-
-
 def _job(kwargs):
-    train_data = kwargs.pop('train_data')
     args = kwargs.pop('arguments')
     seed = kwargs.pop('seed')
 
-    input = train_data['input']
-    target = train_data['target']
-    data = np.hstack((input, target))
+    input = kwargs.pop('train_input')
+    target = kwargs.pop('train_target')
 
     input_dim = input.shape[-1]
     target_dim = target.shape[-1]
@@ -55,75 +34,50 @@ def _job(kwargs):
     if args.affine:
         nb_params += 1
 
-    components_prior = []
-    if args.kmeans:
-        from sklearn.cluster import KMeans
-        km = KMeans(args.nb_models).fit(np.hstack((input, target)))
+    basis_prior = []
+    models_prior = []
 
-        for n in range(args.nb_models):
-            # initialize Normal
-            mu_input = km.cluster_centers_[n, :input_dim]
-            _psi_niw = np.cov(input[km.labels_ == n], bias=False, rowvar=False)
-            psi_niw = np.diag(near_pd(np.atleast_2d(_psi_niw)))
-            kappa = 1e-2
+    # initialize Normal
+    psi_niw = 1e0
+    kappa = 1e-2
 
-            # initialize Matrix-Normal
-            mu_output = np.zeros((target_dim, nb_params))
-            mu_output[:, -1] = km.cluster_centers_[n, input_dim:]
-            psi_mniw = 1e0
-            V = 1e3 * np.eye(nb_params)
+    # initialize Matrix-Normal
+    psi_mniw = 1e0
+    V = 1e3 * np.eye(nb_params)
 
-            components_hypparams = dict(mu=mu_input, kappa=kappa,
-                                        psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
-                                        M=mu_output, affine=args.affine,
-                                        V=V, nu_mniw=target_dim + 1,
-                                        psi_mniw=np.eye(target_dim) * psi_mniw)
+    for n in range(args.nb_models):
+        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+                               psi=np.eye(input_dim) * psi_niw,
+                               kappa=kappa, nu=input_dim + 1)
 
-            aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
-            components_prior.append(aux)
-    else:
-        # initialize Normal
-        psi_niw = 1e0
-        kappa = (1. / (input.T @ input)).item()
+        aux = distributions.NormalInverseWishart(**basis_hypparams)
+        basis_prior.append(aux)
 
-        # initialize Matrix-Normal
-        psi_mniw = 1e0
-        if args.affine:
-            X = np.hstack((input, np.ones((len(input), 1))))
-        else:
-            X = input
+        models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
+                                affine=args.affine, V=V,
+                                nu=target_dim + 1,
+                                psi=np.eye(target_dim) * psi_mniw)
 
-        V = 10 * X.T @ X
-
-        for n in range(args.nb_models):
-            components_hypparams = dict(mu=np.zeros((input_dim, )),
-                                        kappa=kappa, psi_niw=np.eye(input_dim) * psi_niw,
-                                        nu_niw=input_dim + 1,
-                                        M=np.zeros((target_dim, nb_params)),
-                                        affine=args.affine, V=V,
-                                        nu_mniw=target_dim + 1,
-                                        psi_mniw=np.eye(target_dim) * psi_mniw)
-
-            aux = distributions.NormalInverseWishartMatrixNormalInverseWishart(**components_hypparams)
-            components_prior.append(aux)
+        aux = distributions.MatrixNormalInverseWishart(**models_hypparams)
+        models_prior.append(aux)
 
     # define gating
     if args.prior == 'stick-breaking':
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.StickBreaking(**gating_hypparams)
+
+        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
+                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
+                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
+
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-    # define model
-    if args.prior == 'stick-breaking':
-        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i]) for i in range(args.nb_models)])
-    else:
-        dpglm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                                   components=[distributions.BayesianJointLinearGaussian(components_prior[i]) for i in range(args.nb_models)])
-    dpglm.add_data(data)
+        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
+                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
+                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
+    dpglm.add_data(target, input, whiten=True)
 
     for _ in range(args.super_iters):
         # Gibbs sampling
@@ -145,10 +99,10 @@ def _job(kwargs):
                 else progprint_xrange(args.svi_iters)
 
             batch_size = args.svi_batchsize
-            prob = batch_size / float(len(data))
+            prob = batch_size / float(len(input))
             for _ in svi_iter:
-                minibatch = npr.permutation(len(data))[:batch_size]
-                dpglm.meanfield_sgdstep(obs=data[minibatch, :],
+                minibatch = npr.permutation(len(input))[:batch_size]
+                dpglm.meanfield_sgdstep(y=target[minibatch, :], x=input[minibatch, :],
                                         prob=prob, stepsize=args.svi_stepsize)
         if args.deterministic:
             # Meanfield VI
@@ -157,6 +111,11 @@ def _job(kwargs):
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
+
+        dpglm.gating.prior = dpglm.gating.posterior
+        for i in range(dpglm.size):
+            dpglm.basis[i].prior = dpglm.basis[i].posterior
+            dpglm.models[i].prior = dpglm.models[i].posterior
 
     return dpglm
 
@@ -181,11 +140,11 @@ if __name__ == "__main__":
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
+    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=25, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
@@ -198,36 +157,72 @@ if __name__ == "__main__":
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
+    parser.add_argument('--nb_train', help='size of train dataset', default=2000, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
 
     np.random.seed(args.seed)
 
-    data = generate_2d_kinematics(grid=(50, 50))
-    input, target = data[:, 2:], data[:, :2]
+    # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
+    data = np.loadtxt(args.datapath + '/cmb.csv', delimiter=",", skiprows=1)
 
-    plt.figure()
-    plt.scatter(input[:, 0], input[:, 1], s=1)
+    # shuffle data
+    from sklearn.utils import shuffle
+    data = shuffle(data)
+
+    # training data
+    nb_train = args.nb_train
+    input, target = data[:nb_train, :1], data[:nb_train, 1:]
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_data=input,
+                                     train_input=input,
+                                     train_target=target,
                                      arguments=args)[0]
 
-    # predict
-    mu_predict, var_predict, std_predict, _\
-        = dpglm.parallel_meanfield_prediction(input, prediction=args.prediction)
+    # predict on training
+    mu_predict, var_predict, std_predict, nlpd_predict =\
+        dpglm.parallel_meanfield_prediction(input, target, compute_nlpd=True,
+                                            prediction=args.prediction)
 
+    mu_predict = np.vstack(mu_predict)
+    var_predict = np.vstack(var_predict)
+    std_predict = np.vstack(std_predict)
+    nlpd_predict = np.vstack(nlpd_predict)
+
+    # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
     mse = mean_squared_error(target, mu_predict)
     evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
     smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+    print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
+          nlpd_predict.mean(), 'Compnents:', len(dpglm.used_labels))
 
-    plt.figure()
-    plt.scatter(target[:, 0], target[:, 1], s=1)
-    plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
+    fig, axes = plt.subplots(2, 1)
+
+    # plot prediction
+    sorter = np.argsort(input, axis=0).flatten()
+    sorted_input, sorted_target = input[sorter, 0], target[sorter, 0]
+    sorted_mu_predict, sorted_std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
+
+    axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
+    axes[0].plot(sorted_input, sorted_mu_predict, color='crimson')
+    for c in [1., 2.]:
+        axes[0].fill_between(sorted_input,
+                             sorted_mu_predict - c * sorted_std_predict,
+                             sorted_mu_predict + c * sorted_std_predict,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+
+    axes[0].set_ylabel('y')
+
+    # plot gaussian activations
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
+
+    activations = dpglm.meanfield_predictive_activation(sorted_input)
+    for i in range(len(dpglm.used_labels)):
+        axes[1].plot(sorted_input, activations[:, i])
 
     plt.show()
