@@ -269,7 +269,8 @@ class BayesianMixtureOfGaussians(Distribution):
             elbo.append(self.meanfield_update())
             if elbo[-1] is not None and len(elbo) > 1:
                 if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    print('\n')
+                    if progprint:
+                        print('\n')
                     return elbo
         print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
@@ -465,7 +466,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
-    def add_data(self, y, x, whiten=False):
+    def add_data(self, y, x, whiten=False,
+                 target_transform=False,
+                 input_transform=False):
+
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
         for _y in y:
@@ -473,16 +477,22 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         if whiten:
             self.whitend = True
-            from sklearn.decomposition import PCA
 
-            Y = np.vstack([_y for _y in y])
-            X = np.vstack([_x for _x in x])
+            if not (target_transform and input_transform):
+                from sklearn.decomposition import PCA
 
-            self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
-            self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+                Y = np.vstack([_y for _y in y])
+                X = np.vstack([_x for _x in x])
 
-            self.target_transform.fit(Y)
-            self.input_transform.fit(X)
+                self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
+                self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+
+                self.target_transform.fit(Y)
+                self.input_transform.fit(X)
+            else:
+                self.target_transform = target_transform
+                self.input_transform = input_transform
+
             for _y, _x in zip(y, x):
                 self.target.append(self.target_transform.transform(_y))
                 self.input.append(self.input_transform.transform(_x))
@@ -642,7 +652,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             elbo.append(self.meanfield_update())
             if elbo[-1] is not None and len(elbo) > 1:
                 if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    print('\n')
+                    if progprint:
+                        print('\n')
                     return elbo
         print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
@@ -754,7 +765,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                                             for _y, _x in zip(self.target, self.input))
 
     def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
-        x = np.atleast_2d(x).T
+        x = np.atleast_2d(x).T if x.ndim < 2 else x
 
         _x = x if not self.whitend\
             else self.input_transform.transform(x)
