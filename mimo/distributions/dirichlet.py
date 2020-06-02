@@ -26,7 +26,7 @@ class Dirichlet(Distribution):
         return self.K
 
     def rvs(self, size=1):
-        size = None if size is 1 else size
+        size = None if size == 1 else size
         return npr.dirichlet(self.alphas, size)
 
     def mean(self):
