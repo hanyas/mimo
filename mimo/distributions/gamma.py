@@ -3,9 +3,7 @@ import numpy.random as npr
 
 from scipy.special import gammaln, digamma
 
-from mimo.distribution import Distribution
-
-import warnings
+from mimo.abstraction import Distribution
 
 
 class Gamma(Distribution):
@@ -34,16 +32,12 @@ class Gamma(Distribution):
         return self.alphas / self.betas
 
     def mode(self):
-        if np.all(self.alphas >= 1.):
-            return (self.alphas - 1.) / self.betas
-        else:
-            warnings.warn("Mode of Gamma distribution not defined")
-            return None
+        assert np.all(self.alphas >= 1.)
+        return (self.alphas - 1.) / self.betas
 
     def log_likelihood(self, x):
         loglik = np.sum(- gammaln(self.alphas) + self.alphas * np.log(self.betas)
                         + (self.alphas - 1.) * np.log(x) - x * self.betas)
-
         return loglik
 
     def log_partition(self):
@@ -77,11 +71,8 @@ class InverseGamma(Distribution):
         return 1. / npr.gamma(self.alphas, 1. / self.betas)
 
     def mean(self):
-        if np.all(self.alphas >= 1.):
-            return self.betas / (self.alphas - 1)
-        else:
-            warnings.warn("Mean of Inverse Gamma distribution not defined")
-            return None
+        assert np.all(self.alphas >= 1.)
+        return self.betas / (self.alphas - 1)
 
     def mode(self):
         return self.betas / (self.alphas + 1.)
@@ -90,7 +81,6 @@ class InverseGamma(Distribution):
         loglik = np.sum(- gammaln(self.alphas)
                         + self.alphas * np.log(self.betas)
                         - (self.alphas + 1.) * np.log(x) - x / self.betas)
-
         return loglik
 
     def log_partition(self):

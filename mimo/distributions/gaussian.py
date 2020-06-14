@@ -1,12 +1,15 @@
 import numpy as np
 import numpy.random as npr
 
+from functools import reduce
+
 from numpy.core.umath_tests import inner1d
 from scipy import linalg
 
-from mimo.distribution import Distribution
-from mimo.util.general import flattendata
-from mimo.util.general import near_pd
+from mimo.abstraction import Distribution
+from mimo.abstraction import Statistics as Stats
+
+from mimo.util.data import flattendata
 
 
 class Gaussian(Distribution):
@@ -16,6 +19,7 @@ class Gaussian(Distribution):
 
         self._sigma = sigma
         self._sigma_chol = None
+        self._sigma_inv = None
 
     @property
     def params(self):
@@ -41,6 +45,7 @@ class Gaussian(Distribution):
     def sigma(self, value):
         self._sigma = value
         self._sigma_chol = None
+        self._sigma_inv = None
 
     @property
     def sigma_chol(self):
@@ -48,6 +53,13 @@ class Gaussian(Distribution):
             # self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
             self._sigma_chol = np.linalg.cholesky(self.sigma)
         return self._sigma_chol
+
+    @property
+    def sigma_inv(self):
+        if self._sigma_inv is None:
+            # self._sigma_inv = np.linalg.inv(near_pd(self.sigma))
+            self._sigma_inv = np.linalg.inv(self.sigma)
+        return self._sigma_inv
 
     def rvs(self, size=1):
         if size == 1:
@@ -79,6 +91,69 @@ class Gaussian(Distribution):
         return 0.5 * self.dim * np.log(2. * np.pi) + self.dim\
                + np.sum(np.log(np.diag(self.sigma_chol)))
 
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        sigma = np.linalg.inv(params[1])
+        mu = sigma @ params[0]
+        return Stats([mu, sigma])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        sigma = np.linalg.inv(natparam[1])
+        mu = sigma @ natparam[0]
+        return mu, sigma
+
+    def get_statistics(self, data):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(1)
+            data = data[idx]
+
+            xxT = np.einsum('nk,nh->kh', data, data)
+            x = np.sum(data, axis=0)
+            n = data.shape[0]
+            return Stats([x, n, xxT, n])
+        else:
+            return reduce(lambda a, b: a + b, list(map(self.get_statistics, data)))
+
+    def get_weighted_statistics(self, data, weights):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(1)
+            data = data[idx]
+            weights = weights[idx]
+
+            xxT = np.einsum('nk,n,nh->kh', data, weights, data)
+            x = weights.dot(data)
+            n = weights.sum()
+            return Stats([x, n, xxT, n])
+        else:
+            return reduce(lambda a, b: a + b, list(map(self.get_weighted_statistics, data, weights)))
+
+    def _empty_statistics(self):
+        return Stats([np.zeros((self.dim, )), 0.,
+                      np.zeros((self.dim, self.dim)), 0.])
+
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+        stats = self.get_statistics(data) if weights is None\
+            else self.get_weighted_statistics(data, weights)
+
+        x, n, xxT, n = stats
+        if n < self.dim or np.sum(np.linalg.svd(xxT, compute_uv=False) > 1e-6) < self.dim:
+            self.mu = np.zeros(self.dim)
+            self.sigma = np.eye(self.dim)
+        else:
+            self.mu = x / n
+            self.sigma = xxT / n - np.outer(self.mu, self.mu)
+        return self
+
     def plot(self, ax=None, data=None, color='b', label='',
              alpha=1., update=False, draw=True):
 
@@ -101,36 +176,31 @@ class Gaussian(Distribution):
         return [_scatterplot] + list(_parameterplot)
 
 
-class DiagonalGaussian(Gaussian):
+class GaussianWithFixedCovariance(Gaussian):
 
-    def __init__(self, mu=None, sigmas=None):
-        self._sigmas = sigmas
-        self._sigma_chol = None
+    def __init__(self, mu=None, sigma=None):
+        super(GaussianWithFixedCovariance, self).__init__(mu=mu, sigma=sigma)
 
-        super(DiagonalGaussian, self).__init__(mu=mu, sigma=self.sigma)
+    @property
+    def params(self):
+        return self.mu
+
+    @params.setter
+    def params(self, values):
+        self.mu = values
 
     @property
     def nb_params(self):
-        return self.dim + self.dim
+        return self.dim
 
-    @property
-    def sigma(self):
-        if self._sigmas is not None:
-            return np.diag(self._sigmas)
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+        stats = self.get_statistics(data) if weights is None\
+            else self.get_weighted_statistics(data, weights)
+
+        x, n, _, _ = stats
+        if n < self.dim:
+            self.mu = np.zeros(self.dim)
         else:
-            return None
-
-    @sigma.setter
-    def sigma(self, value):
-        value = np.array(value)
-        if value.ndim == 1:
-            self._sigmas = value
-        else:
-            self._sigmas = np.diag(value)
-        self._sigma_chol = None
-
-    @property
-    def sigma_chol(self):
-        if self._sigma_chol is None:
-            self._sigma_chol = np.diag(np.sqrt(self._sigmas))
-        return self._sigma_chol
+            self.mu = x / n
+        return self

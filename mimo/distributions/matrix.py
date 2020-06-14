@@ -4,8 +4,8 @@ import numpy.random as npr
 from scipy import linalg
 from numpy.core.umath_tests import inner1d
 
-from mimo.distribution import Distribution
-from mimo.util.general import near_pd
+from mimo.abstraction import Distribution
+from mimo.util.matrix import near_pd
 
 
 class MatrixNormal(Distribution):
@@ -116,35 +116,6 @@ class MatrixNormal(Distribution):
               - np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
         out[bads] = 0
         return out
-
-    def get_statistics(self, data):
-        if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
-            data = data[idx]
-
-            xxT = np.einsum('nk,nh->kh', data, data)
-            x = data.sum(0)
-            n = data.shape[0]
-            return np.array([x, xxT, n])
-        else:
-            return sum(list(map(self.get_statistics, data)), self._empty_statistics())
-
-    def get_weighted_statistics(self, data, weights):
-        if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
-            data = data[idx]
-            weights = weights[idx]
-
-            xxT = np.einsum('nk,n,nh->kh', data, weights, data)
-            x = weights.dot(data)
-            n = weights.sum()
-            return np.array([x, xxT, n])
-        else:
-            return sum(list(map(self.get_weighted_statistics, data, weights)), self._empty_statistics())
-
-    def _empty_statistics(self):
-        return np.array([np.zeros((self.dim, )),
-                         np.zeros((self.dim, self.dim)), 0])
 
     def log_partition(self):
         return 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
