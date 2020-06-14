@@ -1,12 +1,11 @@
 import numpy as np
 import scipy as sc
-import numpy.random as npr
 
 from scipy import stats
 from scipy.special import multigammaln, digamma
 
-from mimo.distribution import Distribution
-from mimo.util.general import near_pd
+from mimo.abstraction import Distribution
+from mimo.util.matrix import near_pd
 
 
 class Wishart(Distribution):
@@ -41,39 +40,25 @@ class Wishart(Distribution):
     @property
     def psi_chol(self):
         if self._psi_chol is None:
-            self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
+            # self._psi_chol = np.linalg.cholesky(near_pd(self.psi))
+            self._psi_chol = np.linalg.cholesky(self.psi)
+
         return self._psi_chol
 
     def rvs(self, size=1):
-        # use matlab's heuristic for choosing between the two different sampling schemes
-        if (self.nu <= 81 + self.dim) and (self.nu == round(self.nu)):
-            # direct
-            X = np.dot(self.psi_chol, np.random.normal(size=(self.dim, self.nu)))
-        else:
-            A = np.diag(np.sqrt(npr.chisquare(self.nu - np.arange(self.dim))))
-            A[np.tri(self.dim, k=-1, dtype=bool)] =\
-                npr.normal(size=(self.dim * (self.dim - 1) / 2.))
-            X = np.dot(self.psi_chol, A)
-
-        return np.dot(X, X.T)
+        return stats.wishart(df=self.nu, scale=self.psi).rvs(size).reshape(self.dim, self.dim)
 
     def mean(self):
         return self.nu * self.psi
 
     def mode(self):
-        if self.nu >= (self.dim + 1):
-            return (self.nu - self.dim - 1) * self.psi
-        else:
-            return NotImplementedError
+        assert self.nu >= (self.dim + 1)
+        return (self.nu - self.dim - 1) * self.psi
 
     def log_likelihood(self, x):
-        loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
-                 - 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
-                 - multigammaln(self.nu / 2., self.dim)\
-                 + 0.5 * (self.nu - self.dim - 1) * np.slogdet(x)[1]\
+        loglik = + 0.5 * (self.nu - self.dim - 1) * np.linalg.slogdet(x)[1]\
                  - 0.5 * np.trace(sc.linalg.solve(self.psi, x))
-
-        return loglik
+        return loglik - self.log_partition()
 
     def log_partition(self):
         return 0.5 * self.nu * self.dim * np.log(2)\
@@ -81,10 +66,10 @@ class Wishart(Distribution):
                + self.nu * np.sum(np.log(np.diag(self.psi_chol)))
 
     def entropy(self):
-        E_logdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
+        E_logdet_psi = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
                        + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.psi_chol)))
-        aux = - 0.5 * (self.nu - self.dim - 1) * E_logdetlmbda + 0.5 * self.nu * self.dim
-        return self.log_partition() + aux
+        entropy = - 0.5 * (self.nu - self.dim - 1) * E_logdet_psi + 0.5 * self.nu * self.dim
+        return entropy + self.log_partition()
 
 
 class InverseWishart(Distribution):
@@ -124,32 +109,19 @@ class InverseWishart(Distribution):
         return self._psi_chol
 
     def rvs(self, size=1):
-        if (self.nu <= 81 + self.dim) and (self.nu == np.round(self.nu)):
-            x = npr.randn(int(self.nu), self.dim)
-        else:
-            x = np.diag(np.sqrt(np.atleast_1d(stats.chi2.rvs(self.nu - np.arange(self.dim)))))
-            x[np.triu_indices_from(x, 1)] = npr.randn(self.dim * (self.dim - 1) // 2)
-        R = np.linalg.qr(x, 'r')
-        T = sc.linalg.solve_triangular(R.T, self.psi_chol.T, lower=True).T
-        return np.dot(T, T.T)
+        return stats.invwishart(df=self.nu, scale=self.psi).rvs(size).reshape(self.dim, self.dim)
 
     def mean(self):
-        if self.nu > (self.dim + 1):
-            return self.psi / (self.nu - self.dim - 1.)
-        else:
-            return NotImplementedError
+        assert self.nu > (self.dim + 1)
+        return self.psi / (self.nu - self.dim - 1.)
 
     def mode(self):
         return self.psi / (self.nu + self.dim + 1.)
 
     def log_likelihood(self, x):
-        loglik = - 0.5 * self.nu * self.dim * np.log(2.)\
-                 + 0.5 * self.nu * np.sum(np.log(np.diag(self.psi_chol)))\
-                 - multigammaln(self.nu / 2., self.dim)\
-                 - 0.5 * (self.nu + self.dim + 1) * np.slogdet(x)[1]\
+        loglik = - 0.5 * (self.nu + self.dim + 1) * np.linalg.slogdet(x)[1]\
                  - 0.5 * np.trace(self.psi @ np.linalg.inv(x))
-
-        return loglik
+        return loglik - self.log_partition()
 
     def log_partition(self):
         return 0.5 * self.nu * self.dim * np.log(2)\
@@ -157,7 +129,7 @@ class InverseWishart(Distribution):
                - self.nu * np.sum(np.log(np.diag(self.psi_chol)))
 
     def entropy(self):
-        E_logdetlmbda = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
+        E_logdet_psi = np.sum(digamma((self.nu - np.arange(self.dim)) / 2.))\
                        + self.dim * np.log(2.) - 2. * np.sum(np.log(np.diag(self.psi_chol)))
-        aux = - 0.5 * (self.nu - self.dim - 1) * E_logdetlmbda + 0.5 * self.nu * self.dim
-        return self.log_partition() + aux
+        entropy = - 0.5 * (self.nu - self.dim - 1) * E_logdet_psi + 0.5 * self.nu * self.dim
+        return entropy + self.log_partition()

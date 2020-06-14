@@ -1,11 +1,12 @@
 import numpy as np
 import numpy.random as npr
 
-from mimo.distribution import Distribution, Conditional
-from mimo.distributions.gaussian import Gaussian
+from functools import reduce
 
-from mimo.util.general import inv_psd, blockarray
-from mimo.util.general import near_pd
+from mimo.abstraction import Conditional
+from mimo.abstraction import Statistics as Stats
+
+from mimo.util.matrix import near_pd, blockarray, inv_psd
 
 
 class LinearGaussian(Conditional):
@@ -72,7 +73,7 @@ class LinearGaussian(Conditional):
         y = self.predict(x)
         y += npr.normal(size=(size, self.drow)).dot(self.sigma_chol.T)
 
-        return np.hstack((x, y))
+        return y
 
     def predict(self, x):
         A, sigma = self.A, self.sigma
@@ -129,80 +130,73 @@ class LinearGaussian(Conditional):
         return 0.5 * self.drow * np.log(2. * np.pi) + self.drow\
                + np.sum(np.log(np.diag(self.sigma_chol)))
 
+    def get_statistics(self, y, x):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(1),
+                                 ~np.isnan(x).any(1))
+            y, x = y[idx], x[idx]
+            n, drow, dcol = y.shape[0], self.drow, self.dcol
 
-class JointLinearGaussian(Distribution):
-    """
-    Multivariate Gaussian distribution with a linear mean function.
-    Parameters are linear transf. and covariance matrix:
-        A, sigma
-    The input is modelled as a Multivariate Gaussian distribution
-    Parameters are a constant mean and covariance matrix:
-        mu, sigma
-    """
+            data = np.hstack((x, y))
+            stats = data.T.dot(data)
+            xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
-    def __init__(self, mu=None, sigma_in=None,
-                 A=None, sigma_out=None, affine=True):
+            if self.affine:
+                xy = np.sum(data, axis=0)
+                x, y = xy[:-drow], xy[-drow:]
+                xxT = blockarray([[xxT, x[:, np.newaxis]],
+                                  [x[np.newaxis, :], np.atleast_2d(n)]])
+                yxT = np.hstack((yxT, y[:, np.newaxis]))
 
-        self.gaussian = Gaussian(mu=mu, sigma=sigma_in)
-        self.linear_gaussian = LinearGaussian(A=A, sigma=sigma_out, affine=affine)
+            return Stats([yxT, xxT, yyT, n])
+        else:
+            return reduce(lambda a, b: a + b, list(map(self.get_statistics, y, x)))
 
-    @property
-    def params(self):
-        return self.gaussian.params, self.linear_gaussian.params
+    def get_weighted_statistics(self, y, x, weights):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(1),
+                                 ~np.isnan(x).any(1))
+            y, x, weights = y[idx], x[idx], weights[idx]
+            n, drow, dcol = weights.sum(), self.drow, self.dcol
 
-    @params.setter
-    def params(self, values):
-        self.gaussian.params = values[:2]
-        self.linear_gaussian.params = values[2:]
+            data = np.hstack((x, y))
+            stats = data.T.dot(weights[:, np.newaxis] * data)
+            xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
-    @property
-    def nb_params(self):
-        return self.gaussian.nb_params\
-               + self.linear_gaussian.nb_params
+            if self.affine:
+                xy = weights.dot(data)
+                x, y = xy[:-drow], xy[-drow:]
+                xxT = blockarray([[xxT, x[:, np.newaxis]], [x[np.newaxis, :], np.atleast_2d(n)]])
+                yxT = np.hstack((yxT, y[:, np.newaxis]))
 
-    @property
-    def dcol(self):
-        return self.linear_gaussian.dcol
+            return Stats([yxT, xxT, yyT, n])
+        else:
+            return reduce(lambda a, b: a + b, list(map(self.get_weighted_statistics, y, x, weights)))
 
-    @property
-    def drow(self):
-        return self.linear_gaussian.drow
+    def _empty_statistics(self):
+        return Stats([np.zeros((self.drow, self.dcol)),
+                      np.zeros((self.dcol, self.dcol)),
+                      np.zeros((self.drow, self.drow)), 0])
 
-    def rvs(self, size=1):
-        size = 1 if size is None else size
-        x = self.gaussian.rvs(size=size)
-        xy = self.linear_gaussian.rvs(x=x)
-        return xy
+    # Max likelihood
+    def max_likelihood(self, y, x, weights=None):
+        stats = self.posterior.get_statistics(y, x) if weights is None\
+            else self.posterior.get_weighted_statistics(y, x, weights)
 
-    def predict(self, x):
-        return self.linear_gaussian.predict(x)
+        # (yxT, xxT, yyT, n)
+        yxT, xxT, yyT, n = stats
 
-    def mean(self):
-        x = self.gaussian.mean()
-        y = self.linear_gaussian.mean(x)
-        return x, y
+        self.A = np.linalg.solve(xxT, yxT.T).T
+        self.sigma = (yyT - self.A.dot(yxT.T)) / n
 
-    def mode(self):
-        x = self.gaussian.mode()
-        y = self.linear_gaussian.mode(x)
-        return x, y
+        def symmetrize(A):
+            return (A + A.T) / 2.
 
-    # distribution
-    def log_likelihood(self, xy):
-        x = xy[:, :-self.drow]
-        y = xy[:, self.dcol:]
+        # numerical stabilization
+        # self.sigma = near_pd(symmetrize(self.sigma) + 1e-16 * np.eye(self.drow))
+        self.sigma = symmetrize(self.sigma) + 1e-16 * np.eye(self.drow)
 
-        # log-likelihood of linear gaussian
-        tmp = self.linear_gaussian.log_likelihood(y, x)
+        assert np.allclose(self.sigma, self.sigma.T)
+        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
 
-        # log-likelihood of gaussian
-        aux = self.gaussian.log_likelihood(x)
-
-        return tmp + aux
-
-    def log_partition(self):
-        return self.linear_gaussian.log_partition()\
-               + self.gaussian.log_partition()
-
-    def entropy(self):
-        return self.linear_gaussian.entropy() + self.gaussian.entropy()
+        return self

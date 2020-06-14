@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random as npr
 from scipy.special import digamma, gammaln
 
-from mimo.distribution import Distribution
+from mimo.abstraction import Distribution
 
 import warnings
 
@@ -15,11 +15,11 @@ class Dirichlet(Distribution):
 
     @property
     def params(self):
-        return self.K, self.alphas
+        return self.alphas
 
     @params.setter
     def params(self, values):
-        self.K, self.alphas = values
+        self.alphas = values
 
     @property
     def dim(self):
@@ -33,7 +33,7 @@ class Dirichlet(Distribution):
         return self.alphas / np.sum(self.alphas)
 
     def mode(self):
-        assert np.all(self.alphas > 1.), "Make sure alphas < 1."
+        assert np.all(self.alphas > 1.), "Make sure alphas > 1."
         return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
 
     def log_likelihood(self, x):
@@ -48,33 +48,6 @@ class Dirichlet(Distribution):
     def entropy(self):
         return self.log_partition() - np.sum((self.alphas - 1.) * (digamma(self.alphas) - digamma(np.sum(self.alphas))))
 
-    def get_statistics(self, data):
-        if isinstance(data, np.ndarray):
-            counts = np.bincount(data, minlength=self.K)
-        else:
-            counts = sum(np.bincount(d, minlength=self.K) for d in data)
-        return counts
-
-    def get_weighted_statistics(self, data, weights):
-        if isinstance(weights, np.ndarray):
-            assert weights.ndim in (1, 2)
-            if data is None or weights.ndim == 2:
-                # when weights is 2D or data is None, the weights are expected
-                # indicators and data is just a placeholder; nominally data
-                # should be np.arange(K)[na,:].repeat(N,axis=0)
-                counts = np.sum(np.atleast_2d(weights), axis=0)
-            else:
-                # when weights is 1D, data is indices and we do a weighted
-                # bincount
-                counts = np.bincount(data, weights, minlength=self.K)
-        else:
-            if len(weights) == 0:
-                counts = np.zeros(self.K, dtype=int)
-            else:
-                data = data if data else [None] * len(weights)
-                counts = sum(self.get_weighted_statistics(d, w) for d, w in zip(data, weights))
-        return counts
-
 
 class StickBreaking(Distribution):
 
@@ -85,11 +58,11 @@ class StickBreaking(Distribution):
 
     @property
     def params(self):
-        return self.K, self.gammas, self.deltas
+        return self.gammas, self.deltas
 
     @params.setter
     def params(self, values):
-        self.K, self.gammas, self.deltas = values
+        self.gammas, self.deltas = values
 
     @property
     def dim(self):
@@ -151,30 +124,3 @@ class StickBreaking(Distribution):
 
     def entropy(self):
         raise NotImplementedError
-
-    def get_statistics(self, data):
-        if isinstance(data, np.ndarray):
-            counts = np.bincount(data, minlength=self.K)
-        else:
-            counts = sum(np.bincount(d, minlength=self.K) for d in data)
-        return counts
-
-    def get_weighted_statistics(self, data, weights):
-        if isinstance(weights, np.ndarray):
-            assert weights.ndim in (1, 2)
-            if data is None or weights.ndim == 2:
-                # when weights is 2D or data is None, the weights are expected
-                # indicators and data is just a placeholder; nominally data
-                # should be np.arange(K)[na,:].repeat(N,axis=0)
-                counts = np.sum(np.atleast_2d(weights), axis=0)
-            else:
-                # when weights is 1D, data is indices and we do a weighted
-                # bincount
-                counts = np.bincount(data, weights, minlength=self.K)
-        else:
-            if len(weights) == 0:
-                counts = np.zeros(self.K, dtype=int)
-            else:
-                data = data if data else [None] * len(weights)
-                counts = sum(self.get_weighted_statistics(d, w) for d, w in zip(data, weights))
-        return counts
