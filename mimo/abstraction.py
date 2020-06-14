@@ -1,5 +1,6 @@
 import abc
 import copy
+from operator import add, sub
 
 from future.utils import with_metaclass
 
@@ -189,3 +190,21 @@ class BayesianConditional(with_metaclass(abc.ABCMeta, Conditional)):
         analogous to max_likelihood but includes hyperparameters
         """
         pass
+
+
+class Statistics(tuple):
+
+    def __new__(cls, x):
+        return tuple.__new__(Statistics, x)
+
+    def __add__(self, y):
+        return Statistics(tuple(map(add, self, y)))
+
+    def __sub__(self, y):
+        return Statistics(tuple(map(sub, self, y)))
+
+    def __mul__(self, a):
+        return Statistics(a * e for e in self)
+
+    def __rmul__(self, a):
+        return Statistics(a * e for e in self)
