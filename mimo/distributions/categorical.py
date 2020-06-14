@@ -1,22 +1,23 @@
 import numpy as np
 import numpy.random as npr
 
-from mimo.distribution import Distribution
+from mimo.abstraction import Distribution
 
 
 class Categorical(Distribution):
 
-    def __init__(self,  K=None, probs=None):
+    def __init__(self, K=None, probs=None):
         self.K = K
-        self.probs = probs
+        if K is not None and probs is None:
+            self.probs = 1. / self.K * np.ones((self.K, ))
 
     @property
     def params(self):
-        return self.K, self.probs
+        return self.probs
 
     @params.setter
     def params(self, values):
-        self.K, self.probs = values
+        self.probs = values
 
     @property
     def nb_params(self):
@@ -48,3 +49,37 @@ class Categorical(Distribution):
 
     def entropy(self):
         raise NotImplementedError
+
+    def get_statistics(self, data):
+        if isinstance(data, np.ndarray):
+            counts = np.bincount(data, minlength=self.K)
+        else:
+            counts = sum(np.bincount(d, minlength=self.K) for d in data)
+        return counts
+
+    def get_weighted_statistics(self, data, weights):
+        if isinstance(weights, np.ndarray):
+            assert weights.ndim in (1, 2)
+            if data is None or weights.ndim == 2:
+                # when weights is 2D or data is None, the weights are expected
+                # indicators and data is just a placeholder; nominally data
+                # should be np.arange(K)[na,:].repeat(N,axis=0)
+                counts = np.sum(np.atleast_2d(weights), axis=0)
+            else:
+                # when weights is 1D, data is indices and we do a weighted
+                # bincount
+                counts = np.bincount(data, weights, minlength=self.K)
+        else:
+            if len(weights) == 0:
+                counts = np.zeros(self.K, dtype=int)
+            else:
+                data = data if data else [None] * len(weights)
+                counts = sum(self.get_weighted_statistics(d, w) for d, w in zip(data, weights))
+        return counts
+
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+        counts = self.get_statistics(data) if weights is None\
+            else self.get_weighted_statistics(data, weights)
+        self.probs = counts / counts.sum()
+        return self
