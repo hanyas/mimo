@@ -4,7 +4,9 @@ import numpy as np
 import numpy.random as npr
 from matplotlib import pyplot as plt
 
-from mimo import distributions, mixture
+from mimo import distributions
+from mimo import mixtures
+
 from mimo.util.text import progprint_xrange
 
 import operator
@@ -30,11 +32,13 @@ nb_models = 25
 gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-components_hypparams = dict(mu=np.mean(data, axis=0), kappa=0.01, psi=np.eye(2), nu=3)
-components_prior = distributions.NormalInverseWishart(**components_hypparams)
+components_hypparams = dict(mu=np.zeros((2, )), kappas=0.001 * np.ones((2, )),
+                            alphas=9 * np.ones((2, )), betas=1. * np.ones((2, )))
+components_prior = distributions.NormalInverseGamma(**components_hypparams)
 
-gmm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                         components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
+gmm = mixtures.BayesianMixtureOfGaussians(gating=distributions.CategoricalWithDirichlet(gating_prior),
+                                          components=[distributions.GaussianWithNormalInverseGamma(components_prior)
+                                                      for _ in range(nb_models)])
 
 gmm.add_data(data)
 
@@ -49,20 +53,20 @@ for superitr in range(3):
     # mean field to lock onto a mode
     print('Mean Field')
     gmm.resample()  # sample once to initialize posterior
-    scores = [gmm.meanfield_update() for _ in progprint_xrange(100)]
+    scores = [gmm.meanfield_update() for _ in progprint_xrange(250)]
 
     allscores.append(scores)
     allmodels.append(copy.deepcopy(gmm))
 
 plt.figure()
+plt.title('model vlb scores vs iteration')
 for scores in allscores:
     plt.plot(scores)
-plt.title('model vlb scores vs iteration')
 
 models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
                            key=operator.itemgetter(1), reverse=True)
 
 plt.figure()
-models_and_scores[0][0].plot()
 plt.title('best model')
+gmm.plot()
 plt.show()

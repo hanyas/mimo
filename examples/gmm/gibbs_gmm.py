@@ -2,7 +2,9 @@ import numpy as np
 import numpy.random as npr
 from matplotlib import pyplot as plt
 
-from mimo import distributions, mixture
+from mimo import distributions
+from mimo import mixtures
+
 from mimo.util.text import progprint_xrange
 
 npr.seed(1337)
@@ -26,11 +28,12 @@ nb_models = 25
 gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
-components_hypparams = dict(mu=np.mean(data, axis=0), kappa=0.01, psi=np.eye(2), nu=3)
+components_hypparams = dict(mu=np.zeros((2, )), kappa=0.01, psi=np.eye(2), nu=3)
 components_prior = distributions.NormalInverseWishart(**components_hypparams)
 
-gmm = mixture.BayesianMixtureOfGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                         components=[distributions.BayesianGaussian(components_prior) for _ in range(nb_models)])
+gmm = mixtures.BayesianMixtureOfGaussians(gating=distributions.CategoricalWithDirichlet(gating_prior),
+                                          components=[distributions.GaussianWithNormalInverseWishart(components_prior)
+                                                      for _ in range(nb_models)])
 
 gmm.add_data(data)
 
@@ -38,7 +41,8 @@ print('Gibbs Sampling')
 for _ in progprint_xrange(1000):
     gmm.resample()
 
+
 plt.figure()
-gmm.plot()
 plt.title('posterior')
+gmm.plot()
 plt.show()
