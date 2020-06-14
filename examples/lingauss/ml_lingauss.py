@@ -14,7 +14,8 @@ nb_samples = 200
 nb_datasets = 200
 
 dist = distributions.LinearGaussian(A=_A, sigma=25e-2 * np.eye(out_dim), affine=False)
-data = [dist.rvs(size=nb_samples) for _ in range(nb_datasets)]
+x = [npr.randn(nb_samples, in_dim) for _ in range(nb_datasets)]
+y = [dist.rvs(_x) for _x in x]
 print("True transf."+"\n", dist.A, "\n"+"True sigma"+"\n", dist.sigma)
 
 affine = False
@@ -27,6 +28,6 @@ hypparams = dict(M=np.zeros((out_dim, n_params)),
                  nu=2 * out_dim + 1)
 prior = distributions.MatrixNormalInverseWishart(**hypparams)
 
-model = distributions.BayesianLinearGaussian(prior)
-model = model.max_likelihood(data)
+model = distributions.LinearGaussianWithMatrixNormalInverseWishart(prior)
+model.meanfield_update(y=y, x=x)
 print("ML transf."+"\n", model.A, "\n"+"ML covariance"+"\n", model.sigma)
