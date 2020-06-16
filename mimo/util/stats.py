@@ -1,11 +1,10 @@
 import numpy as np
 from numpy import random as npr
+
 from numpy.core._umath_tests import inner1d
 
 import scipy as sc
 from scipy.special import logsumexp
-
-import mimo.util.data
 
 
 def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int32):
@@ -24,13 +23,14 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_studentt_loglik(y, mu, lmbda, nu):
+def multivariate_studentt_loglik(y, mu, scale, nu):
+    # Following Bishop notation
     d = len(mu)
     yc = np.array(y - mu, ndmin=2)
-    L = np.linalg.cholesky(lmbda)
+    L = np.linalg.cholesky(scale)
     ys = sc.linalg.solve_triangular(L, yc.T, overwrite_b=True, lower=True)
     return sc.special.gammaln((nu + d) / 2.) - sc.special.gammaln(nu / 2.) \
-            - (d / 2.) * np.log(nu * np.pi) - np.log(L.diagonal()).sum() \
+            - (d / 2.) * np.log(nu * np.pi) - np.sum(np.log(np.diag(L))) \
             - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
 
 

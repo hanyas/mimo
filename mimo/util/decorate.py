@@ -18,7 +18,7 @@ def pass_obs_and_labels_arg(f):
             labels = self.labels
         else:
             obs = obs if isinstance(obs, list) else [obs]
-            labels = [self.gating.rvs(len(_obs)) for _obs in obs]\
+            labels = [self.gating.likelihood.rvs(len(_obs)) for _obs in obs]\
                 if labels is None else labels
 
         return f(self, obs, labels, **kwargs)
@@ -49,7 +49,7 @@ def pass_target_input_and_labels_arg(f):
         else:
             y = y if isinstance(y, list) else [y]
             x = x if isinstance(x, list) else [x]
-            z = [self.gating.rvs(len(_y)) for _y in y]\
+            z = [self.gating.likelihood.rvs(len(_y)) for _y in y]\
                 if z is None else z
 
         return f(self, y, x, z, **kwargs)
