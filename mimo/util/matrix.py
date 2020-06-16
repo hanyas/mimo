@@ -32,15 +32,11 @@ def near_pd(A):
     return A3
 
 
-def blockarray(*args, **kwargs):
-    return np.array(np.bmat(*args, **kwargs), copy=False)
-
-
 def copy_lower_to_upper(A):
     A += np.tril(A, k=-1).T
 
 
-def inv_psd(A, return_chol=False):
+def inv_pd(A, return_chol=False):
     L = np.linalg.cholesky(A)
     Ainv = lapack.dpotri(L, lower=True)[0]
     copy_lower_to_upper(Ainv)
@@ -48,3 +44,11 @@ def inv_psd(A, return_chol=False):
         return Ainv, L
     else:
         return Ainv
+
+
+def blockarray(*args, **kwargs):
+    return np.array(np.bmat(*args, **kwargs), copy=False)
+
+
+def symmetrize(A):
+    return (A + A.T) / 2.
