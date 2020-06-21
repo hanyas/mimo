@@ -1,26 +1,24 @@
 import copy
 from abc import ABC
 
-import numpy as np
-from numpy.core._umath_tests import inner1d
+from operator import add
+from functools import reduce
 
-from scipy.special import digamma
-from scipy.special._ufuncs import gammaln, betaln
+import numpy as np
 
 from mimo.abstraction import Statistics as Stats
 
 from mimo.distributions import Categorical
-from mimo.distributions import Gaussian
-from mimo.distributions import GaussianWithFixedCovariance
-from mimo.distributions import DiagonalGaussian
+from mimo.distributions import GaussianWithPrecision
+from mimo.distributions import GaussianWithDiagonalPrecision
 from mimo.distributions import TiedGaussians
 from mimo.distributions import LinearGaussian
-from mimo.distributions import NormalInverseWishart
+from mimo.distributions import NormalWishart
 
-from mimo.util.matrix import blockarray
+from mimo.util.matrix import blockarray, inv_pd
 
 
-class CategoricalWithDirichlet(Categorical, ABC):
+class CategoricalWithDirichlet:
     """
     This class is a categorical distribution over labels
      with a Dirichlet distribution as prior.
@@ -28,80 +26,66 @@ class CategoricalWithDirichlet(Categorical, ABC):
         probs, a vector encoding a finite pmf
     """
 
-    def __init__(self, prior,  K=None, probs=None):
-        super(CategoricalWithDirichlet, self).__init__(K=K, probs=probs)
-
+    def __init__(self, prior,  likelihood=None):
         # Dirichlet prior
         self.prior = prior
 
         # Dirichlet posterior
         self.posterior = copy.deepcopy(prior)
 
-        self.K, self.probs = K, probs
-        if K is None or probs is None:
-            self.probs = self.prior.rvs()
-            self.K = prior.K
+        # Categorical likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            probs = self.prior.rvs()
+            self.likelihood = Categorical(K=len(probs), probs=probs)
 
     def empirical_bayes(self, data):
         raise NotImplementedError
 
     # Max a posteriori
     def max_aposteriori(self, data, weights=None):
-        counts = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
-        self.posterior.alphas = self.prior.alphas + counts
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.mean()  # mode might be undefined
+        self.likelihood.params = self.posterior.mean()  # mode might be undefined
         return self
 
     # Gibbs sampling
     def resample(self, data=[]):
-        self.posterior.alphas = self.prior.alphas\
-                                + self.get_statistics(data)
+        stats = self.likelihood.statistics(data)
+        self.posterior.nat_param = self.prior.nat_param + stats
 
         _probs = self.posterior.rvs()
-        self.probs = np.clip(_probs, np.spacing(1.), np.inf)
+        self.likelihood.params = np.clip(_probs, np.spacing(1.), np.inf)
         return self
 
     # Mean field
     def meanfield_update(self, data, weights=None):
-        counts = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
-        self.posterior.alphas = self.prior.alphas + counts
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.probs = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        stats = self.get_weighted_statistics(data, weights)
-        self.posterior.alphas = (1. - stepsize) * self.posterior.alphas\
-                                   + stepsize * (self.prior.alphas + 1. / prob * stats)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
 
-        self.probs = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
-        # return avg energy plus entropy, our contribution to the vlb
-        # see Eq. 10.66 in Bishop
-        logpitilde = self.expected_log_likelihood(np.arange(self.K))
-
-        q_entropy = -1. * (gammaln(self.posterior.alphas.sum())
-                           - gammaln(self.posterior.alphas).sum()
-                           + ((self.posterior.alphas - 1.) * logpitilde).sum())
-
-        p_avgengy = gammaln(self.prior.alphas.sum())\
-                    - gammaln(self.prior.alphas).sum()\
-                    + ((self.prior.alphas - 1.) * logpitilde).sum()
-
-        return p_avgengy + q_entropy
-
-    def expected_log_likelihood(self, x=None):
-        # usually called when np.all(x == np.arange(self.K))
-        x = x if x is not None else np.arange(self.K)
-        return digamma(self.posterior.alphas[x]) - digamma(self.posterior.alphas.sum())
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
 
 
-class CategoricalWithStickBreaking(Categorical, ABC):
+class CategoricalWithStickBreaking:
     """
     This class is a categorical distribution over labels
      with a stick-breaking process as prior.
@@ -109,60 +93,63 @@ class CategoricalWithStickBreaking(Categorical, ABC):
         probs, a vector encoding a finite pmf
     """
 
-    def __init__(self, prior, K=None, probs=None):
-        super(CategoricalWithStickBreaking, self).__init__(K=K, probs=probs)
-
+    def __init__(self, prior, likelihood=None):
         # stick-breaking prior
         self.prior = prior
 
         # stick-breaking posterior
         self.posterior = copy.deepcopy(prior)
 
-        self.K, self.probs = K, probs
-        if K is None or probs is None:
-            self.probs = self.prior.rvs()
-            self.K = prior.K
+        # Categorical likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            probs = self.prior.rvs()
+            self.likelihood = Categorical(K=len(probs), probs=probs)
 
     def empirical_bayes(self, data):
         raise NotImplementedError
 
     # Max a posteriori
     def max_aposteriori(self, data, weights=None):
-        counts = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        counts = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         # see Blei et. al Variational Inference for Dirichlet Process Mixtures
         cumcounts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
+
         self.posterior.gammas = self.prior.gammas + counts
         self.posterior.deltas = self.prior.deltas + cumcounts
 
-        self.params = self.posterior.mean()  # mode might be undefined
+        self.likelihood.params = self.posterior.mean()  # mode might not exist
         return self
 
     # Gibbs sampling
     def resample(self, data=[]):
-        counts = self.get_statistics(data)
+        counts = self.likelihood.statistics(data)
         # see Blei et. al Variational Inference for Dirichlet Process Mixtures
         cumcounts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
+
         self.posterior.gammas = self.prior.gammas + counts
         self.posterior.deltas = self.prior.deltas + cumcounts
 
-        self.probs = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     # Mean field
     def meanfield_update(self, data, weights=None):
-        counts = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        counts = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         cumcounts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
 
         self.posterior.gammas = self.prior.gammas + counts
         self.posterior.deltas = self.prior.deltas + cumcounts
 
-        self.probs = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        counts = self.get_weighted_statistics(data, weights)
+        counts = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         cumcounts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
 
         self.posterior.gammas = (1. - stepsize) * self.posterior.gammas\
@@ -170,157 +157,105 @@ class CategoricalWithStickBreaking(Categorical, ABC):
         self.posterior.deltas = (1. - stepsize) * self.posterior.deltas\
                                 + stepsize * (self.prior.deltas + 1. / prob * cumcounts)
 
-        self.probs = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
-        # entropy of a beta distribution https://en.wikipedia.org/wiki/Beta_distribution
-        # E_q[log(q(pi))] = entropy of beta distribution of variational posterior
-        q_entropy = np.sum(betaln(self.posterior.gammas, self.posterior.deltas)
-                           - (self.posterior.gammas - 1.) * digamma(self.posterior.gammas)
-                           - (self.posterior.deltas - 1.) * digamma(self.posterior.deltas)
-                           + (self.posterior.gammas + self.posterior.deltas - 2.)
-                           * digamma(self.posterior.gammas + self.posterior.deltas))
-
-        # cross entropy of a beta distribution https://en.wikipedia.org/wiki/Beta_distribution
-        # E_q[log(p(pi))] = cross entropy of beta dists and the stick-breaking prior
-        p_avgengy = -1.0 * np.sum(betaln(self.prior.gammas, self.prior.deltas)
-                                  - (self.prior.gammas - 1.) * digamma(self.posterior.deltas)
-                                  + (self.prior.gammas - 1.) * digamma(self.posterior.gammas + self.posterior.deltas))
-
-        return p_avgengy + q_entropy
-
-    def expected_log_likelihood(self, x):
-        E_log_stick = digamma(self.posterior.gammas)\
-                      - digamma(self.posterior.gammas + self.posterior.deltas)
-
-        E_log_rest = digamma(self.posterior.deltas)\
-                     - digamma(self.posterior.gammas + self.posterior.deltas)
-        return E_log_stick, E_log_rest
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.prior.cross_entropy(self.posterior)
+        return q_entropy - qp_cross_entropy
 
 
-class GaussianWithNormalInverseWishart(Gaussian, ABC):
+class GaussianWithNormalWishart:
     """
     Multivariate Gaussian distribution class.
-    Uses a Normal-Inverse-Wishart prior and posterior
-    Parameters are mean and covariance matrix:
-        mu, sigma
+    Uses a Normal-Wishart prior and posterior
+    Parameters are mean and precision matrix:
+        mu, lmbda
     """
 
-    def __init__(self, prior, mu=None, sigma=None):
-        super(GaussianWithNormalInverseWishart, self).__init__(mu=mu, sigma=sigma)
-        # Normal-Inverse Wishart conjugate
+    def __init__(self, prior, likelihood=None):
+        # Normal-Wishart conjugate
         self.prior = prior
 
-        # Normal-Inverse Wishart posterior
+        # Normal-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
-        self.mu, self.sigma = mu, sigma
-        if mu is None or sigma is None:
-            self.mu, self.sigma = self.prior.rvs()
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mu, lmbda = self.prior.rvs()
+            self.likelihood = GaussianWithPrecision(mu=mu, lmbda=lmbda)
 
     def empirical_bayes(self, data):
-        self.prior.nat_param = self.get_statistics(data)
-        self.mu, self.sigma = self.prior.rvs()
+        self.prior.nat_param = self.likelihood.get_statistics(data)
+        self.likelihood.params = self.prior.rvs()
         return self
 
     # Max a posteriori
     def max_aposteriori(self, data, weights=None):
-        stats = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.mode()
+        self.likelihood.params = self.posterior.mode()  # mode of wishart might not exist
         return self
 
     # Gibbs sampling
     def resample(self, data=[]):
-        stats = self.get_statistics(data)
+        stats = self.likelihood.statistics(data)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.mu = self.mu.copy()
-        new.sigma = self.sigma.copy()
-        return new
 
     # Mean field
     def meanfield_update(self, data, weights=None):
-        stats = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        stats = self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
+
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
-    def _loglmbdatilde(self):
-        # see Eq. 10.65 in Bishop
-        return np.sum(digamma((self.posterior.invwishart.nu - np.arange(self.dim)) / 2.)) \
-               + self.dim * np.log(2) - 2. * np.sum(np.log(np.diag(self.posterior.invwishart.psi_chol)))
-
     def variational_lowerbound(self):
-        loglmbdatilde = self._loglmbdatilde()
-
-        # see Eq. 10.77 in Bishop
-        q_entropy = - 1. * (0.5 * (loglmbdatilde + self.dim * (np.log(self.posterior.kappa / (2 * np.pi)) - 1.))
-                            - self.posterior.invwishart.entropy())
-
-        # see Eq. 10.74 in Bishop, we aren't summing over K
-        p_avgengy = 0.5 * (self.dim * np.log(self.prior.kappa / (2. * np.pi)) + loglmbdatilde
-                           - self.dim * self.prior.kappa / self.posterior.kappa
-                           - self.prior.kappa * self.posterior.invwishart.nu
-                           * np.dot(self.posterior.gaussian.mu - self.prior.gaussian.mu,
-                                    np.linalg.solve(self.posterior.invwishart.psi,
-                                                    self.posterior.gaussian.mu - self.prior.gaussian.mu))) \
-                    - self.prior.invwishart.log_partition() \
-                    + (self.prior.invwishart.nu - self.dim - 1.) / 2. * loglmbdatilde - 0.5 * self.posterior.invwishart.nu \
-                    * np.linalg.solve(self.posterior.invwishart.psi, self.prior.invwishart.psi).trace()
-
-        return p_avgengy + q_entropy
-
-    def expected_log_likelihood(self, x):
-        x = np.reshape(x, (-1, self.dim)) - self.posterior.gaussian.mu
-        xs = np.linalg.solve(self.posterior.invwishart.psi_chol, x.T)
-
-        # see Eqs. 10.64, 10.67, and 10.71 in Bishop
-        # sneaky gaussian/quadratic identity hidden here
-        return 0.5 * self._loglmbdatilde() - self.dim / (2. * self.posterior.kappa)\
-               - self.posterior.invwishart.nu / 2. * inner1d(xs.T, xs.T) \
-               - self.dim / 2. * np.log(2. * np.pi)
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
 
     def log_marginal_likelihood(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.prior.get_statistics(x)
+        stats = self.likelihood.get_statistics(x)
         natparam = self.prior.nat_param + stats
-        params = NormalInverseWishart.nat_to_std(natparam)
+        params = NormalWishart.nat_to_std(natparam)
 
         log_partition_prior = self.prior.log_partition()
         log_partition_posterior = self.posterior.log_partition(params)
 
-        return log_partition_posterior - log_partition_prior \
-               - 0.5 * len(x) * self.dim * np.log(np.pi)
+        return log_partition_posterior - log_partition_prior\
+               - 0.5 * len(x) * self.likelihood.dim * np.log(np.pi)
 
     def log_posterior_predictive_gaussian(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.get_statistics(x)
+        stats = self.likelihood.get_statistics(x)
         natparam = self.posterior.nat_param + stats
-        mu, kappa, psi, nu = NormalInverseWishart.nat_to_std(natparam)
+        mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
 
         loc = mu
-        scale = psi / nu
+        scale = inv_pd(psi * kappa)
 
         from mimo.util.stats import multivariate_gaussian_loglik
         return multivariate_gaussian_loglik(x, loc, scale)
@@ -328,152 +263,85 @@ class GaussianWithNormalInverseWishart(Gaussian, ABC):
     def log_posterior_predictive_studentt(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.get_statistics(x)
+        stats = self.likelihood.get_statistics(x)
         natparam = self.posterior.nat_param + stats
-        mu, kappa, psi, nu = NormalInverseWishart.nat_to_std(natparam)
+        mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
 
+        # Following Bishop notation
         loc = mu
-        df = nu - self.dim + 1
-        scale = (kappa + 1) / (kappa * (nu - self.dim + 1)) * psi
+        df = nu + 1 - self.likelihood.dim
+        scale = inv_pd(df * kappa * psi / (1 + kappa))
 
         from mimo.util.stats import multivariate_studentt_loglik
         return multivariate_studentt_loglik(x, loc, scale, df)
 
 
-class GaussianWithNormal(GaussianWithFixedCovariance, ABC):
-    """
-    Multivariate Gaussian distribution class.
-    Uses a Gaussian prior and posterior over the mean
-    Parameters are mean and covariance matrix:
-        mu, sigma
-    """
-
-    def __init__(self, prior, sigma, mu=None):
-        assert sigma is not None
-
-        super(GaussianWithNormal, self).__init__(mu=mu, sigma=sigma)
-        # Normal prior
-        self.prior = prior
-
-        # Normal posterior
-        self.posterior = copy.deepcopy(prior)
-
-        self.mu = mu if mu is not None else self.prior.rvs()
-
-    def empirical_bayes(self, data):
-        self.prior.nat_param = self.get_statistics(data)
-        self.mu = self.prior.rvs()
-        return self
-
-    # Max a posteriori
-    def max_aposteriori(self, data, weights=None):
-        x, n, _, _ = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
-
-        _sigma = self.sigma_inv
-        _mu = _sigma @ (x / n)
-        self.posterior.nat_param = Stats([_mu, _sigma]) + self.prior.nat_param
-
-        self.mu = self.posterior.mode()
-        return self
-
-    # Gibbs sampling
-    def resample(self, data=[]):
-        x, n, _, _ = self.get_statistics(data)
-
-        _sigma = self.sigma_inv
-        _mu = _sigma @ (x / n)
-        self.posterior.nat_param = Stats([_mu, _sigma]) + self.prior.nat_param
-
-        self.params = self.posterior.rvs()
-        return self
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.mu = self.mu.copy()
-        return new
-
-
-class GaussianWithNormalInverseGamma(DiagonalGaussian, ABC):
+class GaussianWithNormalGamma:
     """
     Multivariate Diagonal Gaussian distribution class.
-    Uses a Normal-Inverse-Gamma prior and posterior
-    Parameters are mean and covariance matrix:
-        mu, sigmas
+    Uses a Normal-Gamma prior and posterior
+    Parameters are mean and precision matrix:
+        mu, lmbdas
     """
 
-    def __init__(self, prior, mu=None, sigmas=None):
-        super(GaussianWithNormalInverseGamma, self).__init__(mu=mu, sigmas=sigmas)
-        # Normal-Inverse Wishart conjugate
+    def __init__(self, prior, likelihood=None):
+        # Normal-Gamma conjugate
         self.prior = prior
 
-        # Normal-Inverse Wishart posterior
+        # Normal-Gamma posterior
         self.posterior = copy.deepcopy(prior)
 
-        if mu is None or sigmas is None:
-            self.mu, self.sigma = self.prior.rvs()
+        # Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
         else:
-            self.mu, self.sigma = mu, sigmas
+            mu, lmbdas = self.prior.rvs()
+            self.likelihood = GaussianWithDiagonalPrecision(mu=mu, lmbdas=lmbdas)
 
     def empirical_bayes(self, data):
-        self.prior.nat_param = self.get_statistics(data)
-        self.mu, self.sigma = self.prior.rvs()
+        self.prior.nat_param = self.likelihood.get_statistics(data)
+        self.likelihood.params = self.prior.rvs()
         return self
 
     # Max a posteriori
     def max_aposteriori(self, data, weights=None):
-        stats = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.get_statistics(data) if weights is None\
+            else self.likelihood.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.mode()
+        self.likelihood.params = self.posterior.mean()  # mode of wishart might not exist
         return self
 
     # Gibbs sampling
     def resample(self, data=[]):
-        self.posterior.nat_param = self.prior.nat_param\
-                                   + self.get_statistics(data)
+        stats = self.likelihood.get_statistics(data)
+        self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.mu = self.mu.copy()
-        new.sigma = self.sigma.copy()
-        return new
 
     # Mean field
     def meanfield_update(self, data, weights=None):
-        stats = self.get_statistics(data) if weights is None\
-            else self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.get_statistics(data) if weights is None\
+            else self.likelihood.get_weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        stats = self.get_weighted_statistics(data, weights)
+        stats = self.likelihood.get_statistics(data) if weights is None\
+            else self.likelihood.get_weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
 
-        self.params = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     def variational_lowerbound(self):
-        expected_stats = self.posterior.get_expected_statistics()
-
-        param_diff = self.prior.nat_param - self.posterior.nat_param
-        aux = sum(v.dot(w) for v, w in zip(param_diff, expected_stats))
-
-        logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
-
-        return aux - logpart_diff
-
-    def expected_log_likelihood(self, x):
-        a, b, c, d = self.posterior.get_expected_statistics()
-        return (x**2).dot(a) + x.dot(b) + c.sum() + d.sum()\
-               - 0.5 * self.dim * np.log(2. * np.pi)
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.prior.cross_entropy(self.posterior)
+        return q_entropy - qp_cross_entropy
 
 
 class TiedGaussiansWithNormalInverseWishart(TiedGaussians, ABC):
@@ -495,16 +363,23 @@ class TiedGaussiansWithNormalInverseWishart(TiedGaussians, ABC):
 
     # Max a posteriori
     def max_aposteriori(self, data, weights):
-        stats = self.get_weighted_statistics(data, weights)
-        self.posterior.nat_param = self.prior.nat_param + stats
+        stats = []
+        for k, c in enumerate(self.components):
+            _weights = None if weights is None else [_w[:, k] for _w in weights]
+            stats.append(c.statistics(data) if _weights is None
+                         else c.weighted_statistics(data, _weights))
+        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
 
         self.params = self.posterior.mode()
         return self
 
     # Gibbs sampling
     def resample(self, data=[], labels=[]):
-        stats = self.get_statistics(data, labels)
-        self.posterior.nat_param = self.prior.nat_param + stats
+        stats = []
+        for k, c in enumerate(self.components):
+            _data = [_d[_l == k, :] for _d, _l in zip(data, labels)]
+            stats.append(c.statistics(_data))
+        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
 
         self.params = self.posterior.rvs()
         return self
@@ -514,6 +389,38 @@ class TiedGaussiansWithNormalInverseWishart(TiedGaussians, ABC):
         new.mus = self.mus.copy()
         new.sigma = self.sigma.copy()
         return new
+
+    # Mean field
+    def meanfield_update(self, data, weights=None):
+        stats = []
+        for k, c in enumerate(self.components):
+            _weights = None if weights is None else [_w[:, k] for _w in weights]
+            stats.append(c.statistics(data) if _weights is None
+                         else c.weighted_statistics(data, _weights))
+        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+
+        self.params = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+        stats = []
+        for k, c in enumerate(self.components):
+            _weights = None if weights is None else [_w[:, k] for _w in weights]
+            stats.append(c.statistics(data) if _weights is None
+                         else c.weighted_statistics(data, _weights))
+        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+
+        self.params = self.posterior.rvs()
+        return self
+
+    def variational_lowerbound(self):
+        return sum([c.variational_lowerbound() for c in self.posterior.components])
+
+    def expected_log_likelihood(self, x):
+        return np.hstack()
 
 
 class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
@@ -542,8 +449,8 @@ class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
 
     # Max a posteriori
     def max_aposteriori(self, y, x, weights=None):
-        stats = self.posterior.get_statistics(y, x) if weights is None\
-            else self.posterior.get_weighted_statistics(y, x, weights)
+        stats = self.posterior.statistics(y, x) if weights is None\
+            else self.posterior.weighted_statistics(y, x, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.params = self.posterior.mode()
@@ -573,7 +480,8 @@ class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
         return self
 
     def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
-        stats = self.get_weighted_statistics(y, x, weights)
+        stats = self.get_statistics(y, x) if weights is None\
+            else self.get_weighted_statistics(y, x, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
 

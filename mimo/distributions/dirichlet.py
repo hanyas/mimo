@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.random as npr
-from scipy.special import digamma, gammaln
+
+from scipy.special import digamma, gammaln, betaln
 
 from mimo.abstraction import Distribution
 
@@ -37,16 +38,76 @@ class Dirichlet(Distribution):
         return (self.alphas - 1.) / (np.sum(self.alphas) - self.K)
 
     def log_likelihood(self, x):
-        return gammaln(np.sum(self.alphas))\
-               - np.sum(gammaln(self.alphas))\
-               + np.sum((self.alphas - 1.) * np.log(x))
+        log_lik = np.sum((self.alphas - 1.) * np.log(x))
+        return - self.log_partition() + self.log_base() + log_lik
+
+    def statistics(self, data):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(1)
+            data = data[idx]
+
+            logx = np.log(data)
+
+            return logx
+        else:
+            return list(map(self.statistics, data))
+
+    def weighted_statistics(self, data, weights):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(1)
+            data = data[idx]
+            weights = weights[idx]
+
+            logx = np.einsum('n,nk->nk', weights, np.log(data))
+
+            return logx
+        else:
+            return list(map(self.weighted_statistics, data, weights))
+
+    @property
+    def base(self):
+        return 1.
+
+    def log_base(self):
+        return np.log(self.base)
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        alphas = params - 1.
+        return alphas
+
+    @staticmethod
+    def nat_to_std(natparam):
+        alphas = natparam + 1.
+        return alphas
 
     def log_partition(self):
-        return - gammaln(np.sum(self.alphas))\
-               + np.sum(gammaln(self.alphas))
+        return np.sum(gammaln(self.alphas)) - gammaln(np.sum(self.alphas))
+
+    def expected_statistics(self):
+        E_log_x = digamma(self.alphas) - digamma(np.sum(self.alphas))
+        return E_log_x
 
     def entropy(self):
-        return self.log_partition() - np.sum((self.alphas - 1.) * (digamma(self.alphas) - digamma(np.sum(self.alphas))))
+        nat_param, stats = self.nat_param, self.expected_statistics()
+        return self.log_partition() - self.log_base()\
+               - nat_param.dot(stats)
+
+    def cross_entropy(self, dist):
+        nat_param, stats = dist.nat_param, self.expected_statistics()
+        return dist.log_partition() - dist.log_base()\
+               - nat_param.dot(stats)
+
+    def expected_log_likelihood(self):
+        return self.expected_statistics()
 
 
 class StickBreaking(Distribution):
@@ -119,8 +180,50 @@ class StickBreaking(Distribution):
     def log_likelihood(self, x):
         raise NotImplementedError
 
+    @property
+    def base(self):
+        return 1.
+
+    def log_base(self):
+        return np.log(self.base)
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        gammas = params[0] - 1.
+        deltas = params[1] - 1.
+        return gammas, deltas
+
+    @staticmethod
+    def nat_to_std(natparam):
+        gammas = natparam[0] + 1.
+        deltas = natparam[1] + 1.
+        return gammas, deltas
+
     def log_partition(self):
-        raise NotImplementedError
+        return np.sum(betaln(self.gammas, self.deltas))
+
+    def expected_statistics(self):
+        E_log_stick = digamma(self.gammas) - digamma(self.gammas + self.deltas)
+        E_log_rest = digamma(self.deltas) - digamma(self.gammas + self.deltas)
+        return E_log_stick, E_log_rest
 
     def entropy(self):
-        raise NotImplementedError
+        nat_param, stats = self.nat_param, self.expected_statistics()
+        return self.log_partition() - self.log_base()\
+               - (nat_param[0].dot(stats[0]) + nat_param[1].dot(stats[1]))
+
+    def cross_entropy(self, dist):
+        nat_param, stats = dist.nat_param, self.expected_statistics()
+        return dist.log_partition() - dist.log_base()\
+               - (nat_param[0].dot(stats[0]) + nat_param[1].dot(stats[1]))
+
+    def expected_log_likelihood(self):
+        return self.expected_statistics()
