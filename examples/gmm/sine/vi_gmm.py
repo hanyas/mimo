@@ -1,22 +1,26 @@
 import copy
+import operator
 
 import numpy as np
 import numpy.random as npr
 from matplotlib import pyplot as plt
 
-from mimo import distributions
-from mimo import mixtures
+from mimo.distributions import Dirichlet
+from mimo.distributions import CategoricalWithDirichlet
+from mimo.distributions import NormalWishart
+from mimo.distributions import GaussianWithNormalWishart
+
+from mimo.mixtures import BayesianMixtureOfGaussians
 
 from mimo.util.text import progprint_xrange
 
-import operator
 
 npr.seed(1337)
 
-n_samples = 2500
+nb_samples = 2500
 
-data = np.zeros((n_samples, 2))
-step = 14. * np.pi / n_samples
+data = np.zeros((nb_samples, 2))
+step = 14. * np.pi / nb_samples
 
 for i in range(data.shape[0]):
     x = i * step - 6.
@@ -30,21 +34,21 @@ plt.title('data')
 nb_models = 25
 
 gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
-gating_prior = distributions.Dirichlet(**gating_hypparams)
+gating_prior = Dirichlet(**gating_hypparams)
 
-components_hypparams = dict(mu=np.zeros((2, )), kappas=0.001 * np.ones((2, )),
-                            alphas=9 * np.ones((2, )), betas=1. * np.ones((2, )))
-components_prior = distributions.NormalInverseGamma(**components_hypparams)
+components_hypparams = dict(mu=np.zeros((2, )), kappa=0.01,
+                            psi=np.eye(2), nu=3)
+components_prior = NormalWishart(**components_hypparams)
 
-gmm = mixtures.BayesianMixtureOfGaussians(gating=distributions.CategoricalWithDirichlet(gating_prior),
-                                          components=[distributions.GaussianWithNormalInverseGamma(components_prior)
-                                                      for _ in range(nb_models)])
+gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                 components=[GaussianWithNormalWishart(components_prior)
+                                             for _ in range(nb_models)])
 
 gmm.add_data(data)
 
 allscores = []
 allmodels = []
-for superitr in range(3):
+for superitr in range(5):
     # Gibbs sampling to wander around the posterior
     print('Gibbs Sampling')
     for _ in progprint_xrange(25):
@@ -53,7 +57,7 @@ for superitr in range(3):
     # mean field to lock onto a mode
     print('Mean Field')
     gmm.resample()  # sample once to initialize posterior
-    scores = [gmm.meanfield_update() for _ in progprint_xrange(250)]
+    scores = [gmm.meanfield_update() for _ in progprint_xrange(100)]
 
     allscores.append(scores)
     allmodels.append(copy.deepcopy(gmm))
