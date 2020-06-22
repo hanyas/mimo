@@ -7,8 +7,8 @@ from mimo.distributions import Categorical
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import GaussianWithCovariance
-from mimo.distributions import NormalWishart
-from mimo.distributions import GaussianWithNormalWishart
+from mimo.distributions import NormalGamma
+from mimo.distributions import GaussianWithNormalGamma
 
 from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussians
@@ -25,26 +25,26 @@ components = [GaussianWithCovariance(mu=np.array([1., 1.]), sigma=0.25 * np.eye(
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
-obs, z = gmm.rvs(500)
+obs, z = gmm.rvs(1000)
 gmm.plot(obs)
 
 gating_hypparams = dict(K=2, alphas=np.ones((2, )))
 gating_prior = Dirichlet(**gating_hypparams)
 
-components_hypparams = dict(mu=np.zeros((2, )), kappa=0.01,
-                            psi=np.eye(2), nu=3)
-components_prior = NormalWishart(**components_hypparams)
+components_hypparams = dict(mu=np.zeros((2, )), kappas=1. * np.ones((2, )),
+                            alphas=1e1 * np.ones((2, )), betas=1e-1 * np.ones((2, )))
+components_prior = NormalGamma(**components_hypparams)
 
 model = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                   components=[GaussianWithNormalWishart(components_prior)
+                                   components=[GaussianWithNormalGamma(components_prior)
                                                for _ in range(2)])
 
 model.add_data(obs)
 
-print('Gibbs Sampling')
+model.resample()
+print('Variational Inference')
 for _ in progprint_xrange(1000):
-    print(model.gating.likelihood.params)
-    model.resample()
+    model.meanfield_update()
 
 plt.figure()
 model.plot(obs)
