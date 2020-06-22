@@ -145,13 +145,6 @@ class BayesianConditional(with_metaclass(abc.ABCMeta, Conditional)):
     def resample(self, data=[]):
         pass
 
-    def copy_sample(self):
-        """
-        return an object copy suitable for making lists of posterior samples
-        (override this method to prevent copying shared structures into each sample)
-        """
-        return copy.deepcopy(self)
-
     def resample_and_copy(self):
         self.resample()
         return self.copy_sample()
