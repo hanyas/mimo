@@ -109,8 +109,9 @@ class NormalWishart(Distribution):
         return mu, kappa, psi, nu
 
     def log_partition(self, params=None):
-        _, _, psi, nu = params if params is not None else self.params
-        return - self.dim / 2. * np.log(self.kappa) + Wishart(psi=psi, nu=nu).log_partition()
+        _, kappa, psi, nu = params if params is not None else self.params
+        dim = self.dim if params else psi.shape[0]
+        return - dim / 2. * np.log(kappa) + Wishart(psi=psi, nu=nu).log_partition()
 
     def expected_statistics(self):
         # stats = [lmbda @ x,
@@ -144,6 +145,7 @@ class NormalWishart(Distribution):
         nat_param = self.expected_statistics()
 
         # Data statistics under a Gaussian likelihood
+        # log-parition is subsumed into nat*stats
         liklihood = GaussianWithPrecision(mu=np.empty(x.shape[-1]))
         stats = liklihood.statistics(x, keepdim=True)
         log_base = liklihood.log_base()
@@ -174,7 +176,7 @@ class NormalGamma(Distribution):
 
     def rvs(self, size=1):
         lmbdas = self.gamma.rvs()
-        self.gaussian.lmbda = np.diag(self.kappas * lmbdas)
+        self.gaussian.lmbdas = self.kappas * lmbdas
         mu = self.gaussian.rvs()
         return mu, lmbdas
 
@@ -187,27 +189,15 @@ class NormalGamma(Distribution):
     def log_likelihood(self, x):
         mu, lmbdas = x
         return GaussianWithDiagonalPrecision(mu=self.gaussian.mu,
-                                             lmbdas=self.kappas * lmbdas).log_likelihood(mu) + \
-               self.gamma.log_likelihood(lmbdas)
+                                             lmbdas=self.kappas * lmbdas).log_likelihood(mu)\
+               + self.gamma.log_likelihood(lmbdas)
 
-    def log_partition(self, params=None):
-        mu, kappas, alphas, betas = params if params is not None else self.params
-        return GaussianWithPrecision(mu=mu, lmbda=kappas * np.eye(len(mu))).log_partition()\
-               + Gamma(alphas=alphas, betas=betas).log_partition()
+    @property
+    def base(self):
+        return self.gaussian.base * self.gamma.base
 
-    def entropy(self):
-        raise NotImplementedError
-
-    def cross_entropy(self):
-        raise NotImplementedError
-
-    def expected_log_likelihood(self, x):
-        a, b, c, d = self.get_expected_statistics()
-        return (x**2).dot(a) + x.dot(b) + c.sum() + d.sum()\
-               - 0.5 * self.likelihood.dim * np.log(2. * np.pi)
-
-    def expected_log_likelihood(self, x):
-        raise NotImplementedError
+    def log_base(self):
+        return np.log(self.base)
 
     @property
     def nat_param(self):
@@ -219,25 +209,73 @@ class NormalGamma(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        mu, kappas, alphas, betas = params
-        return Stats([kappas * mu, kappas, 2. * alphas,
-                      2. * betas + kappas * mu**2])
+        # The definition of stats is slightly different
+        # from literatur to make posterior updates easy
+
+        # Assumed stats
+        # stats = [lmbdas * x,
+        #          -0.5 * lmbdas * xx,
+        #          0.5 * log_lmbdas
+        #          -0.5 * lmbdas]
+
+        mu = params[1] * params[0]
+        kappas = params[1]
+        alphas = 2. * params[2] - 1.
+        betas = 2. * params[3] + params[1] * params[0]**2
+        return Stats([mu, kappas, alphas, betas])
 
     @staticmethod
     def nat_to_std(natparam):
+        mu = natparam[0] / natparam[1]
         kappas = natparam[1]
-        mu = natparam[0] / kappas
-        alphas = natparam[2] / 2.
-        betas = (natparam[3] - kappas * mu**2) / 2.
+        alphas = 0.5 * (natparam[2] + 1.)
+        betas = 0.5 * (natparam[3] - kappas * mu**2)
         return mu, kappas, alphas, betas
 
-    def get_expected_statistics(self):
-        E_J = - 0.5 * self.gamma.alphas * self.invgamma.betas
-        E_h = self.gaussian.mu * self.gamma.alphas * self.gamma.betas
-        E_muJmuT = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_h)
-        E_logdet_lmbda = 0.5 * (np.log(self.gamma.betas) + digamma(self.gamma.alphas))
+    def log_partition(self, params=None):
+        mu, kappas, alphas, betas = params if params is not None else self.params
+        return - 0.5 * np.sum(np.log(kappas)) + Gamma(alphas=alphas, betas=betas).log_partition()
 
-        return E_J, E_h, E_muJmuT, E_logdet_lmbda
+    def expected_statistics(self):
+        # stats = [lmbdas * x,
+        #          -0.5 * lmbdas * xx,
+        #          0.5 * log_lmbdas
+        #          -0.5 * lmbdas]
+
+        E_x = self.gamma.alphas / self.gamma.betas * self.gaussian.mu
+        E_lmbdas_xx = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_x)
+        E_log_lmbdas = 0.5 * (digamma(self.gamma.alphas) - np.log(self.gamma.betas))
+        E_lmbdas = - 0.5 * (self.gamma.alphas / self.gamma.betas)
+
+        return E_x, E_lmbdas_xx, E_log_lmbdas, E_lmbdas
+
+    def entropy(self):
+        nat_param, stats = self.nat_param, self.expected_statistics()
+        return self.log_partition() - self.log_base()\
+               - (np.dot(nat_param[0], stats[0]) + np.dot(nat_param[1], stats[1])
+                  + np.dot(nat_param[2], stats[2]) + np.dot(nat_param[3], stats[3]))
+
+    def cross_entropy(self, dist):
+        nat_param, stats = dist.nat_param, self.expected_statistics()
+        return self.log_partition() - self.log_base()\
+               - (np.dot(nat_param[0], stats[0]) + np.dot(nat_param[1], stats[1])
+                  + np.dot(nat_param[2], stats[2]) + np.dot(nat_param[3], stats[3]))
+
+    def expected_log_likelihood(self, x):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.expected_statistics()
+
+        # Data statistics under a Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        liklihood = GaussianWithDiagonalPrecision(mu=np.empty(x.shape[-1]))
+        stats = liklihood.statistics(x, keepdim=True)
+        log_base = liklihood.log_base()
+
+        return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
+               + np.einsum('k,nk->n', nat_param[1], stats[1])\
+               + np.einsum('k,nk->n', nat_param[2], stats[2])\
+               + np.einsum('k,nk->n', nat_param[3], stats[3])
 
 
 class TiedNormalInverseWisharts:

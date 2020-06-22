@@ -1,5 +1,3 @@
-import copy
-
 import numpy as np
 from scipy import special as special
 from scipy.special import logsumexp
@@ -444,8 +442,7 @@ class BayesianMixtureOfGaussians(Distribution):
     def bic(self, obs=None):
         assert obs is not None
         return - 2. * self.log_likelihood(obs) + self.nb_params\
-               * np.log(sum([_obs.shape[0] for _obs in obs]))\
-
+               * np.log(sum([_obs.shape[0] for _obs in obs]))
 
     def aic(self):
         assert self.has_data()
