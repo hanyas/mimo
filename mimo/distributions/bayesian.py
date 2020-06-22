@@ -1,9 +1,6 @@
 import copy
 from abc import ABC
 
-from operator import add
-from functools import reduce
-
 import numpy as np
 
 from mimo.abstraction import Statistics as Stats
@@ -162,7 +159,7 @@ class CategoricalWithStickBreaking:
 
     def variational_lowerbound(self):
         q_entropy = self.posterior.entropy()
-        qp_cross_entropy = self.prior.cross_entropy(self.posterior)
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
 
@@ -222,7 +219,6 @@ class GaussianWithNormalWishart:
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
-
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
 
@@ -299,22 +295,22 @@ class GaussianWithNormalGamma:
             self.likelihood = GaussianWithDiagonalPrecision(mu=mu, lmbdas=lmbdas)
 
     def empirical_bayes(self, data):
-        self.prior.nat_param = self.likelihood.get_statistics(data)
+        self.prior.nat_param = self.likelihood.statistics(data)
         self.likelihood.params = self.prior.rvs()
         return self
 
     # Max a posteriori
     def max_aposteriori(self, data, weights=None):
-        stats = self.likelihood.get_statistics(data) if weights is None\
-            else self.likelihood.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.likelihood.params = self.posterior.mean()  # mode of wishart might not exist
+        self.likelihood.params = self.posterior.mode()  # mode of gamma might not exist
         return self
 
     # Gibbs sampling
     def resample(self, data=[]):
-        stats = self.likelihood.get_statistics(data)
+        stats = self.likelihood.statistics(data)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.rvs()
@@ -322,16 +318,16 @@ class GaussianWithNormalGamma:
 
     # Mean field
     def meanfield_update(self, data, weights=None):
-        stats = self.likelihood.get_statistics(data) if weights is None\
-            else self.likelihood.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        stats = self.likelihood.get_statistics(data) if weights is None\
-            else self.likelihood.get_weighted_statistics(data, weights)
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
 
