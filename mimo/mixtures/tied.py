@@ -67,7 +67,6 @@ class BayesianMixtureOfTiedGaussians(Distribution):
         self.ensemble = ensemble
 
         self.gaussians = self.ensemble.likelihood.components
-        self.categorical = self.gating.likelihood
 
         self.obs = []
         self.labels = []
@@ -77,7 +76,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
     @property
     def nb_params(self):
-        return self.categorical.nb_params\
+        return self.gating.likelihood.nb_params\
                + sum(g.nb_params for g in self.gaussians)\
                - (self.size - 1) * self.dim * (self.dim + 1) / 2
 
@@ -92,14 +91,15 @@ class BayesianMixtureOfTiedGaussians(Distribution):
     @property
     def used_labels(self):
         assert self.has_data()
-        label_usages = sum(np.bincount(_label, minlength=self.size) for _label in self.labels)
+        label_usages = sum(np.bincount(_label, minlength=self.size)
+                           for _label in self.labels)
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
     def add_data(self, obs, whiten=False):
         obs = obs if isinstance(obs, list) else [obs]
         for _obs in obs:
-            self.labels.append(self.categorical.rvs(len(_obs)))
+            self.labels.append(self.gating.likelihood.rvs(len(_obs)))
 
         if whiten:
             self.whitend = True
@@ -125,7 +125,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
         return len(self.obs) > 0
 
     def rvs(self, size=1):
-        labels = self.categorical.rvs(size)
+        labels = self.gating.likelihood.rvs(size)
         counts = np.bincount(labels, minlength=self.size)
 
         obs = np.empty((size, self.dim))
@@ -166,7 +166,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
             component_scores[:, idx] = g.log_likelihood(obs)
         component_scores = np.nan_to_num(component_scores)
 
-        gating_scores = self.categorical.log_likelihood(np.arange(K))
+        gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
         return score
 
@@ -308,7 +308,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
         # plot parameters
         axis = plt.axis()
-        for label, (g, w) in enumerate(zip(self.gaussians, self.categorical.probs)):
+        for label, (g, w) in enumerate(zip(self.gaussians, self.gating.likelihood.probs)):
             artists.extend(g.plot(color=label_colors[label], label='%d' % label,
                                   alpha=min(0.25, 1. - (1. - w) ** 2) / 0.25 if alpha is None else alpha))
         plt.axis(axis)
