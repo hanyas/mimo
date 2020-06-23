@@ -1,7 +1,6 @@
 import numpy as np
 
 from scipy.special import multigammaln, digamma
-from scipy.special import gammaln
 
 from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
@@ -12,7 +11,9 @@ from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 from mimo.distributions import MatrixNormal
 
+from mimo.util.data import extendlists
 from mimo.util.matrix import inv_pd, near_pd
+
 
 
 class NormalInverseWishart(Distribution):
@@ -278,23 +279,13 @@ class NormalGamma(Distribution):
                + np.einsum('k,nk->n', nat_param[3], stats[3])
 
 
-class TiedNormalInverseWisharts:
+class TiedNormalWisharts:
 
     def __init__(self, mus, kappas, psi, nu):
-        self.components = [NormalInverseWishart(mu=_mu, kappa=_kappa, psi=psi, nu=nu)
+        self._psi = psi
+        self._nu = nu
+        self.components = [NormalWishart(mu=_mu, kappa=_kappa, psi=psi, nu=nu)
                            for _mu, _kappa in zip(mus, kappas)]
-
-    def rvs(self, size=1):
-        assert size == 1
-        sigma = self.components[0].invwishart.rvs()
-        for idx, c in enumerate(self.components):
-            c.gaussian.sigma = sigma / c.kappa
-        mus = [c.gaussian.rvs() for c in self.components]
-        return mus, sigma
-
-    @property
-    def size(self):
-        return len(self.components)
 
     @property
     def params(self):
@@ -303,6 +294,22 @@ class TiedNormalInverseWisharts:
     @params.setter
     def params(self, values):
         self.mus, self.kappas, self.psi, self.nu = values
+
+    def rvs(self, size=1):
+        assert size == 1
+        lmbda = Wishart(psi=self.psi, nu=self.nu).rvs()
+        for idx, c in enumerate(self.components):
+            c.gaussian.lmbda = c.kappa * lmbda
+        mus = [c.gaussian.rvs() for c in self.components]
+        return mus, lmbda
+
+    @property
+    def dim(self):
+        return self.psi.shape[0]
+
+    @property
+    def size(self):
+        return len(self.components)
 
     @property
     def mus(self):
@@ -324,35 +331,33 @@ class TiedNormalInverseWisharts:
 
     @property
     def psi(self):
-        assert np.all([c.invwishart.psi == self.components[0].invwishart.psi
-                       for c in self.components])
-        return self.components[0].invwishart.psi
+        return self._psi
 
     @psi.setter
     def psi(self, value):
+        self._psi = value
         for c in self.components:
-            c.invwishart.psi = value
+            c.wishart.psi = value
 
     @property
     def nu(self):
-        assert np.all([c.invwishart.nu == self.components[0].invwishart.nu
-                       for c in self.components])
-        return self.components[0].invwishart.nu
+        return self._nu
 
     @nu.setter
     def nu(self, value):
+        self._nu = value
         for c in self.components:
-            c.invwishart.nu = value
+            c.wishart.nu = value
 
     def mean(self):
         mus = [c.mean()[0] for c in self.components]
-        sigma = self.components[0].mean()[1]
-        return mus, sigma
+        lmbda = Wishart(psi=self.psi, nu=self.nu).mean()
+        return mus, lmbda
 
     def mode(self):
         mus = [c.mode()[0] for c in self.components]
-        sigma = self.components[0].mode()[1]
-        return mus, sigma
+        lmbda = Wishart(psi=self.psi, nu=self.nu).mode()
+        return mus, lmbda
 
     @property
     def nat_param(self):
@@ -365,26 +370,20 @@ class TiedNormalInverseWisharts:
     @staticmethod
     def std_to_nat(params):
         nat = []
-        mus, kappas, psi, nu = params
-        for mu, kappa in zip(mus, kappas):
-            _mu = kappa * mu
-            _kappa = kappa
-            _psi = psi + kappa * np.outer(mu, mu)
-            _nu = nu
-            nat.append(Stats([_mu, _kappa, _psi, _nu]))
+        for _params in zip(*extendlists(params)):
+            nat.append(NormalWishart.std_to_nat(_params))
         return Stats(nat)
 
     @staticmethod
     def nat_to_std(natparam):
-        mus, kappas, psis, nus = [], [], [], []
+        std = []
         for _natparam in natparam:
-            mus.append(_natparam[0] / _natparam[1])
-            kappas.append(_natparam[1])
-            psis.append(_natparam[2] - kappas[-1] * np.outer(mus[-1], mus[-1]))
-            nus.append(_natparam[3])
+            std.append(NormalWishart.nat_to_std(_natparam))
 
-        psi = np.mean(np.stack(psis, axis=2), axis=-1)
-        nu = np.mean(np.hstack(nus), axis=0)
+        mus = [_std[0] for _std in std]
+        kappas = [_std[1] for _std in std]
+        psi = np.mean(np.stack([_std[2] for _std in std], axis=2), axis=-1)
+        nu = np.mean(np.hstack([_std[3] for _std in std]), axis=0)
 
         return mus, kappas, psi, nu
 
@@ -495,17 +494,3 @@ class MatrixNormalInverseWishart(Distribution):
                            + self.drow * np.log(2) - np.linalg.slogdet(self.invwishart.psi)[1]
 
         return E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv
-
-
-if __name__ == '__main__':
-    psi = np.linalg.inv(np.array([[16119.32896757,  -283.99104534],
-                                  [-283.99104534,   462.54112854]]))
-    nu = 103
-    mu = np.array([1.59797067e+01, 1.77075092e-03])
-    kappa = 100.01
-
-    g = NormalWishart(mu=mu, kappa=kappa,
-                      psi=psi, nu=nu)
-    print(g.entropy())
-    x = np.random.randn(5, 2)
-    print(g.expected_log_likelihood(x))

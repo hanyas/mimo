@@ -10,14 +10,14 @@ from mimo import mixtures
 
 from mimo.util.text import progprint_xrange
 
-# npr.seed(1337)
+npr.seed(1337)
 
 gating = distributions.Categorical(K=2)
 
 sigma = stats.invwishart(3, np.eye(2)).rvs()
-ensemble = distributions.TiedGaussians(mus=[np.array([1., 1.]),
-                                            np.array([-1., -1.])],
-                                       sigma=sigma)
+ensemble = distributions.TiedGaussiansWithPrecision(mus=[np.array([1., 1.]),
+                                                         np.array([-1., -1.])],
+                                                    sigma=sigma)
 
 gmm = mixtures.MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 
