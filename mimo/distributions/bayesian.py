@@ -367,17 +367,14 @@ class TiedGaussiansWithNormalWishart(ABC):
         self.likelihood.params = self.posterior.mode()
         return self
 
-    # # Gibbs sampling
-    # def resample(self, data=[], labels=[]):
-    #     stats = []
-    #     for k, c in enumerate(self.components):
-    #         _data = [_d[_l == k, :] for _d, _l in zip(data, labels)]
-    #         stats.append(c.statistics(_data))
-    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-    #
-    #     self.params = self.posterior.rvs()
-    #     return self
-    #
+    # Gibbs sampling
+    def resample(self, data=[], labels=[]):
+        stats = self.likelihood.statistics(data, labels)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
     # # Mean field
     # def meanfield_update(self, data, weights=None):
     #     stats = []
