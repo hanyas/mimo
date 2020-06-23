@@ -5,7 +5,7 @@ from .matrix import *
 
 from .gaussian import *
 from .diagonal import *
-from .tiedcovar import *
+from .tiedgauss import *
 from .categorical import *
 from .lingauss import *
 

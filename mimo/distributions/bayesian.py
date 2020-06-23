@@ -8,7 +8,7 @@ from mimo.abstraction import Statistics as Stats
 from mimo.distributions import Categorical
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
-from mimo.distributions import TiedGaussians
+from mimo.distributions import TiedGaussiansWithPrecision
 from mimo.distributions import LinearGaussian
 from mimo.distributions import NormalWishart
 
@@ -340,83 +340,75 @@ class GaussianWithNormalGamma:
         return q_entropy - qp_cross_entropy
 
 
-class TiedGaussiansWithNormalInverseWishart(TiedGaussians, ABC):
+class TiedGaussiansWithNormalWishart(ABC):
 
-    def __init__(self, prior, mus=None, sigma=None):
-        # Tied Normal Inverse Wishart Prior
+    def __init__(self, prior, likelihood=None):
+        # Tied Normal Wishart prior
         self.prior = prior
 
-        # Tied Normal Inverse Wishart Prior posterior
+        # Tied Normal Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
-        if mus is None or sigma is None:
-            mus, sigma = self.prior.rvs()
-
-        super(TiedGaussiansWithNormalInverseWishart, self).__init__(mus=mus, sigma=sigma)
+        # TiedGaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            mus, lmbda = self.prior.rvs()
+            self.likelihood = TiedGaussiansWithPrecision(mus=mus, lmbda=lmbda)
 
     def empirical_bayes(self, data):
         raise NotImplementedError
 
     # Max a posteriori
     def max_aposteriori(self, data, weights):
-        stats = []
-        for k, c in enumerate(self.components):
-            _weights = None if weights is None else [_w[:, k] for _w in weights]
-            stats.append(c.statistics(data) if _weights is None
-                         else c.weighted_statistics(data, _weights))
-        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+        stats = self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.mode()
+        self.likelihood.params = self.posterior.mode()
         return self
 
-    # Gibbs sampling
-    def resample(self, data=[], labels=[]):
-        stats = []
-        for k, c in enumerate(self.components):
-            _data = [_d[_l == k, :] for _d, _l in zip(data, labels)]
-            stats.append(c.statistics(_data))
-        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-
-        self.params = self.posterior.rvs()
-        return self
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.mus = self.mus.copy()
-        new.sigma = self.sigma.copy()
-        return new
-
-    # Mean field
-    def meanfield_update(self, data, weights=None):
-        stats = []
-        for k, c in enumerate(self.components):
-            _weights = None if weights is None else [_w[:, k] for _w in weights]
-            stats.append(c.statistics(data) if _weights is None
-                         else c.weighted_statistics(data, _weights))
-        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-
-        self.params = self.posterior.rvs()
-        return self
-
-    def meanfield_sgdstep(self, data, weights, prob, stepsize):
-        stats = []
-        for k, c in enumerate(self.components):
-            _weights = None if weights is None else [_w[:, k] for _w in weights]
-            stats.append(c.statistics(data) if _weights is None
-                         else c.weighted_statistics(data, _weights))
-        self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
-
-        self.params = self.posterior.rvs()
-        return self
-
-    def variational_lowerbound(self):
-        return sum([c.variational_lowerbound() for c in self.posterior.components])
-
-    def expected_log_likelihood(self, x):
-        return np.hstack()
+    # # Gibbs sampling
+    # def resample(self, data=[], labels=[]):
+    #     stats = []
+    #     for k, c in enumerate(self.components):
+    #         _data = [_d[_l == k, :] for _d, _l in zip(data, labels)]
+    #         stats.append(c.statistics(_data))
+    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+    #
+    #     self.params = self.posterior.rvs()
+    #     return self
+    #
+    # # Mean field
+    # def meanfield_update(self, data, weights=None):
+    #     stats = []
+    #     for k, c in enumerate(self.components):
+    #         _weights = None if weights is None else [_w[:, k] for _w in weights]
+    #         stats.append(c.statistics(data) if _weights is None
+    #                      else c.weighted_statistics(data, _weights))
+    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+    #
+    #     self.params = self.posterior.rvs()
+    #     return self
+    #
+    # def meanfield_sgdstep(self, data, weights, prob, stepsize):
+    #     stats = []
+    #     for k, c in enumerate(self.components):
+    #         _weights = None if weights is None else [_w[:, k] for _w in weights]
+    #         stats.append(c.statistics(data) if _weights is None
+    #                      else c.weighted_statistics(data, _weights))
+    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
+    #
+    #     self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+    #                                + stepsize * (self.prior.nat_param + 1. / prob * stats)
+    #
+    #     self.params = self.posterior.rvs()
+    #     return self
+    #
+    # def variational_lowerbound(self):
+    #     return sum([c.variational_lowerbound() for c in self.posterior.components])
+    #
+    # def expected_log_likelihood(self, x):
+    #     return np.hstack()
 
 
 class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
@@ -459,12 +451,6 @@ class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
 
         self.params = self.posterior.rvs()
         return self
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.A = self.A.copy()
-        new.sigma = self.sigma.copy()
-        return new
 
     # Mean field
     def meanfield_update(self, y, x, weights=None):
