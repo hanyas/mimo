@@ -1,18 +1,24 @@
 import numpy as np
 
 
-def any_none(*args):
+def extendlists(l):
+    l = [[_l] if not isinstance(_l, list) else _l for _l in l]
+    maxlen = max(map(len, l))
+    return [_l + [_l[-1]] * (maxlen - len(_l)) for _l in l]
+
+
+def anynone(*args):
     return any(_ is None for _ in args)
 
 
-def atleast_2d(data):
+def atleast2d(data):
     if data.ndim == 1:
         return data.reshape((-1, 1))
     return data
 
 
 def gi(data):
-    out = (np.isnan(atleast_2d(data)).sum(1) == 0).ravel()
+    out = (np.isnan(atleast2d(data)).sum(1) == 0).ravel()
     return out if len(out) != 0 else None
 
 

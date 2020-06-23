@@ -8,7 +8,6 @@ from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
 
 from mimo.util.data import flattendata
-from mimo.util.matrix import inv_pd
 
 
 class GaussianWithDiagonalCovariance(Distribution):
@@ -406,10 +405,3 @@ class GaussianWithDiagonalPrecision(Distribution):
             plt.draw()
 
         return [_scatterplot] + list(_parameterplot)
-
-
-if __name__ == "__main__":
-    g = GaussianWithDiagonalPrecision(mu=np.zeros((2, )), lmbdas=np.array([0.1, 0.25]))
-    x = g.rvs(1000000)
-    print(np.mean(x, axis=0))
-    print(np.cov(x, rowvar=False))
