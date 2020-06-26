@@ -5,7 +5,7 @@ from scipy import linalg
 from numpy.core.umath_tests import inner1d
 
 from mimo.abstraction import Distribution
-from mimo.util.matrix import near_pd
+from mimo.util.matrix import nearpd
 
 
 class MatrixNormal(Distribution):
