@@ -1,6 +1,18 @@
 import numpy as np
 
 
+def tofloat(x):
+    return x[0] if len(x) == 1 else x
+
+
+def tolist(x):
+    return [x] if not isinstance(x, list) else x
+
+
+def islist(*args):
+    return all(isinstance(_arg, list) for _arg in args)
+
+
 def extendlists(l):
     l = [[_l] if not isinstance(_l, list) else _l for _l in l]
     maxlen = max(map(len, l))
