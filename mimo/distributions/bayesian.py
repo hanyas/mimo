@@ -364,7 +364,7 @@ class TiedGaussiansWithNormalWishart(ABC):
         stats = self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.likelihood.params = self.posterior.mode()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     # Gibbs sampling
@@ -375,37 +375,27 @@ class TiedGaussiansWithNormalWishart(ABC):
         self.likelihood.params = self.posterior.rvs()
         return self
 
-    # # Mean field
-    # def meanfield_update(self, data, weights=None):
-    #     stats = []
-    #     for k, c in enumerate(self.components):
-    #         _weights = None if weights is None else [_w[:, k] for _w in weights]
-    #         stats.append(c.statistics(data) if _weights is None
-    #                      else c.weighted_statistics(data, _weights))
-    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-    #
-    #     self.params = self.posterior.rvs()
-    #     return self
-    #
-    # def meanfield_sgdstep(self, data, weights, prob, stepsize):
-    #     stats = []
-    #     for k, c in enumerate(self.components):
-    #         _weights = None if weights is None else [_w[:, k] for _w in weights]
-    #         stats.append(c.statistics(data) if _weights is None
-    #                      else c.weighted_statistics(data, _weights))
-    #     self.posterior.nat_param = self.prior.nat_param + Stats(stats)
-    #
-    #     self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-    #                                + stepsize * (self.prior.nat_param + 1. / prob * stats)
-    #
-    #     self.params = self.posterior.rvs()
-    #     return self
-    #
-    # def variational_lowerbound(self):
-    #     return sum([c.variational_lowerbound() for c in self.posterior.components])
-    #
-    # def expected_log_likelihood(self, x):
-    #     return np.hstack()
+    # Mean field
+    def meanfield_update(self, data, weights):
+        stats = self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+        stats = self.likelihood.statistics(data) if weights is None\
+            else self.likelihood.weighted_statistics(data, weights)
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def variational_lowerbound(self):
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
 
 
 class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):

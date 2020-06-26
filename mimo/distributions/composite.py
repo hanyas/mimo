@@ -281,8 +281,7 @@ class NormalGamma(Distribution):
 class TiedNormalWisharts:
 
     def __init__(self, mus, kappas, psi, nu):
-        self._psi = psi
-        self._nu = nu
+        self.wishart = Wishart(psi=psi, nu=nu)
         self.components = [NormalWishart(mu=_mu, kappa=_kappa, psi=psi, nu=nu)
                            for _mu, _kappa in zip(mus, kappas)]
 
@@ -330,32 +329,32 @@ class TiedNormalWisharts:
 
     @property
     def psi(self):
-        return self._psi
+        return self.wishart.psi
 
     @psi.setter
     def psi(self, value):
-        self._psi = value
+        self.wishart.psi = value
         for c in self.components:
             c.wishart.psi = value
 
     @property
     def nu(self):
-        return self._nu
+        return self.wishart.nu
 
     @nu.setter
     def nu(self, value):
-        self._nu = value
+        self.wishart.nu = value
         for c in self.components:
             c.wishart.nu = value
 
     def mean(self):
-        mus = [c.mean()[0] for c in self.components]
+        mus = [c.gaussian.mean() for c in self.components]
         lmbda = Wishart(psi=self.psi, nu=self.nu).mean()
         return mus, lmbda
 
     def mode(self):
-        mus = [c.mode()[0] for c in self.components]
-        lmbda = Wishart(psi=self.psi, nu=self.nu).mode()
+        mus = [c.gaussian.mode() for c in self.components]
+        lmbda = self.wishart.mode()
         return mus, lmbda
 
     @property
@@ -368,23 +367,33 @@ class TiedNormalWisharts:
 
     @staticmethod
     def std_to_nat(params):
-        nat = []
-        for _params in zip(*extendlists(params)):
-            nat.append(NormalWishart.std_to_nat(_params))
+        nat = [NormalWishart.std_to_nat(_params)
+               for _params in zip(*extendlists(params))]
         return Stats(nat)
 
     @staticmethod
     def nat_to_std(natparam):
-        std = []
+        mus, kappas = [], []
+        psis, nus = [], []
         for _natparam in natparam:
-            std.append(NormalWishart.nat_to_std(_natparam))
+            mus.append(_natparam[0] / _natparam[1])
+            kappas.append(_natparam[1])
+            psis.append(_natparam[2] - kappas[-1] * np.outer(mus[-1], mus[-1]))
+            nus.append(_natparam[3] + _natparam[2].shape[0])
 
-        mus = [_std[0] for _std in std]
-        kappas = [_std[1] for _std in std]
-        psi = np.mean(np.stack([_std[2] for _std in std], axis=2), axis=-1)
-        nu = np.mean(np.hstack([_std[3] for _std in std]), axis=0)
+        psi = invpd(np.mean(np.stack(psis, axis=2), axis=2))
+        nu = np.mean(np.hstack(nus))
 
         return mus, kappas, psi, nu
+
+    def entropy(self):
+        return np.sum([c.entropy() for c in self.components])
+
+    def cross_entropy(self, dist):
+        return np.sum([c.cross_entropy(d) for c, d in zip(self.components, dist.components)])
+
+    def expected_log_likelihood(self, x):
+        return np.stack([c.expected_log_likelihood(x) for c in self.components], axis=1)
 
 
 class MatrixNormalInverseWishart(Distribution):
