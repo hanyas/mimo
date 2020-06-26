@@ -213,19 +213,14 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
     # Mean Field
     def expected_scores(self, obs):
-        N, K = obs.shape[0], self.size
-
-        # update, see Eq. 10.67 in Bishop
-        component_scores = np.empty((N, K))
-        for idx, c in enumerate(self.components):
-            component_scores[:, idx] = c.expected_log_likelihood(obs)
+        component_scores = self.ensemble.posterior.expected_log_likelihood(obs)
         component_scores = np.nan_to_num(component_scores)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
-            gating_scores = self.gating.expected_log_likelihood(np.arange(K))
+            gating_scores = self.gating.posterior.expected_statistics()
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            E_log_stick, E_log_rest = self.gating.expected_log_likelihood(np.arange(K))
-            gating_scores = np.take(E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1])), np.arange(K))
+            E_log_stick, E_log_rest = self.gating.posterior.expected_statistics()
+            gating_scores = E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1]))
         else:
             raise NotImplementedError
 
@@ -277,6 +272,41 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
     def _meanfield_update_ensemble(self, obs, scores):
         self.ensemble.meanfield_update(obs, scores)
+
+    def _variational_lowerbound_labels(self, scores):
+        vlb = 0.
+
+        if isinstance(self.gating, CategoricalWithDirichlet):
+            vlb += np.sum(scores * self.gating.posterior.expected_log_likelihood())
+        elif isinstance(self.gating, CategoricalWithStickBreaking):
+            cumscores = np.hstack((np.cumsum(scores[:, ::-1], axis=1)[:, -2::-1],
+                                   np.zeros((len(scores), 1))))
+            E_log_stick, E_log_rest = self.gating.posterior.expected_log_likelihood()
+            vlb += np.sum(scores * E_log_stick + cumscores * E_log_rest)
+
+        errs = np.seterr(invalid='ignore', divide='ignore')
+        vlb -= np.nansum(scores * np.log(scores))  # treats nans as zeros
+        np.seterr(**errs)
+
+        return vlb
+
+    def _variational_lowerbound_obs(self, obs, scores):
+        E_log_lik = self.ensemble.posterior.expected_log_likelihood(obs)
+        return np.einsum('nk,nk->', E_log_lik, scores)
+
+    def variational_lowerbound(self, obs, scores):
+        vlb = 0.
+        vlb += sum(self._variational_lowerbound_labels(_score) for _score in scores)
+        vlb += self.gating.variational_lowerbound()
+        vlb += self.ensemble.variational_lowerbound()
+        vlb += sum(self._variational_lowerbound_obs(_obs, _score)
+                   for _obs, _score in zip(obs, scores))
+
+        # add in symmetry factor (if we're actually symmetric)
+        if len(set(type(c) for c in self.ensemble.posterior.components)) == 1:
+            vlb += special.gammaln(self.size + 1)
+
+        return vlb
 
     @pass_obs_arg
     def plot(self, obs=None, color=None, legend=False, alpha=None):
