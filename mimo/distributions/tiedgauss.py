@@ -62,43 +62,44 @@ class TiedGaussiansWithPrecision:
             data = data[idx]
             labels = labels[idx]
 
-            stats = []
-            for idx, c in enumerate(self.components):
-                stats.append(c.statistics(data[labels == idx, :], keepdim))
+            stats = [c.statistics(data[labels == idx, :], keepdim)
+                     for idx, c in enumerate(self.components)]
 
-            return stats
+            return Stats(stats)
         else:
             func = partial(self.statistics, keepdim=keepdim)
             stats = list(map(func, data, labels))
-            return stats if keepdim else reduce(lambda a, b: list(map(add, a, b)), stats)
+            return list(stats) if keepdim else reduce(add, stats)
 
     def weighted_statistics(self, data, weights, keepdim=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(1)
             data = data[idx]
-            weights = weights[idx, :]
+            weights = weights[idx]
 
-            stats = []
-            for idx, c in enumerate(self.components):
-                stats.append(c.weighted_statistics(data, weights[:, idx], keepdim))
+            stats = [c.weighted_statistics(data, weights[:, idx], keepdim)
+                     for idx, c in enumerate(self.components)]
 
-            return stats
+            return Stats(stats)
         else:
             func = partial(self.weighted_statistics, keepdim=keepdim)
-            stats = list(map(func, data, weights))
-            return stats if keepdim else reduce(lambda a, b: list(map(add, a, b)), stats)
+            stats = map(func, data, weights)
+            return list(stats) if keepdim else reduce(add, stats)
 
     # Max likelihood
     def max_likelihood(self, data, weights):
         assert weights is not None
         stats = self.weighted_statistics(data, weights)
 
+        _n = 0
         _sigma = np.zeros((self.dim, self.dim))
         for c, s in zip(self.components, stats):
             x, n, xxT, n = s
             c.mu = x / n
-            _sigma += (xxT / n - np.outer(c.mu, c.mu))
 
-        self.lmbda = inv_pd(_sigma / self.size)
+            _n += n
+            _sigma += xxT - n * np.outer(c.mu, c.mu)
+
+        self.lmbda = invpd(_sigma / _n)
 
         return self

@@ -25,7 +25,7 @@ obs = [gmm.rvs(100)[0] for _ in range(5)]
 gmm.plot(obs)
 
 gating = distributions.Categorical(K=2)
-ensemble = distributions.TiedGaussiansWithPrecision(mus=[npr.randn(2, ),
+ensemble = distributions.TiedGaussiansWithPrecision(mus=[npr.randn(2,),
                                                          npr.randn(2,)],
                                                     lmbda=np.eye(2))
 

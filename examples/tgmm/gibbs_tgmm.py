@@ -10,7 +10,7 @@ from mimo import mixtures
 
 from mimo.util.text import progprint_xrange
 
-npr.seed(1337)
+# npr.seed(1337)
 
 gating = distributions.Categorical(K=2)
 

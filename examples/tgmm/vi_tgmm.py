@@ -24,7 +24,7 @@ gmm = mixtures.MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 obs = [gmm.rvs(100)[0] for _ in range(5)]
 gmm.plot(obs)
 
-gating_hypparams = dict(K=2, alphas=np.ones((2, )))
+gating_hypparams = dict(K=2, alphas=10 * np.ones((2, )))
 gating_prior = distributions.Dirichlet(**gating_hypparams)
 
 ensemble_hypparams = dict(mus=[np.zeros((2, )) for _ in range(2)],
@@ -37,10 +37,15 @@ model = mixtures.BayesianMixtureOfTiedGaussians(gating=distributions.Categorical
 
 model.add_data(obs)
 
+vlb = []
+
 model.resample()
-print('Expecation Maximization')
+print('Variational Inference')
 for _ in progprint_xrange(1000):
-    model.max_aposteriori()
+    vlb.append(model.meanfield_update())
 
 plt.figure()
 model.plot(obs)
+
+plt.figure()
+plt.plot(vlb)
