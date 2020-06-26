@@ -3,8 +3,10 @@ from functools import reduce, partial
 
 import numpy as np
 
+from mimo.abstraction import Statistics as Stats
 from mimo.distributions import GaussianWithPrecision
-from mimo.util.matrix import inv_pd
+
+from mimo.util.matrix import invpd
 
 
 class TiedGaussiansWithPrecision:
