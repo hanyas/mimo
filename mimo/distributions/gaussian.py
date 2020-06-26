@@ -11,7 +11,7 @@ from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
 
 from mimo.util.data import flattendata
-from mimo.util.matrix import inv_pd
+from mimo.util.matrix import invpd
 
 
 class GaussianWithCovariance(Distribution):
@@ -385,7 +385,7 @@ class GaussianWithPrecision(Distribution):
             self.lmbda = np.eye(self.dim)
         else:
             self.mu = x / n
-            self.lmbda = inv_pd(xxT / n - np.outer(self.mu, self.mu))
+            self.lmbda = invpd(xxT / n - np.outer(self.mu, self.mu))
         return self
 
     def plot(self, ax=None, data=None, color='b', label='',

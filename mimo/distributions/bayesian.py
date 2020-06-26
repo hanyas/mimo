@@ -12,7 +12,7 @@ from mimo.distributions import TiedGaussiansWithPrecision
 from mimo.distributions import LinearGaussian
 from mimo.distributions import NormalWishart
 
-from mimo.util.matrix import blockarray, inv_pd
+from mimo.util.matrix import blockarray, invpd
 
 
 class CategoricalWithDirichlet:
@@ -251,7 +251,7 @@ class GaussianWithNormalWishart:
         mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
 
         loc = mu
-        scale = inv_pd(psi * kappa)
+        scale = invpd(psi * kappa)
 
         from mimo.util.stats import multivariate_gaussian_loglik
         return multivariate_gaussian_loglik(x, loc, scale)
@@ -266,7 +266,7 @@ class GaussianWithNormalWishart:
         # Following Bishop notation
         loc = mu
         df = nu + 1 - self.likelihood.dim
-        scale = inv_pd(df * kappa * psi / (1 + kappa))
+        scale = invpd(df * kappa * psi / (1 + kappa))
 
         from mimo.util.stats import multivariate_studentt_loglik
         return multivariate_studentt_loglik(x, loc, scale, df)

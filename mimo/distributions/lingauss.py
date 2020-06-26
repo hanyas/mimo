@@ -6,7 +6,7 @@ from functools import reduce
 from mimo.abstraction import Conditional
 from mimo.abstraction import Statistics as Stats
 
-from mimo.util.matrix import near_pd, blockarray, inv_psd
+from mimo.util.matrix import nearpd, blockarray, invpd
 
 
 class LinearGaussian(Conditional):
@@ -63,7 +63,7 @@ class LinearGaussian(Conditional):
     @property
     def sigma_chol(self):
         if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
+            self._sigma_chol = np.linalg.cholesky(nearpd(self.sigma))
         return self._sigma_chol
 
     def rvs(self, x=None):
@@ -100,7 +100,7 @@ class LinearGaussian(Conditional):
         if self.affine:
             A, b = A[:, :-1], A[:, -1]
 
-        sigma_inv, L = inv_psd(sigma, return_chol=True)
+        sigma_inv, L = invpd(sigma, return_chol=True)
         parammat = - 0.5 * blockarray([[A.T.dot(sigma_inv).dot(A),
                                         -A.T.dot(sigma_inv)],
                                        [-sigma_inv.dot(A), sigma_inv]])
@@ -180,8 +180,8 @@ class LinearGaussian(Conditional):
 
     # Max likelihood
     def max_likelihood(self, y, x, weights=None):
-        stats = self.posterior.get_statistics(y, x) if weights is None\
-            else self.posterior.get_weighted_statistics(y, x, weights)
+        stats = self.posterior.statistics(y, x) if weights is None\
+            else self.posterior.weighted_statistics(y, x, weights)
 
         # (yxT, xxT, yyT, n)
         yxT, xxT, yyT, n = stats

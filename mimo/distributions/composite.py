@@ -11,9 +11,8 @@ from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 from mimo.distributions import MatrixNormal
 
+from mimo.util.matrix import invpd, nearpd
 from mimo.util.data import extendlists
-from mimo.util.matrix import inv_pd, near_pd
-
 
 
 class NormalInverseWishart(Distribution):
@@ -96,7 +95,7 @@ class NormalWishart(Distribution):
 
         mu = params[1] * params[0]
         kappa = params[1]
-        psi = inv_pd(params[2])\
+        psi = invpd(params[2]) \
               + params[1] * np.outer(params[0], params[0])
         nu = params[3] - params[2].shape[0]
         return Stats([mu, kappa, psi, nu])
@@ -105,7 +104,7 @@ class NormalWishart(Distribution):
     def nat_to_std(natparam):
         mu = natparam[0] / natparam[1]
         kappa = natparam[1]
-        psi = inv_pd(natparam[2] - kappa * np.outer(mu, mu))
+        psi = invpd(natparam[2] - kappa * np.outer(mu, mu))
         nu = natparam[3] + natparam[2].shape[0]
         return mu, kappa, psi, nu
 
@@ -455,7 +454,7 @@ class MatrixNormalInverseWishart(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        Vinv = inv_pd(params[1])
+        Vinv = invpd(params[1])
         psi = params[2] + params[0].dot(Vinv).dot(params[0].T)
         M = params[0].dot(Vinv)
         V = Vinv
@@ -466,7 +465,7 @@ class MatrixNormalInverseWishart(Distribution):
     def nat_to_std(natparam):
         # (yxT, xxT, yyT, n)
         nu = natparam[3]
-        V = inv_pd(natparam[1])
+        V = invpd(natparam[1])
         M = np.linalg.solve(natparam[1], natparam[0].T).T
 
         # This subtraction seems unstable!
