@@ -1,8 +1,10 @@
 import abc
 import copy
 from operator import add, sub
+from functools import reduce
 
 from future.utils import with_metaclass
+from mimo.util.data import islist
 
 
 # Base classes
@@ -191,10 +193,12 @@ class Statistics(tuple):
         return tuple.__new__(Statistics, x)
 
     def __add__(self, y):
-        return Statistics(tuple(map(add, self, y)))
+        gsum = lambda x, y: reduce(lambda a, b: list(map(add, a, b)) if islist(x, y) else a + b, [x, y])
+        return Statistics(tuple(map(gsum, self, y)))
 
     def __sub__(self, y):
-        return Statistics(tuple(map(sub, self, y)))
+        gsub = lambda x, y: reduce(lambda a, b: list(map(sub, a, b)) if islist(x, y) else a - b, [x, y])
+        return Statistics(tuple(map(gsub, self, y)))
 
     def __mul__(self, a):
         return Statistics(a * e for e in self)
