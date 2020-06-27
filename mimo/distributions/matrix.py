@@ -1,32 +1,33 @@
 import numpy as np
 import numpy.random as npr
 
+import scipy as sc
 from scipy import linalg
-from numpy.core.umath_tests import inner1d
 
 from mimo.abstraction import Distribution
 from mimo.util.matrix import nearpd
 
 
-class MatrixNormal(Distribution):
+class MatrixNormalWithPrecision(Distribution):
 
-    def __init__(self, M=None, U=None, V=None):
+    def __init__(self, M=None, V=None, K=None):
         self.M = M
-        self._U = U
         self._V = V
+        self._K = K
 
-        self._U_chol = None
         self._V_chol = None
+        self._K_chol = None
 
-        self._sigma_chol = None
+        self._lmbda_chol = None
+        self._lmbda_chol_inv = None
 
     @property
     def params(self):
-        return self.M, self.V
+        return self.M, self.V, self.K
 
     @params.setter
     def params(self, values):
-        self.M, self.V = values
+        self.M, self.V, self.K = values
 
     @property
     def nb_params(self):
@@ -42,59 +43,61 @@ class MatrixNormal(Distribution):
         return self.M.shape[0]
 
     @property
-    def U(self):
-        return self._U
-
-    @U.setter
-    def U(self, value):
-        self._U = value
-        # reset Cholesky for new values of U
-        # A new Cholesky will be computed when needed
-        self._U_chol = None
-
-    @property
     def V(self):
         return self._V
 
     @V.setter
     def V(self, value):
         self._V = value
-        # reset Cholesky for new values of V
-        # A new Cholesky will be computed when needed
         self._V_chol = None
 
     @property
-    def sigma(self):
-        return np.kron(self.V, self.U)
-
-    @property
-    def U_chol(self):
-        if self._U_chol is None:
-            # self._U_chol = np.linalg.cholesky(near_pd(self.U))
-            self._U_chol = np.linalg.cholesky(self.U)
-        return self._U_chol
-
-    @property
     def V_chol(self):
+        # upper cholesky triangle
         if self._V_chol is None:
-            # self._V_chol = np.linalg.cholesky(near_pd(self.V))
-            self._V_chol = np.linalg.cholesky(self.V)
+            self._V_chol = sc.linalg.cholesky(self.V, lower=False)
         return self._V_chol
 
     @property
-    def sigma_chol(self):
-        if self._sigma_chol is None:
-            # self._sigma_chol = np.linalg.cholesky(near_pd(self.sigma))
-            self._sigma_chol = np.linalg.cholesky(self.sigma)
-        return self._sigma_chol
+    def K(self):
+        return self._K
+
+    @K.setter
+    def K(self, value):
+        self._K = value
+        self._K_chol = None
+
+    @property
+    def K_chol(self):
+        # upper cholesky triangle
+        if self._K_chol is None:
+            self._K_chol = sc.linalg.cholesky(self.K, lower=False)
+        return self._K_chol
+
+    @property
+    def lmbda(self):
+        return np.kron(self.K, self.V)
+
+    @property
+    def lmbda_chol(self):
+        # upper cholesky triangle
+        if self._lmbda_chol is None:
+            self._lmbda_chol = sc.linalg.cholesky(self.lmbda, lower=False)
+        return self._lmbda_chol
+
+    @property
+    def lmbda_chol_inv(self):
+        if self._lmbda_chol_inv is None:
+            self._lmbda_chol_inv = sc.linalg.inv(self.lmbda_chol)
+        return self._lmbda_chol_inv
 
     def rvs(self, size=1):
         if size == 1:
-            aux = npr.normal(size=self.drow * self.dcol).dot(self.sigma_chol.T)
+            aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (self.drow, self.dcol), order='F')
         else:
             size = tuple([size, self.drow * self.dcol])
-            aux = npr.normal(size=size).dot(self.sigma_chol.T)
+            aux = npr.normal(size=size).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (size, self.drow, self.dcol), order='F')
 
     def mean(self):
@@ -106,21 +109,29 @@ class MatrixNormal(Distribution):
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
         xr = np.reshape(x, (-1, self.drow * self.dcol), order='F')
-        mr = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
 
         # Gaussian likelihood on vector dist.
         bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
-        xc = np.nan_to_num(xr).reshape((-1, self.dim)) - mr
-        xs = linalg.solve_triangular(self.sigma_chol, xc.T, lower=True)
-        out = - 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
-              - np.sum(np.log(np.diag(self.sigma_chol))) - 0.5 * inner1d(xs.T, xs.T)
-        out[bads] = 0
-        return out
+        xr = np.nan_to_num(xr).reshape((-1, self.drow * self.dcol))
+
+        log_lik = np.einsum('k,kh,nh->n', mu, self.lmbda, xr)\
+                  - 0.5 * np.einsum('nk,kh,nh->n', xr, self.lmbda, xr)
+
+        log_lik[bads] = 0
+        return - self.log_partition() + self.log_base() + log_lik
+
+    @property
+    def base(self):
+        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
+
+    def log_base(self):
+        return np.log(self.base)
 
     def log_partition(self):
-        return 0.5 * self.drow * self.dcol * np.log(2. * np.pi)\
-               + self.drow * np.trace(np.log(self.V_chol))\
-               + self.dcol * np.trace(np.log(self.U_chol))
+        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        return 0.5 * np.einsum('k,kh,h->', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
     def entropy(self):
-        return NotImplementedError
+        raise NotImplementedError
