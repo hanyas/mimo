@@ -31,5 +31,5 @@ hypparams = dict(M=np.zeros((drow, nb_params)),
 prior = MatrixNormalWishart(**hypparams)
 
 model = LinearGaussianWithMatrixNormalWishart(prior, affine=False)
-model.resample(y=y, x=x)
+model.max_aposteriori(y=y, x=x)
 print("ML transf."+"\n", model.likelihood.A, "\n"+"ML covariance"+"\n", model.likelihood.sigma)

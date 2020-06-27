@@ -127,11 +127,11 @@ class Conditional(with_metaclass(abc.ABCMeta, object)):
         pass
 
     @abc.abstractmethod
-    def log_partition(self):
+    def log_partition(self, x):
         pass
 
     @abc.abstractmethod
-    def entropy(self):
+    def entropy(self, x):
         pass
 
 

@@ -1,15 +1,12 @@
 import copy
-from abc import ABC
 
 import numpy as np
-
-from mimo.abstraction import Statistics as Stats
 
 from mimo.distributions import Categorical
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
 from mimo.distributions import TiedGaussiansWithPrecision
-from mimo.distributions import LinearGaussian
+from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import NormalWishart
 
 from mimo.util.matrix import blockarray, invpd
@@ -340,7 +337,7 @@ class GaussianWithNormalGamma:
         return q_entropy - qp_cross_entropy
 
 
-class TiedGaussiansWithNormalWishart(ABC):
+class TiedGaussiansWithNormalWishart:
 
     def __init__(self, prior, likelihood=None):
         # Tied Normal Wishart prior
@@ -398,140 +395,142 @@ class TiedGaussiansWithNormalWishart(ABC):
         return q_entropy - qp_cross_entropy
 
 
-class LinearGaussianWithMatrixNormalInverseWishart(LinearGaussian, ABC):
+class LinearGaussianWithMatrixNormalWishart:
     """
     Multivariate Gaussian distribution with a linear mean function.
     Uses a conjugate Matrix-Normal/Inverse-Wishart prior.
     Parameters are linear transf. and covariance matrix:
-        A, sigma
+        A, lmbda
     """
 
-    def __init__(self, prior, A=None, sigma=None):
-        super(LinearGaussianWithMatrixNormalInverseWishart, self).__init__(A=A, sigma=sigma, affine=prior.affine)
-
-        # Matrix-Normal-Inv-Wishart prior
+    def __init__(self, prior, likelihood=None, affine=True):
+        # Matrix-Normal-Wishart prior
         self.prior = prior
 
-        # Matrix-Normal-Inv-Wishart posterior
+        # Matrix-Normal-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
-        self.A, self.sigma = A, sigma
-        if A is None or sigma is None:
-            self.A, self.sigma = self.prior.rvs()
+        # Linear Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            A, lmbda = self.prior.rvs()
+            self.likelihood = LinearGaussianWithPrecision(A=A, lmbda=lmbda,
+                                                          affine=affine)
 
     def empirical_bayes(self, data):
         raise NotImplementedError
 
     # Max a posteriori
     def max_aposteriori(self, y, x, weights=None):
-        stats = self.posterior.statistics(y, x) if weights is None\
-            else self.posterior.weighted_statistics(y, x, weights)
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.params = self.posterior.mode()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
     # Gibbs sampling
     def resample(self, y=[], x=[]):
-        self.posterior.nat_param = self.prior.nat_param\
-                                   + self.get_statistics(y, x)
-
-        self.params = self.posterior.rvs()
-        return self
-
-    # Mean field
-    def meanfield_update(self, y, x, weights=None):
-        stats = self.get_statistics(y, x) if weights is None\
-            else self.get_weighted_statistics(y, x, weights)
+        stats = self.likelihood.statistics(y, x)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.A, self.sigma = self.posterior.rvs()
+        self.likelihood.params = self.posterior.rvs()
         return self
 
-    def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
-        stats = self.get_statistics(y, x) if weights is None\
-            else self.get_weighted_statistics(y, x, weights)
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
-
-        self.params = self.posterior.rvs()
-        return self
-
-    def variational_lowerbound(self):
-        E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv\
-            = self.posterior.get_expected_statistics()
-        a, b, c, d = self.prior.nat_param - self.posterior.nat_param
-
-        aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A))\
-              - 0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
-
-        logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
-        return aux - logpart_diff
-
-    def expected_log_likelihood(self, y, x):
-        drow = self.drow
-
-        E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv\
-            = self.posterior.get_expected_statistics()
-
-        if self.affine:
-            E_Sigmainv_A, E_Sigmainv_b = E_Sigmainv_A[:, :-1], E_Sigmainv_A[:, -1]
-            E_AT_Sigmainv_A, E_AT_Sigmainv_b, E_bT_Sigmainv_b =\
-                E_AT_Sigmainv_A[:-1, :-1], E_AT_Sigmainv_A[:-1, -1], E_AT_Sigmainv_A[-1, -1]
-
-        parammat = -1. / 2 * blockarray([[E_AT_Sigmainv_A, -E_Sigmainv_A.T],
-                                         [-E_Sigmainv_A, E_Sigmainv]])
-
-        xy = np.hstack((x, y))
-
-        contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
-        if isinstance(xy, np.ndarray):
-            out = np.einsum('ni,ni->n', xy.dot(parammat), xy)
-        else:
-            out = np.einsum(contract, x.dot(parammat[:-drow, :-drow]), x)
-            out += np.einsum(contract, y.dot(parammat[-drow:, -drow:]), y)
-            out += 2. * np.einsum(contract, x.dot(parammat[:-drow, -drow:]), y)
-
-        out += - drow / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
-
-        if self.affine:
-            out += y.dot(E_Sigmainv_b)
-            out -= x.dot(E_AT_Sigmainv_b)
-            out -= 1. / 2 * E_bT_Sigmainv_b
-
-        return out
-
-    def predictive_posterior_gaussian(self, x):
-        if self.affine:
-            x = np.hstack((x, 1.))
-
-        M, V, psi, nu = self.posterior.params
-
-        # https://tminka.github.io/papers/minka-gaussian.pdf
-        mu = M @ x
-
-        # variance of approximate Gaussian
-        sigma = psi / nu  # Misleading in Minka
-
-        return mu, sigma, nu
-
-    def predictive_posterior_studentt(self, x):
-        if self.affine:
-            x = np.hstack((x, 1.))
-
-        xxT = np.outer(x, x)
-
-        M, V, psi, nu = self.posterior.params
-
-        # https://tminka.github.io/papers/minka-linear.pdf
-        c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
-
-        # https://tminka.github.io/papers/minka-gaussian.pdf
-        df = nu
-        mu = M @ x
-
-        # variance of a student-t
-        sigma = (1. / c) * psi / df  # Misleading in Minka
-        var = sigma * df / (df - 2)
-
-        return mu, sigma, nu
+#     # Mean field
+#     def meanfield_update(self, y, x, weights=None):
+#         stats = self.get_statistics(y, x) if weights is None\
+#             else self.get_weighted_statistics(y, x, weights)
+#         self.posterior.nat_param = self.prior.nat_param + stats
+#
+#         self.A, self.sigma = self.posterior.rvs()
+#         return self
+#
+#     def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
+#         stats = self.get_statistics(y, x) if weights is None\
+#             else self.get_weighted_statistics(y, x, weights)
+#         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+#                                    + stepsize * (self.prior.nat_param + 1. / prob * stats)
+#
+#         self.params = self.posterior.rvs()
+#         return self
+#
+#     def variational_lowerbound(self):
+#         E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv\
+#             = self.posterior.get_expected_statistics()
+#         a, b, c, d = self.prior.nat_param - self.posterior.nat_param
+#
+#         aux = - 0.5 * np.trace(c.dot(E_Sigmainv)) + np.trace(a.T.dot(E_Sigmainv_A))\
+#               - 0.5 * np.trace(b.dot(E_AT_Sigmainv_A)) + 0.5 * d * E_logdetSigmainv
+#
+#         logpart_diff = self.prior.log_partition() - self.posterior.log_partition()
+#         return aux - logpart_diff
+#
+#     def expected_log_likelihood(self, y, x):
+#         drow = self.drow
+#
+#         E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv\
+#             = self.posterior.get_expected_statistics()
+#
+#         if self.affine:
+#             E_Sigmainv_A, E_Sigmainv_b = E_Sigmainv_A[:, :-1], E_Sigmainv_A[:, -1]
+#             E_AT_Sigmainv_A, E_AT_Sigmainv_b, E_bT_Sigmainv_b =\
+#                 E_AT_Sigmainv_A[:-1, :-1], E_AT_Sigmainv_A[:-1, -1], E_AT_Sigmainv_A[-1, -1]
+#
+#         parammat = -1. / 2 * blockarray([[E_AT_Sigmainv_A, -E_Sigmainv_A.T],
+#                                          [-E_Sigmainv_A, E_Sigmainv]])
+#
+#         xy = np.hstack((x, y))
+#
+#         contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
+#         if isinstance(xy, np.ndarray):
+#             out = np.einsum('ni,ni->n', xy.dot(parammat), xy)
+#         else:
+#             out = np.einsum(contract, x.dot(parammat[:-drow, :-drow]), x)
+#             out += np.einsum(contract, y.dot(parammat[-drow:, -drow:]), y)
+#             out += 2. * np.einsum(contract, x.dot(parammat[:-drow, -drow:]), y)
+#
+#         out += - drow / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdetSigmainv
+#
+#         if self.affine:
+#             out += y.dot(E_Sigmainv_b)
+#             out -= x.dot(E_AT_Sigmainv_b)
+#             out -= 1. / 2 * E_bT_Sigmainv_b
+#
+#         return out
+#
+#     def predictive_posterior_gaussian(self, x):
+#         if self.affine:
+#             x = np.hstack((x, 1.))
+#
+#         M, V, psi, nu = self.posterior.params
+#
+#         # https://tminka.github.io/papers/minka-gaussian.pdf
+#         mu = M @ x
+#
+#         # variance of approximate Gaussian
+#         sigma = psi / nu  # Misleading in Minka
+#
+#         return mu, sigma, nu
+#
+#     def predictive_posterior_studentt(self, x):
+#         if self.affine:
+#             x = np.hstack((x, 1.))
+#
+#         xxT = np.outer(x, x)
+#
+#         M, V, psi, nu = self.posterior.params
+#
+#         # https://tminka.github.io/papers/minka-linear.pdf
+#         c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
+#
+#         # https://tminka.github.io/papers/minka-gaussian.pdf
+#         df = nu
+#         mu = M @ x
+#
+#         # variance of a student-t
+#         sigma = (1. / c) * psi / df  # Misleading in Minka
+#         var = sigma * df / (df - 2)
+#
+#         return mu, sigma, nu
