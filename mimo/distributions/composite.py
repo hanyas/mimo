@@ -9,25 +9,10 @@ from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
-from mimo.distributions import MatrixNormal
+from mimo.distributions import MatrixNormalWithPrecision
 
-from mimo.util.matrix import invpd, nearpd
+from mimo.util.matrix import invpd, nearpd, symmetrize
 from mimo.util.data import extendlists
-
-
-class NormalInverseWishart(Distribution):
-    def __init__(self, mu, kappa, psi, nu):
-        self.gaussian = GaussianWithPrecision(mu=mu)
-        self.wishart = Wishart(psi=psi, nu=nu)
-        self.kappa = kappa
-
-
-class NormalInverseGamma(Distribution):
-
-    def __init__(self, mu, kappas, alphas, betas):
-        self.gaussian = GaussianWithDiagonalPrecision(mu=mu)
-        self.invgamma = Gamma(alphas=alphas, betas=betas)
-        self.kappas = kappas
 
 
 class NormalWishart(Distribution):
@@ -396,12 +381,11 @@ class TiedNormalWisharts:
         return np.stack([c.expected_log_likelihood(x) for c in self.components], axis=1)
 
 
-class MatrixNormalInverseWishart(Distribution):
+class MatrixNormalWishart(Distribution):
 
-    def __init__(self, M, V, affine, psi, nu):
-        self.matnorm = MatrixNormal(M=M, V=V)
-        self.invwishart = Wishart(psi=psi, nu=nu)
-        self.affine = affine
+    def __init__(self, M, K, psi, nu):
+        self.matnorm = MatrixNormalWithPrecision(M=M, K=K)
+        self.wishart = Wishart(psi=psi, nu=nu)
 
     @property
     def dcol(self):
@@ -413,45 +397,36 @@ class MatrixNormalInverseWishart(Distribution):
 
     @property
     def params(self):
-        return tuple([*self.matnorm.params, *self.invwishart.params])
+        return self.matnorm.M, self.matnorm.K, self.wishart.psi, self.wishart.nu
 
     @params.setter
     def params(self, values):
-        self.matnorm.params = values[:2]
-        self.invwishart.params = values[2:]
+        self.matnorm.M, self.matnorm.K, self.wishart.psi, self.wishart.nu = values
 
     def rvs(self, size=1):
-        sigma = self.invwishart.rvs()
-        self.matnorm.U = sigma
+        lmbda = self.wishart.rvs()
+        self.matnorm.V = lmbda
         A = self.matnorm.rvs()
-        return A, sigma
+        return A, lmbda
 
     def mean(self):
-        return self.matnorm.mean(), self.invwishart.mean()
+        return self.matnorm.mean(), self.wishart.mean()
 
     def mode(self):
-        return self.matnorm.mode(), self.invwishart.mode()
+        return self.matnorm.mode(), self.wishart.mode()
 
     def log_likelihood(self, x):
-        A, sigma = x
-        return MatrixNormal(M=self.matnorm.M, V=self.matnorm.V, U=sigma).log_likelihood(A)\
-               + self.invwishart.log_likelihood(sigma)
+        A, lmbda = x
+        return MatrixNormalWithPrecision(M=self.matnorm.M, V=lmbda,
+                                         K=self.matnorm.K).log_likelihood(A)\
+               + self.wishart.log_likelihood(lmbda)
 
-    def log_partition(self, params=None):
-        M, V, psi, nu = params if params is not None else self.params
-        # return 0.5 * nu * self.drow * np.log(2)\
-        #        + multigammaln(nu / 2., self.drow)\
-        #        + 0.5 * self.drow * np.log(2. * np.pi)\
-        #        - 0.5 * self.drow * np.linalg.slogdet(near_pd(V))[1]\
-        #        - 0.5 * nu * np.linalg.slogdet(near_pd(psi))[1]
-        return 0.5 * nu * self.drow * np.log(2)\
-               + multigammaln(nu / 2., self.drow)\
-               + 0.5 * self.drow * np.log(2. * np.pi)\
-               - 0.5 * self.drow * np.linalg.slogdet(V)[1]\
-               - 0.5 * nu * np.linalg.slogdet(psi)[1]
+    @property
+    def base(self):
+        return self.matnorm.base * self.wishart.base
 
-    def entropy(self):
-        raise NotImplementedError
+    def log_base(self):
+        return np.log(self.base)
 
     @property
     def nat_param(self):
@@ -463,37 +438,32 @@ class MatrixNormalInverseWishart(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        Vinv = invpd(params[1])
-        psi = params[2] + params[0].dot(Vinv).dot(params[0].T)
-        M = params[0].dot(Vinv)
-        V = Vinv
-        nu = params[3]
-        return Stats([M, V, psi, nu])
+        # (yxT, xxT, yyT, n)
+        M = params[0].dot(params[1])
+        K = params[1]
+        psi = invpd(params[2]) + params[0].dot(K).dot(params[0].T)
+        nu = params[3] - params[2].shape[0]
+        return Stats([M, K, psi, nu])
 
     @staticmethod
     def nat_to_std(natparam):
         # (yxT, xxT, yyT, n)
-        nu = natparam[3]
-        V = invpd(natparam[1])
         M = np.linalg.solve(natparam[1], natparam[0].T).T
+        K = natparam[1]
+        psi = invpd(natparam[2] - M.dot(K).dot(M.T))
+        nu = natparam[3] + natparam[2].shape[0]
 
-        # This subtraction seems unstable!
-        # It does not necessarily return a PSD matrix
-        psi = natparam[2] - M.dot(natparam[0].T)
+        return M, K, psi, nu
 
-        # numerical paddcolg here...
-        # V = near_pd(V + 1e-16 * np.eye(V.shape[0]))
-        # psi = near_pd(psi + 1e-16 * np.eye(psi.shape[0]))
+    def log_partition(self, params=None):
+        M, K, psi, nu = params if params is not None else self.params
+        return 0.5 * nu * self.drow * np.log(2)\
+               + multigammaln(nu / 2., self.drow)\
+               + 0.5 * self.drow * np.log(2. * np.pi)\
+               - 0.5 * self.drow * np.linalg.slogdet(V)[1]\
+               - 0.5 * nu * np.linalg.slogdet(psi)[1]
 
-        V = V + 1e-16 * np.eye(V.shape[0])
-        psi = psi + 1e-16 * np.eye(psi.shape[0])
-
-        # assert np.all(0 < np.linalg.eigvalsh(psi))
-        # assert np.all(0 < np.linalg.eigvalsh(V))
-
-        return M, V, psi, nu
-
-    def get_expected_statistics(self):
+    def expected_statistics(self):
         E_Sigmainv = self.invwishart.nu * np.linalg.inv(self.invwishart.psi)
         E_Sigmainv_A = self.invwishart.nu * np.linalg.solve(self.invwishart.psi, self.matnorm.M)
         E_AT_Sigmainv_A = self.drow * self.matnorm.V + self.invwishart.nu\
@@ -502,3 +472,12 @@ class MatrixNormalInverseWishart(Distribution):
                            + self.drow * np.log(2) - np.linalg.slogdet(self.invwishart.psi)[1]
 
         return E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv
+
+    def entropy(self):
+        raise NotImplementedError
+
+    def cross_entropy(self):
+        raise NotImplementedError
+
+    def expected_log_likelihood(self, x):
+        raise NotImplementedError

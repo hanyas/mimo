@@ -1,40 +1,40 @@
 import numpy as np
 import numpy.random as npr
 
-from functools import reduce
+import scipy as sc
+
+from operator import add
+from functools import reduce, partial
 
 from mimo.abstraction import Conditional
 from mimo.abstraction import Statistics as Stats
 
-from mimo.util.matrix import nearpd, blockarray, invpd
+from mimo.util.matrix import invpd, symmetrize
 
 
-class LinearGaussian(Conditional):
+class LinearGaussianWithPrecision(Conditional):
     """
     Multivariate Gaussian distribution with a linear mean function.
     Parameters are linear transf. and covariance matrix:
-        A, sigma
+        A, lmbda
     """
 
-    def __init__(self, A=None, sigma=None, affine=True):
+    def __init__(self, A=None, lmbda=None, affine=True):
 
         self.A = A
         self.affine = affine
 
-        self._sigma = sigma
-        self._sigma_chol = None
+        self._lmbda = lmbda
+        self._lmbda_chol = None
+        self._lmbda_chol_inv = None
 
     @property
     def params(self):
-        return self.A, self.sigma
+        return self.A, self.lmbda
 
     @params.setter
     def params(self, values):
-        self.A, self.sigma = values
-
-    @property
-    def nb_params(self):
-        return self.dcol * self.drow + self.drow * (self.drow + 1) / 2
+        self.A, self.lmbda = values
 
     @property
     def dcol(self):
@@ -50,153 +50,158 @@ class LinearGaussian(Conditional):
         return self.A.shape[0]
 
     @property
-    def sigma(self):
-        return self._sigma
-
-    @sigma.setter
-    def sigma(self, value):
-        self._sigma = value
-        # reset Cholesky for new values of sigma
-        # A new Cholesky will be computed when needed
-        self._sigma_chol = None
+    def nb_params(self):
+        return self.dcol * self.drow \
+               + self.drow * (self.drow + 1) / 2
 
     @property
-    def sigma_chol(self):
-        if self._sigma_chol is None:
-            self._sigma_chol = np.linalg.cholesky(nearpd(self.sigma))
-        return self._sigma_chol
+    def lmbda(self):
+        return self._lmbda
+
+    @lmbda.setter
+    def lmbda(self, value):
+        self._lmbda = value
+        self._lmbda_chol = None
+        self._lmbda_chol_inv = None
+
+    @property
+    def lmbda_chol(self):
+        # upper cholesky triangle
+        if self._lmbda_chol is None:
+            self._lmbda_chol = sc.linalg.cholesky(self.lmbda, lower=False)
+        return self._lmbda_chol
+
+    @property
+    def lmbda_chol_inv(self):
+        if self._lmbda_chol_inv is None:
+            self._lmbda_chol_inv = sc.linalg.inv(self.lmbda_chol)
+        return self._lmbda_chol_inv
+
+    @property
+    def sigma(self):
+        return self.lmbda_chol_inv @ self.lmbda_chol_inv.T
 
     def rvs(self, x=None):
         assert x is not None
         size = 1 if x.ndim == 1 else x.shape[0]
 
-        y = self.predict(x)
-        y += npr.normal(size=(size, self.drow)).dot(self.sigma_chol.T)
+        y = self.mean(x)
+        y += npr.normal(size=(size, self.drow)).dot(self.lmbda_chol_inv.T)
 
         return y
 
     def predict(self, x):
-        A, sigma = self.A, self.sigma
-
         if self.affine:
-            A, b = A[:, :-1], A[:, -1]
-            y = x.dot(A.T) + b.T
+            A, b = self.A[:, :-1], self.A[:, -1]
+            y = np.einsum('kh,...h->...k', A, x) + b.T
         else:
-            y = x.dot(A.T)
+            y = np.einsum('kh,...h->...k', self.A, x)
 
         return y
 
     def mean(self, x):
-        return self.A @ x
+        return self.predict(x)
 
     def mode(self, x):
-        return self.A @ x
+        return self.predict(x)
 
-    # distribution
-    def log_likelihood(self, y, x=None):
-        A, sigma, drow = self.A, self.sigma, self.drow
-        xy = np.hstack((x, y))
+    def log_likelihood(self, y, x):
+        assert x is not None
 
-        if self.affine:
-            A, b = A[:, :-1], A[:, -1]
+        bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
+                              np.isnan(np.atleast_2d(y)).any(axis=1))
 
-        sigma_inv, L = invpd(sigma, return_chol=True)
-        parammat = - 0.5 * blockarray([[A.T.dot(sigma_inv).dot(A),
-                                        -A.T.dot(sigma_inv)],
-                                       [-sigma_inv.dot(A), sigma_inv]])
+        x = np.nan_to_num(x).reshape((-1, self.dcol))
+        y = np.nan_to_num(y).reshape((-1, self.drow))
 
-        contract = 'ni,ni->n' if x.ndim == 2 else 'i,i->'
-        if isinstance(xy, np.ndarray):
-            out = np.einsum(contract, xy.dot(parammat), xy)
-        else:
-            out = np.einsum(contract, x.dot(parammat[:-drow, :-drow]), x)
-            out += np.einsum(contract, y.dot(parammat[-drow:, -drow:]), y)
-            out += 2. * np.einsum(contract, x.dot(parammat[:-drow, -drow:]), y)
+        mu = self.mean(x)
+        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y)\
+                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y)
 
-        out -= 0.5 * drow * np.log(2. * np.pi) + np.log(np.diag(L)).sum()
+        log_lik[bads] = 0
+        return - self.log_partition(x) + self.log_base() + log_lik
 
-        if self.affine:
-            out += y.dot(sigma_inv).dot(b)
-            out -= x.dot(A.T).dot(sigma_inv).dot(b)
-            out -= 0.5 * b.dot(sigma_inv).dot(b)
-
-        return out
-
-    def log_partition(self):
-        return 0.5 * self.drow * np.log(2. * np.pi)\
-               + np.sum(np.log(np.diag(self.sigma_chol)))
-
-    def entropy(self):
-        return 0.5 * self.drow * np.log(2. * np.pi) + self.drow\
-               + np.sum(np.log(np.diag(self.sigma_chol)))
-
-    def get_statistics(self, y, x):
+    def statistics(self, y, x, keepdim=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
-            idx = np.logical_and(~np.isnan(y).any(1),
-                                 ~np.isnan(x).any(1))
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
             y, x = y[idx], x[idx]
-            n, drow, dcol = y.shape[0], self.drow, self.dcol
-
-            data = np.hstack((x, y))
-            stats = data.T.dot(data)
-            xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
             if self.affine:
-                xy = np.sum(data, axis=0)
-                x, y = xy[:-drow], xy[-drow:]
-                xxT = blockarray([[xxT, x[:, np.newaxis]],
-                                  [x[np.newaxis, :], np.atleast_2d(n)]])
-                yxT = np.hstack((yxT, y[:, np.newaxis]))
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            yxT = np.einsum('nk,nh->nkh', y, x)
+            xxT = np.einsum('nk,nh->nkh', x, x)
+            yyT = np.einsum('nk,nh->nkh', y, y)
+            n = np.ones((y.shape[0], ))
+
+            if not keepdim:
+                yxT = np.sum(yxT, axis=0)
+                xxT = np.sum(xxT, axis=0)
+                yyT = np.sum(yyT, axis=0)
+                n = np.sum(n, axis=0)
 
             return Stats([yxT, xxT, yyT, n])
         else:
-            return reduce(lambda a, b: a + b, list(map(self.get_statistics, y, x)))
+            func = partial(self.statistics, keepdim=keepdim)
+            stats = list(map(func, y, x))
+            return stats if keepdim else reduce(add, stats)
 
-    def get_weighted_statistics(self, y, x, weights):
+    def weighted_statistics(self, y, x, weights, keepdim=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
-            idx = np.logical_and(~np.isnan(y).any(1),
-                                 ~np.isnan(x).any(1))
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
             y, x, weights = y[idx], x[idx], weights[idx]
-            n, drow, dcol = weights.sum(), self.drow, self.dcol
-
-            data = np.hstack((x, y))
-            stats = data.T.dot(weights[:, np.newaxis] * data)
-            xxT, yxT, yyT = stats[:-drow, :-drow], stats[-drow:, :-drow], stats[-drow:, -drow:]
 
             if self.affine:
-                xy = weights.dot(data)
-                x, y = xy[:-drow], xy[-drow:]
-                xxT = blockarray([[xxT, x[:, np.newaxis]], [x[np.newaxis, :], np.atleast_2d(n)]])
-                yxT = np.hstack((yxT, y[:, np.newaxis]))
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            yxT = np.einsum('nk,n,nh->nkh', y, weights, x)
+            xxT = np.einsum('nk,n,nh->nkh', x, weights, x)
+            yyT = np.einsum('nk,n,nh->nkh', y, weights, y)
+            n = np.ones((y.shape[0], ))
+
+            if not keepdim:
+                yxT = np.sum(yxT, axis=0)
+                xxT = np.sum(xxT, axis=0)
+                yyT = np.sum(yyT, axis=0)
+                n = np.sum(n, axis=0)
 
             return Stats([yxT, xxT, yyT, n])
         else:
-            return reduce(lambda a, b: a + b, list(map(self.get_weighted_statistics, y, x, weights)))
+            func = partial(self.weighted_statistics, keepdim=keepdim)
+            stats = list(map(func, y, x, weights))
+            return stats if keepdim else reduce(add, stats)
 
-    def _empty_statistics(self):
-        return Stats([np.zeros((self.drow, self.dcol)),
-                      np.zeros((self.dcol, self.dcol)),
-                      np.zeros((self.drow, self.drow)), 0])
+    @property
+    def base(self):
+        return np.power(2. * np.pi, - self.drow / 2.)
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self, x):
+        mu = self.mean(x)
+        return 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
+
+    def entropy(self, x):
+        raise NotImplementedError
 
     # Max likelihood
     def max_likelihood(self, y, x, weights=None):
-        stats = self.posterior.statistics(y, x) if weights is None\
-            else self.posterior.weighted_statistics(y, x, weights)
+        stats = self.statistics(y, x) if weights is None\
+            else self.weighted_statistics(y, x, weights)
 
-        # (yxT, xxT, yyT, n)
         yxT, xxT, yyT, n = stats
-
         self.A = np.linalg.solve(xxT, yxT.T).T
-        self.sigma = (yyT - self.A.dot(yxT.T)) / n
-
-        def symmetrize(A):
-            return (A + A.T) / 2.
+        _sigma = (yyT - self.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        # self.sigma = near_pd(symmetrize(self.sigma) + 1e-16 * np.eye(self.drow))
-        self.sigma = symmetrize(self.sigma) + 1e-16 * np.eye(self.drow)
+        _sigma = symmetrize(_sigma) + 1e-16 * np.eye(self.drow)
+        assert np.allclose(_sigma, _sigma.T)
+        assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
 
-        assert np.allclose(self.sigma, self.sigma.T)
-        assert np.all(np.linalg.eigvalsh(self.sigma) > 0.)
+        self.lmbda = invpd(_sigma)
 
         return self
