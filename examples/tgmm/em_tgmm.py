@@ -5,31 +5,32 @@ from scipy import stats
 
 from matplotlib import pyplot as plt
 
-from mimo import distributions
-from mimo import mixtures
+from mimo.distributions import Categorical
+from mimo.distributions import TiedGaussiansWithPrecision
+from mimo.mixtures import MixtureOfTiedGaussians
 
 from mimo.util.text import progprint_xrange
 
 # npr.seed(1337)
 
-gating = distributions.Categorical(K=2)
+gating = Categorical(K=2)
 
 lmbda = stats.wishart(3, np.eye(2)).rvs()
-ensemble = distributions.TiedGaussiansWithPrecision(mus=[np.array([1., 1.]),
-                                                         np.array([-1., -1.])],
-                                                    lmbda=lmbda)
+ensemble = TiedGaussiansWithPrecision(mus=[np.array([1., 1.]),
+                                           np.array([-1., -1.])],
+                                      lmbda=lmbda)
 
-gmm = mixtures.MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
+gmm = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 
 obs = [gmm.rvs(100)[0] for _ in range(5)]
 gmm.plot(obs)
 
-gating = distributions.Categorical(K=2)
-ensemble = distributions.TiedGaussiansWithPrecision(mus=[npr.randn(2,),
-                                                         npr.randn(2,)],
-                                                    lmbda=np.eye(2))
+gating = Categorical(K=2)
+ensemble = TiedGaussiansWithPrecision(mus=[npr.randn(2,),
+                                           npr.randn(2,)],
+                                      lmbda=np.eye(2))
 
-model = mixtures.MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
+model = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 
 print('Expecation Maximization')
 for _ in progprint_xrange(500):
