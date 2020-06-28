@@ -223,7 +223,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         component_scores = np.empty((N, K))
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
-            component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x)
+            component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)
         component_scores = np.nan_to_num(component_scores)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
@@ -331,7 +331,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     def _variational_lowerbound_data(self, y, x, scores):
         vlb = 0.
         vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x)) for b, r in zip(self.basis, scores.T)])
-        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x)) for m, r in zip(self.models, scores.T)])
+        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)) for m, r in zip(self.models, scores.T)])
         return vlb
 
     def variational_lowerbound(self, y, x, scores):
