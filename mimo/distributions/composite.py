@@ -7,6 +7,7 @@ from mimo.abstraction import Statistics as Stats
 
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
+from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 from mimo.distributions import MatrixNormalWithPrecision
@@ -96,7 +97,8 @@ class NormalWishart(Distribution):
     def log_partition(self, params=None):
         _, kappa, psi, nu = params if params is not None else self.params
         dim = self.dim if params else psi.shape[0]
-        return - dim / 2. * np.log(kappa) + Wishart(psi=psi, nu=nu).log_partition()
+        return - 0.5 * dim * np.log(kappa)\
+               + Wishart(psi=psi, nu=nu).log_partition()
 
     def expected_statistics(self):
         # stats = [lmbda @ x,
@@ -457,27 +459,60 @@ class MatrixNormalWishart(Distribution):
 
     def log_partition(self, params=None):
         M, K, psi, nu = params if params is not None else self.params
-        return 0.5 * nu * self.drow * np.log(2)\
-               + multigammaln(nu / 2., self.drow)\
-               + 0.5 * self.drow * np.log(2. * np.pi)\
-               - 0.5 * self.drow * np.linalg.slogdet(V)[1]\
-               - 0.5 * nu * np.linalg.slogdet(psi)[1]
+        drow = self.drow if params else M.shape[0]
+        return - 0.5 * drow * np.linalg.slogdet(K)[1]\
+               + Wishart(psi=psi, nu=nu).log_partition()
 
     def expected_statistics(self):
-        E_Sigmainv = self.invwishart.nu * np.linalg.inv(self.invwishart.psi)
-        E_Sigmainv_A = self.invwishart.nu * np.linalg.solve(self.invwishart.psi, self.matnorm.M)
-        E_AT_Sigmainv_A = self.drow * self.matnorm.V + self.invwishart.nu\
-                          * self.matnorm.M.T.dot(np.linalg.solve(self.invwishart.psi, self.matnorm.M))
-        E_logdetSigmainv = digamma((self.invwishart.nu - np.arange(self.drow)) / 2.).sum() \
-                           + self.drow * np.log(2) - np.linalg.slogdet(self.invwishart.psi)[1]
+        E_Lmbda_A = self.wishart.nu * self.wishart.psi @ self.matnorm.M
+        E_AT_Lmbda_A = - 0.5 * (self.drow * self.matnorm.K + self.matnorm.M.T.dot(E_Lmbda_A))
+        E_lmbda = - 0.5 * (self.wishart.nu * self.wishart.psi)
+        E_logdet_lmbda = 0.5 * (np.sum(digamma((self.wishart.nu - np.arange(self.drow)) / 2.))
+                                + self.drow * np.log(2.) + 2. * np.sum(np.log(np.diag(self.wishart.psi_chol))))
 
-        return E_Sigmainv, E_Sigmainv_A, E_AT_Sigmainv_A, E_logdetSigmainv
+        return E_Lmbda_A, E_AT_Lmbda_A, E_lmbda, E_logdet_lmbda
 
     def entropy(self):
-        raise NotImplementedError
+        nat_param, stats = self.nat_param, self.expected_statistics()
+        return self.log_partition() - self.log_base()\
+               - (np.tensordot(nat_param[0], stats[0])
+                  + np.tensordot(nat_param[1], stats[1])
+                  + np.tensordot(nat_param[2], stats[2])
+                  + nat_param[3] * stats[3])
 
-    def cross_entropy(self):
-        raise NotImplementedError
+    def cross_entropy(self, dist):
+        nat_param, stats = dist.nat_param, self.expected_statistics()
+        return dist.log_partition() - dist.log_base()\
+               - (np.tensordot(nat_param[0], stats[0])
+                  + np.tensordot(nat_param[1], stats[1])
+                  + np.tensordot(nat_param[2], stats[2])
+                  + nat_param[3] * stats[3])
 
-    def expected_log_likelihood(self, x):
-        raise NotImplementedError
+    def expected_log_likelihood(self, y, x, affine=True):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.expected_statistics()
+
+        # Data statistics under a Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        _A = np.empty((y.shape[-1], x.shape[-1]))
+        liklihood = LinearGaussianWithPrecision(A=_A, affine=affine)
+        stats = liklihood.statistics(y, x, keepdim=True)
+        log_base = liklihood.log_base()
+
+        return log_base + np.einsum('kh,nkh->n', nat_param[0], stats[0])\
+               + np.einsum('kh,nkh->n', nat_param[1], stats[1])\
+               + np.einsum('kh,nkh->n', nat_param[2], stats[2])\
+               + nat_param[3] * stats[3]
+
+
+if __name__ == "__main__":
+    dist = MatrixNormalWishart(M=np.zeros((3, 5)),
+                               K=1e-2 * np.zeros((5, 5)),
+                               psi=1. * np.eye(3, 3),
+                               nu=4)
+
+    x = np.random.randn(100, 5)
+    y = np.random.randn(100, 3)
+
+    print(dist.expected_log_likelihood(y, x, affine=False))
