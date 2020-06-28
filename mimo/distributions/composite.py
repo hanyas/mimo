@@ -467,7 +467,7 @@ class MatrixNormalWishart(Distribution):
     def log_partition(self, params=None):
         M, K, psi, nu = params if params is not None else self.params
         drow = self.drow if params else M.shape[0]
-        return 0.5 * drow * np.linalg.slogdet(K)[1]\
+        return - 0.5 * drow * np.linalg.slogdet(K)[1]\
                + Wishart(psi=psi, nu=nu).log_partition()
 
     def expected_statistics(self):
