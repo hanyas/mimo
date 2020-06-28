@@ -122,7 +122,7 @@ class NormalWishart(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (np.dot(nat_param[0], stats[0]) + nat_param[1] * stats[1]
                   + np.tensordot(nat_param[2], stats[2]) + nat_param[3] * stats[3])
 
@@ -440,7 +440,15 @@ class MatrixNormalWishart(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        # (yxT, xxT, yyT, n)
+        # The definition of stats is slightly different
+        # from literatur to make posterior updates easy
+
+        # Assumed stats
+        # stats = [lmbda @ A,
+        #          -0.5 * lmbda @ AAT,
+        #          -0.5 * lmbda,
+        #          0.5 * log_lmbda]
+
         M = params[0].dot(params[1])
         K = params[1]
         psi = invpd(params[2]) + params[0].dot(K).dot(params[0].T)
@@ -449,7 +457,6 @@ class MatrixNormalWishart(Distribution):
 
     @staticmethod
     def nat_to_std(natparam):
-        # (yxT, xxT, yyT, n)
         M = np.linalg.solve(natparam[1], natparam[0].T).T
         K = natparam[1]
         psi = invpd(natparam[2] - M.dot(K).dot(M.T))
@@ -460,12 +467,17 @@ class MatrixNormalWishart(Distribution):
     def log_partition(self, params=None):
         M, K, psi, nu = params if params is not None else self.params
         drow = self.drow if params else M.shape[0]
-        return - 0.5 * drow * np.linalg.slogdet(K)[1]\
+        return 0.5 * drow * np.linalg.slogdet(K)[1]\
                + Wishart(psi=psi, nu=nu).log_partition()
 
     def expected_statistics(self):
+        # stats = [lmbda @ A,
+        #          -0.5 * lmbda @ AAT,
+        #          -0.5 * lmbda,
+        #          0.5 * log_lmbda]
+
         E_Lmbda_A = self.wishart.nu * self.wishart.psi @ self.matnorm.M
-        E_AT_Lmbda_A = - 0.5 * (self.drow * self.matnorm.K + self.matnorm.M.T.dot(E_Lmbda_A))
+        E_AT_Lmbda_A = - 0.5 * (self.drow * invpd(self.matnorm.K) + self.matnorm.M.T.dot(E_Lmbda_A))
         E_lmbda = - 0.5 * (self.wishart.nu * self.wishart.psi)
         E_logdet_lmbda = 0.5 * (np.sum(digamma((self.wishart.nu - np.arange(self.drow)) / 2.))
                                 + self.drow * np.log(2.) + 2. * np.sum(np.log(np.diag(self.wishart.psi_chol))))
@@ -482,7 +494,7 @@ class MatrixNormalWishart(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (np.tensordot(nat_param[0], stats[0])
                   + np.tensordot(nat_param[1], stats[1])
                   + np.tensordot(nat_param[2], stats[2])
@@ -493,7 +505,7 @@ class MatrixNormalWishart(Distribution):
         # are the expected statsitics of the posterior
         nat_param = self.expected_statistics()
 
-        # Data statistics under a Gaussian likelihood
+        # Data statistics under a linear Gaussian likelihood
         # log-parition is subsumed into nat*stats
         _A = np.empty((y.shape[-1], x.shape[-1]))
         liklihood = LinearGaussianWithPrecision(A=_A, affine=affine)
@@ -504,15 +516,3 @@ class MatrixNormalWishart(Distribution):
                + np.einsum('kh,nkh->n', nat_param[1], stats[1])\
                + np.einsum('kh,nkh->n', nat_param[2], stats[2])\
                + nat_param[3] * stats[3]
-
-
-if __name__ == "__main__":
-    dist = MatrixNormalWishart(M=np.zeros((3, 5)),
-                               K=1e-2 * np.zeros((5, 5)),
-                               psi=1. * np.eye(3, 3),
-                               nu=4)
-
-    x = np.random.randn(100, 5)
-    y = np.random.randn(100, 3)
-
-    print(dist.expected_log_likelihood(y, x, affine=False))

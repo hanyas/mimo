@@ -243,12 +243,12 @@ class GaussianWithNormalWishart:
     def log_posterior_predictive_gaussian(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.likelihood.get_statistics(x)
+        stats = self.likelihood.statistics(x)
         natparam = self.posterior.nat_param + stats
         mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
 
         loc = mu
-        scale = invpd(psi * kappa)
+        scale = invpd(kappa * psi)
 
         from mimo.util.stats import multivariate_gaussian_loglik
         return multivariate_gaussian_loglik(x, loc, scale)
@@ -256,7 +256,7 @@ class GaussianWithNormalWishart:
     def log_posterior_predictive_studentt(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.likelihood.get_statistics(x)
+        stats = self.likelihood.statistics(x)
         natparam = self.posterior.nat_param + stats
         mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
 
@@ -464,13 +464,13 @@ class LinearGaussianWithMatrixNormalWishart:
         if self.likelihood.affine:
             x = np.hstack((x, 1.))
 
-        M, V, psi, nu = self.posterior.params
+        M, K, psi, nu = self.posterior.params
 
         # https://tminka.github.io/papers/minka-gaussian.pdf
         mu = M @ x
 
         # variance of approximate Gaussian
-        sigma = psi / nu  # Misleading in Minka
+        sigma = invpd(nu * psi)  # Misleading in Minka
 
         return mu, sigma, nu
 
@@ -480,17 +480,17 @@ class LinearGaussianWithMatrixNormalWishart:
 
         xxT = np.outer(x, x)
 
-        M, V, psi, nu = self.posterior.params
+        M, K, psi, nu = self.posterior.params
 
         # https://tminka.github.io/papers/minka-linear.pdf
-        c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
+        c = 1. - x.T @ np.linalg.inv(K + xxT) @ x
 
         # https://tminka.github.io/papers/minka-gaussian.pdf
         df = nu
         mu = M @ x
 
         # variance of a student-t
-        sigma = (1. / c) * psi / df  # Misleading in Minka
+        sigma = (1. / c) * invpd(psi * df)  # Misleading in Minka
         var = sigma * df / (df - 2)
 
         return mu, sigma, nu
