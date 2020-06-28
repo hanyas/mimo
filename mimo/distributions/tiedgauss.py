@@ -58,7 +58,7 @@ class TiedGaussiansWithPrecision:
 
     def statistics(self, data, labels, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             labels = labels[idx]
 
@@ -73,7 +73,7 @@ class TiedGaussiansWithPrecision:
 
     def weighted_statistics(self, data, weights, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 

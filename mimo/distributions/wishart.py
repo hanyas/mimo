@@ -78,7 +78,7 @@ class Wishart(Distribution):
 
     def statistics(self, data):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
             x = data
@@ -91,7 +91,7 @@ class Wishart(Distribution):
 
     def weighted_statistics(self, data, weights):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 
@@ -220,7 +220,7 @@ class InverseWishart(Distribution):
 
     def statistics(self, data):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
             x = np.sum(np.linalg.inv(data), axis=0)
@@ -233,7 +233,7 @@ class InverseWishart(Distribution):
 
     def weighted_statistics(self, data, weights):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 

@@ -143,7 +143,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
             return sum(self.log_likelihood(_obs) for _obs in obs)
         else:
             scores = self.log_scores(obs)
-            return np.sum(logsumexp(scores[~np.isnan(obs).any(1)], axis=1))
+            return np.sum(logsumexp(scores[~np.isnan(obs).any(axis=1)], axis=1))
 
     def mean(self):
         raise NotImplementedError
