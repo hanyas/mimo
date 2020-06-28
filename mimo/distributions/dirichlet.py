@@ -43,7 +43,7 @@ class Dirichlet(Distribution):
 
     def statistics(self, data):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
             logx = np.log(data)
@@ -54,7 +54,7 @@ class Dirichlet(Distribution):
 
     def weighted_statistics(self, data, weights):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 

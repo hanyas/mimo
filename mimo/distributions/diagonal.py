@@ -87,7 +87,7 @@ class GaussianWithDiagonalCovariance(Distribution):
 
     def statistics(self, data, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
             x = data
@@ -107,7 +107,7 @@ class GaussianWithDiagonalCovariance(Distribution):
 
     def weighted_statistics(self, data, weights, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 
@@ -289,7 +289,7 @@ class GaussianWithDiagonalPrecision(Distribution):
 
     def statistics(self, data, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
             x = data
@@ -309,7 +309,7 @@ class GaussianWithDiagonalPrecision(Distribution):
 
     def weighted_statistics(self, data, weights, keepdim=False):
         if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(1)
+            idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 
