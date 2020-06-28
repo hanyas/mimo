@@ -1,5 +1,4 @@
 import copy
-from multiprocessing.pool import Pool as Pool
 
 import numpy as np
 from scipy import special as special
@@ -20,6 +19,7 @@ from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
 from mimo.util.text import progprint_xrange
 
 import pathos
+from pathos.pools import _ProcessPool as Pool
 nb_cores = pathos.multiprocessing.cpu_count()
 
 

@@ -1,14 +1,24 @@
 import os
+import argparse
+
 os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo import distributions, mixture
-from mimo.util.text import progprint_xrange
+from mimo.distributions import NormalWishart
+from mimo.distributions import MatrixNormalWishart
+from mimo.distributions import GaussianWithNormalWishart
+from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-import argparse
+from mimo.distributions import StickBreaking
+from mimo.distributions import Dirichlet
+from mimo.distributions import CategoricalWithDirichlet
+from mimo.distributions import CategoricalWithStickBreaking
+
+from mimo.mixtures import BayesianMixtureOfLinearGaussians
+from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
 
@@ -38,45 +48,44 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_niw = 1e-2
+    psi_nw = 1e2
     kappa = 1e-2
 
     # initialize Matrix-Normal
-    psi_mniw = 10.0
-    V = 1e3 * np.eye(nb_params)
+    psi_mnw = 1e-1
+    K = 1e-3 * np.eye(nb_params)
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
-                               psi=np.eye(input_dim) * psi_niw,
+                               psi=np.eye(input_dim) * psi_nw,
                                kappa=kappa, nu=input_dim + 1)
 
-        aux = distributions.NormalInverseWishart(**basis_hypparams)
+        aux = NormalWishart(**basis_hypparams)
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                affine=args.affine, V=V,
-                                nu=target_dim + 1,
-                                psi=np.eye(target_dim) * psi_mniw)
+                                K=K, nu=target_dim + 1,
+                                psi=np.eye(target_dim) * psi_mnw)
 
-        aux = distributions.MatrixNormalInverseWishart(**models_hypparams)
+        aux = MatrixNormalWishart(**models_hypparams)
         models_prior.append(aux)
 
     # define gating
     if args.prior == 'stick-breaking':
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = distributions.StickBreaking(**gating_hypparams)
+        gating_prior = StickBreaking(**gating_hypparams)
 
-        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithStickBreaking(gating_prior),
-                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
-                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
+        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = distributions.Dirichlet(**gating_hypparams)
+        gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = mixture.BayesianMixtureOfLinearGaussians(gating=distributions.BayesianCategoricalWithDirichlet(gating_prior),
-                                                         basis=[distributions.BayesianGaussian(basis_prior[i]) for i in range(args.nb_models)],
-                                                         models=[distributions.BayesianLinearGaussian(models_prior[i]) for i in range(args.nb_models)])
+        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
     dpglm.add_data(target, input, whiten=True)
 
     for _ in range(args.super_iters):
@@ -112,7 +121,7 @@ def _job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
+        # dpglm.gating.prior = dpglm.gating.posterior
         for i in range(dpglm.size):
             dpglm.basis[i].prior = dpglm.basis[i].posterior
             dpglm.models[i].prior = dpglm.models[i].posterior
@@ -139,11 +148,11 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=10, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=25, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
@@ -157,7 +166,7 @@ if __name__ == "__main__":
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of train dataset', default=1500, type=int)
+    parser.add_argument('--nb_train', help='size of train dataset', default=2000, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
@@ -167,12 +176,16 @@ if __name__ == "__main__":
     # create Sine data
     nb_train = args.nb_train
 
+    true_target = np.zeros((nb_train, ))
+    true_input = np.zeros((nb_train, ))
+
     data = np.zeros((nb_train, 2))
     step = 10. * np.pi / nb_train
     for i in range(data.shape[0]):
-        x = i * step
-        data[i, 0] = x + 0.1 * npr.randn()
-        data[i, 1] = 3 * np.sin(x) + 0.3 * npr.randn()
+        true_input[i] = i * step
+        data[i, 0] = true_input[i] + 0.1 * npr.randn()
+        true_target[i] = 3 * np.sin(true_input[i])
+        data[i, 1] = true_target[i] + 0.3 * npr.randn()
 
     from itertools import chain
     r = list(chain(range(0, 500), range(1000, 1500)))
@@ -215,9 +228,10 @@ if __name__ == "__main__":
     sorted_input, sorted_target = input[sorter, 0], target[sorter, 0]
     sorted_mu_predict, sorted_std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
 
-    axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
+    axes[0].plot(true_input, true_target, '--k')
+    axes[0].scatter(train_input, train_target, marker='+', s=1.25, color='k')
     axes[0].plot(sorted_input, sorted_mu_predict, color='crimson')
-    for c in [1., 2.]:
+    for c in [1., 2., 3.]:
         axes[0].fill_between(sorted_input,
                              sorted_mu_predict - c * sorted_std_predict,
                              sorted_mu_predict + c * sorted_std_predict,
