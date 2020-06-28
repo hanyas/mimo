@@ -79,7 +79,7 @@ class BayesianDistribution(with_metaclass(abc.ABCMeta, Distribution)):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def meanfield_sgdstep(self, expected_suff_stats, weights, prob, stepsize):
+    def meanfield_sgdstep(self, stats, weights, prob, stepsize):
         pass
 
     @abc.abstractmethod
@@ -127,11 +127,11 @@ class Conditional(with_metaclass(abc.ABCMeta, object)):
         pass
 
     @abc.abstractmethod
-    def log_partition(self, x):
+    def log_partition(self):
         pass
 
     @abc.abstractmethod
-    def entropy(self, x):
+    def entropy(self):
         pass
 
 
@@ -163,7 +163,7 @@ class BayesianConditional(with_metaclass(abc.ABCMeta, Conditional)):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def meanfield_sgdstep(self, expected_suff_stats, weights, prob, stepsize):
+    def meanfield_sgdstep(self, stats, weights, prob, stepsize):
         pass
 
     @abc.abstractmethod

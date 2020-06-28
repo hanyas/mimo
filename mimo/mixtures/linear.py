@@ -46,9 +46,9 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     @property
     def nb_params(self):
-        return self.gating.nb_params\
-               + sum(b.nb_params for b in self.basis)\
-               + sum(m.nb_params for m in self.models)
+        return self.gating.likelihood.nb_params\
+               + sum(b.likelihood.nb_params for b in self.basis)\
+               + sum(m.likelihood.nb_params for m in self.models)
 
     @property
     def size(self):
@@ -56,7 +56,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     @property
     def drow(self):
-        return self.basis[0].dim()
+        return self.model[0].drow()
 
     @property
     def dcol(self):
@@ -65,7 +65,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     @property
     def used_labels(self):
         assert self.has_data()
-        label_usages = sum(np.bincount(_label, minlength=self.size) for _label in self.labels)
+        label_usages = sum(np.bincount(_label, minlength=self.size)
+                           for _label in self.labels)
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
@@ -76,7 +77,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
         for _y in y:
-            self.labels.append(self.gating.rvs(len(_y)))
+            self.labels.append(self.gating.likelihood.rvs(len(_y)))
 
         if whiten:
             self.whitend = True
@@ -117,14 +118,14 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return len(self.target) > 0 and len(self.input) > 0
 
     def rvs(self, size=1):
-        z = self.gating.rvs(size)
+        z = self.gating.likelihood.rvs(size)
         counts = np.bincount(z, minlength=self.size)
 
         x = np.empty((size, self.dcol))
         y = np.empty((size, self.drow))
         for idx, (b, m, count) in enumerate(zip(self.basis, self.models, counts)):
-            x[z == idx, ...] = b.rvs(count)
-            y[z == idx, ...] = m.rvs(x[z == idx, ...])
+            x[z == idx, ...] = b.likelihood.rvs(count)
+            y[z == idx, ...] = m.likelihood.rvs(x[z == idx, ...])
 
         perm = np.random.permutation(size)
         x, y, z = x[perm], y[perm], z[perm]
@@ -137,7 +138,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             return sum(self.log_likelihood(_y, _x) for (_y, _x) in zip(y, x))
         else:
             scores = self.log_scores(y, x)
-            idx = np.logical_and(~np.isnan(y).any(1), ~np.isnan(x).any(1))
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
             return np.sum(logsumexp(scores[idx], axis=1))
 
     def mean(self, x):
@@ -158,11 +160,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         # update, see Eq. 10.67 in Bishop
         component_scores = np.empty((N, K))
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            component_scores[:, idx] = b.log_likelihood(x)
-            component_scores[:, idx] += m.log_likelihood(y, x)
+            component_scores[:, idx] = b.likelihood.log_likelihood(x)
+            component_scores[:, idx] += m.likelihood.log_likelihood(y, x)
         component_scores = np.nan_to_num(component_scores)
 
-        gating_scores = self.gating.log_likelihood(np.arange(K))
+        gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
         return score
 
@@ -174,7 +176,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return score
 
     @pass_target_and_input_arg
-    def max_likelihood(self, y=None, x=None):
+    def max_aposteriori(self, y=None, x=None):
         # Expectation step
         scores = []
         for _y, _x in zip(y, x):
@@ -182,11 +184,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         # Maximization step
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            b.max_likelihood([_x for _x in x], [_score[:, idx] for _score in scores])
-            m.max_likelihood([_y for _y in y], [_score[:, idx] for _score in scores])
+            b.max_aposteriori([_x for _x in x], [_score[:, idx] for _score in scores])
+            m.max_aposteriori([_y for _y in y], [_score[:, idx] for _score in scores])
 
         # mixture weights
-        self.gating.max_likelihood(None, [_score for _score in scores])
+        self.gating.max_aposteriori(None, scores)
 
     # Gibbs sampling
     @pass_target_input_and_labels_arg
@@ -195,15 +197,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self._resample_gating(z)
         z = self._resample_labels(y, x)
 
-        if self.has_data() > 0:
+        if self.has_data():
             self.labels = z
-
-    def copy_sample(self):
-        new = copy.copy(self)
-        new.basis = [b.copy_sample() for b in self.basis]
-        new.models = [m.copy_sample() for m in self.models]
-        new.gating = self.gating.copy_sample()
-        return new
 
     def _resample_components(self, y, x, z):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
@@ -223,21 +218,19 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     # Mean Field
     def expected_scores(self, y, x):
-        # compute responsibilities
         N, K = y.shape[0], self.size
 
-        # update, see Eq. 10.67 in Bishop
         component_scores = np.empty((N, K))
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            component_scores[:, idx] = b.expected_log_likelihood(x)
-            component_scores[:, idx] += m.expected_log_likelihood(y, x)
+            component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
+            component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x)
         component_scores = np.nan_to_num(component_scores)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
-            gating_scores = self.gating.expected_log_likelihood(np.arange(K))
+            gating_scores = self.gating.posterior.expected_statistics()
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            E_log_stick, E_log_rest = self.gating.expected_log_likelihood(np.arange(K))
-            gating_scores = np.take(E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1])), np.arange(K))
+            E_log_stick, E_log_rest = self.gating.posterior.expected_statistics()
+            gating_scores = E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1]))
         else:
             raise NotImplementedError
 
@@ -301,7 +294,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self._meanfield_sgdstep_parameters(y, x, scores, prob, stepsize)
 
         if self.has_data():
-            for _y, _x in zip(self.raw_target, self.raw_input):
+            for _y, _x in zip(self.target, self.input):
                 self.labels.append(np.argmax(self.scores(_y, _x), axis=1))
 
     def _meanfield_sgdstep_parameters(self, y, x, scores, prob, stepsize):
@@ -316,32 +309,30 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                                 [_score[:, idx] for _score in scores], prob, stepsize)
 
     def _meanfield_sgdstep_gating(self, scores, prob, stepsize):
-        self.gating.meanfield_sgdstep(None, [_score for _score in scores], prob, stepsize)
+        self.gating.meanfield_sgdstep(None, scores, prob, stepsize)
 
     def _variational_lowerbound_labels(self, scores):
-        K = self.size
-
-        # return avg energy plus entropy
-        errs = np.seterr(invalid='ignore', divide='ignore')
-        prod = scores * np.log(scores)
-        prod[np.isnan(prod)] = 0.  # 0 * -inf = 0.
-        np.seterr(**errs)
-
-        q_entropy = - prod.sum()
+        vlb = 0.
 
         if isinstance(self.gating, CategoricalWithDirichlet):
-            logpitilde = self.gating.expected_log_likelihood(np.arange(K))
-            p_avgengy = (scores * logpitilde).sum()
+            vlb += np.sum(scores * self.gating.posterior.expected_log_likelihood())
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            counts = scores
-            cumcounts = np.hstack((np.cumsum(counts[:, ::-1], axis=1)[:, -2::-1],
-                                   np.zeros((len(counts), 1))))
-            E_log_stick, E_log_rest = self.gating.expected_log_likelihood(np.arange(K))
-            p_avgengy = np.sum(cumcounts * E_log_rest + counts * E_log_stick)
-        else:
-            raise NotImplementedError
+            cumscores = np.hstack((np.cumsum(scores[:, ::-1], axis=1)[:, -2::-1],
+                                   np.zeros((len(scores), 1))))
+            E_log_stick, E_log_rest = self.gating.posterior.expected_log_likelihood()
+            vlb += np.sum(scores * E_log_stick + cumscores * E_log_rest)
 
-        return p_avgengy + q_entropy
+        errs = np.seterr(invalid='ignore', divide='ignore')
+        vlb -= np.nansum(scores * np.log(scores))  # treats nans as zeros
+        np.seterr(**errs)
+
+        return vlb
+
+    def _variational_lowerbound_data(self, y, x, scores):
+        vlb = 0.
+        vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x)) for b, r in zip(self.basis, scores.T)])
+        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x)) for m, r in zip(self.models, scores.T)])
+        return vlb
 
     def variational_lowerbound(self, y, x, scores):
         vlb = 0.
@@ -350,8 +341,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         vlb += sum(b.variational_lowerbound() for b in self.basis)
         vlb += sum(m.variational_lowerbound() for m in self.models)
         for _y, _x, _score in zip(y, x, scores):
-            vlb += np.sum([r.dot(b.expected_log_likelihood(_x)) for b, r in zip(self.basis, _score.T)])
-            vlb += np.sum([r.dot(m.expected_log_likelihood(_y, _x)) for m, r in zip(self.models, _score.T)])
+            vlb += self._variational_lowerbound_data(_y, _x, _score)
 
         # add in symmetry factor (if we're actually symmetric)
         if len(set(type(m) for m in self.models)) == 1:
@@ -360,12 +350,14 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     # Misc
     def bic(self, y=None, x=None):
-        return -2 * self.log_likelihood(y, x) + self.nb_params * np.log(y.shape[0])
+        assert x is not None and y is not None
+        return - 2. * self.log_likelihood(y, x) + self.nb_params\
+               * np.log(sum([_y.shape[0] for _y in y]))
 
     def aic(self):
         assert self.has_data()
-        return 2 * self.nb_params - 2 * sum(self.log_likelihood(_y, _x)
-                                            for _y, _x in zip(self.target, self.input))
+        return 2. * self.nb_params - 2. * sum(self.log_likelihood(_y, _x)
+                                              for _y, _x in zip(self.target, self.input))
 
     def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
         x = np.atleast_2d(x).T if x.ndim < 2 else x
@@ -421,7 +413,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         target, input = y, x
 
-        dim = self.models[0].drow
+        dim = self.models[0].likelihood.drow
         mu, var, stdv, nlpd = np.zeros((dim, )), np.zeros((dim, )), np.zeros((dim, )), 0.
 
         weights = self.meanfield_predictive_gating(input, sparse, type)
