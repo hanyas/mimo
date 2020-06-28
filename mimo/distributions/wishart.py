@@ -149,7 +149,7 @@ class Wishart(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (np.tensordot(nat_param[0], stats[0]) + nat_param[1] * stats[1])
 
 
@@ -291,5 +291,5 @@ class InverseWishart(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (np.tensordot(nat_param[0], stats[0]) + nat_param[1] * stats[1])

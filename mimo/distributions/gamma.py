@@ -110,7 +110,7 @@ class Gamma(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (nat_param[0].dot(stats[0]) + np.dot(nat_param[1], stats[1]))
 
 
@@ -217,5 +217,5 @@ class InverseGamma(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return dist.log_partition() - dist.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (nat_param[0].dot(stats[0]) + np.dot(nat_param[1], stats[1]))

@@ -272,8 +272,6 @@ class BayesianMixtureOfGaussians(Distribution):
     # Expectation-Maximization
     @pass_obs_arg
     def max_aposteriori(self, obs):
-        obs = obs if isinstance(obs, list) else [obs]
-
         # Expectation step
         scores = []
         for _obs in obs:
