@@ -3,11 +3,11 @@ import copy
 import numpy as np
 
 from mimo.distributions import Categorical
-from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
-from mimo.distributions import TiedGaussiansWithPrecision
+from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import NormalWishart
+from mimo.distributions import TiedGaussiansWithPrecision
 
 from mimo.util.matrix import invpd
 
@@ -230,7 +230,7 @@ class GaussianWithNormalWishart:
     def log_marginal_likelihood(self, x):
         x = np.atleast_2d(x)
 
-        stats = self.likelihood.get_statistics(x)
+        stats = self.likelihood.statistics(x)
         natparam = self.prior.nat_param + stats
         params = NormalWishart.nat_to_std(natparam)
 
@@ -460,7 +460,7 @@ class LinearGaussianWithMatrixNormalWishart:
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
-    def predictive_posterior_gaussian(self, x):
+    def posterior_predictive_gaussian(self, x):
         if self.likelihood.affine:
             x = np.hstack((x, 1.))
 
@@ -474,7 +474,7 @@ class LinearGaussianWithMatrixNormalWishart:
 
         return mu, sigma, nu
 
-    def predictive_posterior_studentt(self, x):
+    def posterior_predictive_studentt(self, x):
         if self.likelihood.affine:
             x = np.hstack((x, 1.))
 
