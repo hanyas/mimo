@@ -1,5 +1,3 @@
-import copy
-
 import numpy as np
 from scipy import special as special
 from scipy.special import logsumexp
@@ -422,12 +420,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             mode = np.argmax(weights)
 
             if type == 'gaussian':
-                mu, _sigma, df = self.models[mode].predictive_posterior_gaussian(input)
+                mu, _sigma, df = self.models[mode].posterior_predictive_gaussian(input)
                 var = np.diag(_sigma)  # consider only diagonal variances for plots
                 if compute_nlpd:
                     nlpd = np.exp(mvn_logpdf(target, mu, _sigma))
             else:
-                mu, _sigma, df = self.models[mode].predictive_posterior_studentt(input)
+                mu, _sigma, df = self.models[mode].posterior_predictive_studentt(input)
                 var = np.diag(_sigma * df / (df - 2))  # consider only diagonal variances for plots
                 if compute_nlpd:
                     nlpd = np.exp(mvt_logpdf(target, mu, _sigma, df))
@@ -436,12 +434,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             _labels = self.used_labels if sparse else range(self.size)
             for idx in _labels:
                 if type == 'gaussian':
-                    _mu, _sigma, _df = self.models[idx].predictive_posterior_gaussian(input)
+                    _mu, _sigma, _df = self.models[idx].posterior_predictive_gaussian(input)
                     _var = np.diag(_sigma)  # consider only diagonal variances for plots
                     if compute_nlpd:
                         nlpd += weights[idx] * np.exp(mvn_logpdf(target, _mu, _sigma))
                 else:
-                    _mu, _sigma, _df = self.models[idx].predictive_posterior_studentt(input)
+                    _mu, _sigma, _df = self.models[idx].posterior_predictive_studentt(input)
                     _var = np.diag(_sigma * _df / (_df - 2))  # consider only diagonal variances for plots
                     if compute_nlpd:
                         nlpd += weights[idx] * np.exp(mvt_logpdf(target, _mu, _sigma, _df))
@@ -458,9 +456,9 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         if self.whitend:
             mu = np.squeeze(self.target_transform.inverse_transform(np.atleast_2d(mu)))
-            trans = (np.sqrt(self.target_transform.explained_variance_[:, None])
-                     * self.target_transform.components_).T
-            var = np.diag(trans.T @ np.diag(var) @ trans)
+            trans = np.sqrt(self.target_transform.explained_variance_[:, None])\
+                    * self.target_transform.components_
+            var = np.diag(trans @ np.diag(var) @ trans.T)
 
         # only diagonal elements
         stdv = np.sqrt(var)
