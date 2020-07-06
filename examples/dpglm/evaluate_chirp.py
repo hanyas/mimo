@@ -20,8 +20,6 @@ from mimo.distributions import CategoricalWithStickBreaking
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
 from mimo.util.text import progprint_xrange
 
-import argparse
-
 import matplotlib.pyplot as plt
 
 
@@ -37,15 +35,14 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
+    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=False)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=20, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=0.9, type=float)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -68,17 +65,6 @@ if __name__ == "__main__":
     data = np.hstack((x, y))
 
     input, target = data[:, :1], data[:, 1:]
-
-    # scale data
-    from sklearn.decomposition import PCA
-    input_scaler = PCA(n_components=1, whiten=True)
-    target_scaler = PCA(n_components=1, whiten=True)
-
-    input_scaler.fit(input)
-    target_scaler.fit(target)
-
-    input_scaled = input_scaler.transform(input)
-
     # prepare model
     input_dim, target_dim = 1, 1
 
@@ -95,7 +81,7 @@ if __name__ == "__main__":
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-4 * np.eye(nb_params)
+    K = 1e-2 * np.eye(nb_params)
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -135,18 +121,16 @@ if __name__ == "__main__":
     for n in range(args.nb_splits):
         print('Processing data split ' + str(n + 1) + ' out of ' + str(args.nb_splits))
 
-        # # remove old data
-        # try:
-        #     dpglm.clear_data()
-        # except IndexError:
-        #     print('Model has no data')
+        # remove old data
+        try:
+            dpglm.clear_data()
+        except IndexError:
+            print('Model has no data')
 
         _input = input[n * split_size: (n + 1) * split_size, :]
         _target = target[n * split_size: (n + 1) * split_size, :]
 
-        dpglm.add_data(y=_target, x=_input, whiten=True,
-                       target_transform=target_scaler,
-                       input_transform=input_scaler)
+        dpglm.add_data(y=_target, x=_input, whiten=False)
 
         # set posterior to prior
         import copy
@@ -175,12 +159,10 @@ if __name__ == "__main__":
                 svi_iter = range(args.gibbs_iters) if not args.verbose\
                     else progprint_xrange(args.svi_iters)
 
-                batch_size = args.svi_batchsize
-                prob = batch_size / float(len(_input))
-                for _ in svi_iter:
-                    minibatch = npr.permutation(len(_input))[:batch_size]
-                    dpglm.meanfield_sgdstep(y=_target[minibatch, :], x=_input[minibatch, :],
-                                            prob=prob, stepsize=args.svi_stepsize)
+                prob = split_size / float(len(input))
+                dpglm.meanfield_sgdstep(y=_target, x=_input,
+                                        prob=prob, stepsize=args.svi_stepsize)
+
             if args.deterministic:
                 # Meanfield VI
                 if args.verbose:
@@ -191,7 +173,7 @@ if __name__ == "__main__":
 
         # predict on all data
         sparse = False if (n + 1) < args.nb_splits else True
-        mu, var, std, _ = dpglm.parallel_meanfield_prediction(x=input, sparse=sparse,
+        mu, var, std, _ = dpglm.parallel_meanfield_prediction(x=input, sparse=False,
                                                               prediction=args.prediction)
 
         mu = np.hstack(mu)
