@@ -5,7 +5,6 @@ import scipy as sc
 from scipy import linalg
 
 from mimo.abstraction import Distribution
-from mimo.util.matrix import nearpd
 
 
 class MatrixNormalWithPrecision(Distribution):

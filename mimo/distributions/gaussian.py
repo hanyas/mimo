@@ -88,7 +88,7 @@ class GaussianWithCovariance(Distribution):
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
 
-    def statistics(self, data, keepdim=False):
+    def statistics(self, data, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -97,18 +97,18 @@ class GaussianWithCovariance(Distribution):
             xxT = np.einsum('nk,nh->nkh', data, data)
             n = np.ones((data.shape[0], ))
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, xxT, n])
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, data))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, data, weights, keepdim=False):
+    def weighted_statistics(self, data, weights, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -118,16 +118,16 @@ class GaussianWithCovariance(Distribution):
             xxT = np.einsum('nk,n,nh->nkh', data, weights, data)
             n = weights
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, xxT, n])
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = list(map(func, data, weights))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
     @property
     def base(self):
@@ -287,7 +287,7 @@ class GaussianWithPrecision(Distribution):
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
 
-    def statistics(self, data, keepdim=False):
+    def statistics(self, data, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -296,18 +296,18 @@ class GaussianWithPrecision(Distribution):
             xxT = np.einsum('nk,nh->nkh', data, data)
             n = np.ones((data.shape[0], ))
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, xxT, n])
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, data))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, data, weights, keepdim=False):
+    def weighted_statistics(self, data, weights, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -317,16 +317,16 @@ class GaussianWithPrecision(Distribution):
             xxT = np.einsum('nk,n,nh->nkh', data, weights, data)
             n = weights
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, xxT, n])
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = list(map(func, data, weights))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
     @property
     def base(self):

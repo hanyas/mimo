@@ -1,6 +1,6 @@
 import numpy as np
 
-from scipy.special import multigammaln, digamma
+from scipy.special import digamma
 
 from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
@@ -12,7 +12,7 @@ from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 from mimo.distributions import MatrixNormalWithPrecision
 
-from mimo.util.matrix import invpd, nearpd, symmetrize
+from mimo.util.matrix import invpd
 from mimo.util.data import extendlists
 
 
@@ -134,7 +134,7 @@ class NormalWishart(Distribution):
         # Data statistics under a Gaussian likelihood
         # log-parition is subsumed into nat*stats
         liklihood = GaussianWithPrecision(mu=np.empty(x.shape[-1]))
-        stats = liklihood.statistics(x, keepdim=True)
+        stats = liklihood.statistics(x, vectorize=True)
         log_base = liklihood.log_base()
 
         return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
@@ -256,7 +256,7 @@ class NormalGamma(Distribution):
         # Data statistics under a Gaussian likelihood
         # log-parition is subsumed into nat*stats
         liklihood = GaussianWithDiagonalPrecision(mu=np.empty(x.shape[-1]))
-        stats = liklihood.statistics(x, keepdim=True)
+        stats = liklihood.statistics(x, vectorize=True)
         log_base = liklihood.log_base()
 
         return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
@@ -509,7 +509,7 @@ class MatrixNormalWishart(Distribution):
         # log-parition is subsumed into nat*stats
         _A = np.empty((y.shape[-1], x.shape[-1]))
         liklihood = LinearGaussianWithPrecision(A=_A, affine=affine)
-        stats = liklihood.statistics(y, x, keepdim=True)
+        stats = liklihood.statistics(y, x, vectorize=True)
         log_base = liklihood.log_base()
 
         return log_base + np.einsum('kh,nkh->n', nat_param[0], stats[0])\
