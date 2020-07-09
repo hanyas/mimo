@@ -1,8 +1,6 @@
 import numpy as np
 from numpy import random as npr
 
-from numpy.core._umath_tests import inner1d
-
 import scipy as sc
 from scipy.special import logsumexp
 
@@ -23,54 +21,23 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_studentt_loglik(y, mu, scale, nu):
-    # Following Bishop notation
-    d = len(mu)
-    yc = np.array(y - mu, ndmin=2)
-    L = np.linalg.cholesky(scale)
-    ys = sc.linalg.solve_triangular(L, yc.T, overwrite_b=True, lower=True)
-    return sc.special.gammaln((nu + d) / 2.) - sc.special.gammaln(nu / 2.) \
-            - (d / 2.) * np.log(nu * np.pi) - np.sum(np.log(np.diag(L))) \
-            - (nu + d) / 2. * np.log1p(1. / nu * inner1d(ys.T, ys.T))
+def multivariate_gaussian_loglik(xs, mu, lmbda):
+    # Accepts vectorized parameters
+    d = mu.shape[-1]
+
+    xc = np.nan_to_num(xs) - mu
+    log_exp = - 0.5 * np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
+    log_norm = - 0.5 * d * np.log(2. * np.pi)\
+               + 0.5 * np.linalg.slogdet(lmbda)[1]
+    return log_norm + log_exp
 
 
-def multivariate_gaussian_loglik(y, mu, scale):
-    d = len(mu)
-    yc = np.nan_to_num(y).reshape((-1, d)) - mu
-    L = np.linalg.cholesky(scale)
-    ys = sc.linalg.solve_triangular(L, yc.T, overwrite_b=True, lower=True)
-    return - 0.5 * d * np.log(2. * np.pi)\
-           - np.sum(np.log(np.diag(L))) - 0.5 * inner1d(ys.T, ys.T)
+def multivariate_studentt_loglik(xs, mu, lmbda, df):
+    # Accepts vectorized parameters
+    d = mu.shape[-1]
 
-
-def matrix_linear_gaussian(x, M, V, psi, nu, affine=True):
-    if affine:
-        x = np.hstack((x, 1.))
-
-    # https://tminka.github.io/papers/minka-gaussian.pdf
-    mu = M @ x
-
-    # variance of approximate Gaussian
-    sigma = psi / nu  # Misleading in Minka
-
-    return mu, sigma, nu
-
-
-def matrix_linear_studentt(x, M, V, psi, nu, affine=True):
-    if affine:
-        x = np.hstack((x, 1.))
-
-    xxT = np.outer(x, x)
-
-    # https://tminka.github.io/papers/minka-linear.pdf
-    c = 1. - x.T @ np.linalg.inv(np.linalg.inv(V) + xxT) @ x
-
-    # https://tminka.github.io/papers/minka-gaussian.pdf
-    df = nu
-    mu = M @ x
-
-    # variance of a student-t
-    sigma = (1. / c) * psi / df  # Misleading in Minka
-    var = sigma * df / (df - 2)
-
-    return mu, sigma, df
+    xc = np.nan_to_num(xs) - mu
+    delta = np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
+    return sc.special.gammaln((df + d) / 2.) - sc.special.gammaln(df / 2.)\
+           + 0.5 * np.linalg.slogdet(lmbda)[1] - (d / 2.) * np.log(df * np.pi)\
+           - 0.5 * (df + d) * np.log1p(delta / df)
