@@ -53,7 +53,7 @@ def _job(kwargs):
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-3 * np.eye(nb_params)
+    K = 1e-3
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -64,7 +64,7 @@ def _job(kwargs):
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K, nu=target_dim + 1,
+                                K=K * np.eye(nb_params), nu=target_dim + 1,
                                 psi=np.eye(target_dim) * psi_mnw)
 
         aux = MatrixNormalWishart(**models_hypparams)
@@ -195,15 +195,14 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # predict
-    mu_predict, var_predict, std_predict, _ =\
-        dpglm.parallel_meanfield_prediction(input, prediction=args.prediction)
+    mu, var, std = dpglm.meanfield_prediction(input, prediction=args.prediction)
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    mse = mean_squared_error(target, mu_predict)
-    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
-    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
+    mse = mean_squared_error(target, mu)
+    evar = explained_variance_score(target, mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu, multioutput='variance_weighted')
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
@@ -212,14 +211,14 @@ if __name__ == "__main__":
     # plot prediction
     sorter = np.argsort(input, axis=0).flatten()
     sorted_input, sorted_target = input[sorter, 0], target[sorter, 0]
-    sorted_mu_predict, sorted_std_predict = mu_predict[sorter, 0], std_predict[sorter, 0]
+    sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
 
     axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
-    axes[0].plot(sorted_input, sorted_mu_predict, color='crimson')
+    axes[0].plot(sorted_input, sorted_mu, color='crimson')
     for c in [1., 2.]:
         axes[0].fill_between(sorted_input,
-                             sorted_mu_predict - c * sorted_std_predict,
-                             sorted_mu_predict + c * sorted_std_predict,
+                             sorted_mu - c * sorted_std,
+                             sorted_mu + c * sorted_std,
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes[0].set_ylabel('y')

@@ -53,7 +53,7 @@ def _job(kwargs):
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-3 * np.eye(nb_params)
+    K = 1e-3
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -64,7 +64,7 @@ def _job(kwargs):
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K, nu=target_dim + 1,
+                                K=K * np.eye(nb_params), nu=target_dim + 1,
                                 psi=np.eye(target_dim) * psi_mnw)
 
         aux = MatrixNormalWishart(**models_hypparams)
@@ -83,7 +83,7 @@ def _job(kwargs):
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                                  basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
     dpglm.add_data(target, input, whiten=True)
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=512, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
+    parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
@@ -210,31 +210,30 @@ if __name__ == "__main__":
                                       arguments=args)
 
     # Evaluation over multiple seeds to get confidence
-    mu_predict, std_predict,  = [], []
+    mu, std,  = [], []
     evar, mse, smse = [], [], []
     for dpglm in dpglms:
-        _mu_predict, _var_predict, _std_predict, _ =\
-            dpglm.parallel_meanfield_prediction(input, prediction=args.prediction)
+        _mu, _var, _std = dpglm.meanfield_prediction(input, prediction=args.prediction)
 
-        _mse = mean_squared_error(target, _mu_predict)
-        _evar = explained_variance_score(target, _mu_predict, multioutput='variance_weighted')
-        _smse = 1. - r2_score(target, _mu_predict, multioutput='variance_weighted')
+        _mse = mean_squared_error(target, _mu)
+        _evar = explained_variance_score(target, _mu, multioutput='variance_weighted')
+        _smse = 1. - r2_score(target, _mu, multioutput='variance_weighted')
 
         print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse,
               'Compnents:', len(dpglm.used_labels))
 
-        mu_predict.append(_mu_predict)
-        std_predict.append(_std_predict)
+        mu.append(_mu)
+        std.append(_std)
         evar.append(_evar)
         mse.append(_mse)
         smse.append(_smse)
 
-    mu_predict = np.asarray(mu_predict).squeeze()
-    std_predict = np.asarray(std_predict).squeeze()
+    mu = np.asarray(mu).squeeze()
+    std = np.asarray(std).squeeze()
 
     # calcule means and confidence intervals
-    mu_predict_avg, mu_predict_std = np.mean(mu_predict, axis=0), np.std(mu_predict, axis=0)
-    std_predict_avg, std_predict_std = np.mean(std_predict, axis=0), np.std(std_predict, axis=0)
+    mu_avg, mu_std = np.mean(mu, axis=0), np.std(mu, axis=0)
+    std_avg, std_std = np.mean(std, axis=0), np.std(std, axis=0)
 
     # plot mean and standard deviation of mean estimation
     w, h = plt.figaspect(0.67)
@@ -243,20 +242,20 @@ if __name__ == "__main__":
     # plot data and prediction
     axes[0].plot(input, mean, 'k--', zorder=10)
     axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey', zorder=1)
-    axes[0].plot(input, mu_predict_avg, '-r', zorder=5)
+    axes[0].plot(input, mu_avg, '-r', zorder=5)
     for c in [1., 2.]:
         axes[0].fill_between(input.flatten(),
-                             mu_predict_avg - c * mu_predict_std,
-                             mu_predict_avg + c * mu_predict_std,
+                             mu_avg - c * mu_std,
+                             mu_avg + c * mu_std,
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1), zorder=1)
 
     # plot mean and standard deviation of data generation / estimated noise level
     axes[1].plot(input, noise(input), 'k--', zorder=10)
-    axes[1].plot(input, std_predict_avg, '-r', zorder=5)
+    axes[1].plot(input, std_avg, '-r', zorder=5)
     for c in [1., 2.]:
         axes[1].fill_between(input.flatten(),
-                             std_predict_avg - c * std_predict_std,
-                             std_predict_avg + c * std_predict_std,
+                             std_avg - c * std_std,
+                             std_avg + c * std_std,
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1), zorder=1)
     plt.tight_layout()
 
@@ -286,9 +285,9 @@ if __name__ == "__main__":
     axes[0].plot(input, mean - 2 * noise(input), 'g--', zorder=10)
     axes[0].scatter(input, target, s=0.75, facecolors='none', edgecolors='grey', zorder=1)
 
-    axes[0].plot(input, mu_predict[choice], '-r', zorder=5)
-    axes[0].plot(input, mu_predict[choice] + 2 * std_predict[choice], '-b', zorder=5)
-    axes[0].plot(input, mu_predict[choice] - 2 * std_predict[choice], '-b', zorder=5)
+    axes[0].plot(input, mu[choice], '-r', zorder=5)
+    axes[0].plot(input, mu[choice] + 2 * std[choice], '-b', zorder=5)
+    axes[0].plot(input, mu[choice] - 2 * std[choice], '-b', zorder=5)
 
     # plot gaussian activations
     activations = dpglms[choice].meanfield_predictive_activation(input)
