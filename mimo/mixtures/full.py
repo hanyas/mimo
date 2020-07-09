@@ -11,8 +11,8 @@ from mimo.util.decorate import pass_obs_arg, pass_obs_and_labels_arg
 from mimo.util.stats import sample_discrete_from_log
 from mimo.util.text import progprint_xrange
 
-import pathos
-nb_cores = pathos.multiprocessing.cpu_count()
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 
 class MixtureOfGaussians(Distribution):
@@ -189,17 +189,22 @@ class BayesianMixtureOfGaussians(Distribution):
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
-    def add_data(self, obs, whiten=False):
+    def add_data(self, obs, whiten=False,
+                 transform_type='PCA'):
         obs = obs if isinstance(obs, list) else [obs]
         for _obs in obs:
             self.labels.append(self.gating.likelihood.rvs(len(_obs)))
 
         if whiten:
             self.whitend = True
-            from sklearn.decomposition import PCA
 
             data = np.vstack([_obs for _obs in obs])
-            self.transform = PCA(n_components=data.shape[-1], whiten=True)
+
+            if transform_type == 'PCA':
+                self.transform = PCA(n_components=data.shape[-1], whiten=True)
+            else:
+                self.transform = StandardScaler()
+
             self.transform.fit(data)
             for _obs in obs:
                 self.obs.append(self.transform.transform(_obs))
