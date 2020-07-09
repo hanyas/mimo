@@ -85,7 +85,7 @@ class GaussianWithDiagonalCovariance(Distribution):
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
 
-    def statistics(self, data, keepdim=False):
+    def statistics(self, data, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -94,18 +94,18 @@ class GaussianWithDiagonalCovariance(Distribution):
             xx = np.einsum('nk,nk->nk', data, data)
             n = np.ones((data.shape[0], ))
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xx = np.sum(xx, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, n, xx])
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, data))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, data, weights, keepdim=False):
+    def weighted_statistics(self, data, weights, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -115,16 +115,16 @@ class GaussianWithDiagonalCovariance(Distribution):
             xx = np.einsum('nk,n,nk->nk', data, weights, data)
             n = weights
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xx = np.sum(xx, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, n, xx])
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = list(map(func, data, weights))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
     @property
     def base(self):
@@ -287,7 +287,7 @@ class GaussianWithDiagonalPrecision(Distribution):
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
 
-    def statistics(self, data, keepdim=False):
+    def statistics(self, data, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -296,18 +296,18 @@ class GaussianWithDiagonalPrecision(Distribution):
             xx = np.einsum('nk,nk->nk', data, data)
             n = np.ones((data.shape[0], self.dim))
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xx = np.sum(xx, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, n, xx])
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, data))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, data, weights, keepdim=False):
+    def weighted_statistics(self, data, weights, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
@@ -317,16 +317,16 @@ class GaussianWithDiagonalPrecision(Distribution):
             xx = np.einsum('nk,n,nk->nk', data, weights, data)
             n = np.repeat(weights[:, None], self.dim, axis=1)
 
-            if not keepdim:
+            if not vectorize:
                 x = np.sum(x, axis=0)
                 xx = np.sum(xx, axis=0)
                 n = np.sum(n, axis=0)
 
             return Stats([x, n, n, xx])
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = list(map(func, data, weights))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
     @property
     def base(self):
