@@ -1,4 +1,33 @@
 import numpy as np
+from sklearn.decomposition import PCA
+
+
+def transform(mu, trans=None):
+    if trans is None:
+        return mu
+    else:
+        return trans.transform(mu)
+
+
+def inverse_transform(mu, var=None, trans=None):
+    if trans is None:
+        if var is None:
+            return mu
+        else:
+            return mu, var
+    else:
+        _mu = trans.inverse_transform(mu)
+        if var is None:
+            return _mu
+        else:
+            mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_\
+                if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
+
+            _diag = np.stack(list(map(np.diag, var)))
+            _covar = np.einsum('kh,nhj,ji->nki', mat, _diag, mat.T)
+            _var = np.vstack(list(map(np.diag, _covar)))
+
+            return _mu, _var
 
 
 def tofloat(x):

@@ -11,14 +11,13 @@ from mimo.util.decorate import pass_target_and_input_arg
 from mimo.util.decorate import pass_target_input_and_labels_arg
 
 from mimo.util.stats import sample_discrete_from_log
-from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
-from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
 
 from mimo.util.text import progprint_xrange
 
-import pathos
-from pathos.pools import _ProcessPool as Pool
-nb_cores = pathos.multiprocessing.cpu_count()
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+eps = np.finfo(np.float64).tiny
 
 
 class BayesianMixtureOfLinearGaussians(Conditional):
@@ -54,11 +53,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     @property
     def drow(self):
-        return self.model[0].drow()
+        return self.models[0].likelihood.drow
 
     @property
     def dcol(self):
-        return self.models[0].dcol()
+        return self.models[0].likelihood.dcol
 
     @property
     def used_labels(self):
@@ -70,7 +69,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     def add_data(self, y, x, whiten=False,
                  target_transform=False,
-                 input_transform=False):
+                 input_transform=False,
+                 transform_type='PCA'):
 
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
@@ -81,13 +81,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             self.whitend = True
 
             if not (target_transform and input_transform):
-                from sklearn.decomposition import PCA
 
                 Y = np.vstack([_y for _y in y])
                 X = np.vstack([_x for _x in x])
 
-                self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
-                self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+                if transform_type == 'PCA':
+                    self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
+                    self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+                else:
+                    self.target_transform = StandardScaler()
+                    self.input_transform = StandardScaler()
 
                 self.target_transform.fit(Y)
                 self.input_transform.fit(X)
@@ -257,7 +260,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         scores, z = self._meanfield_update_sweep(y, x)
         if self.has_data():
             self.labels = z
-        return self.variational_lowerbound(y, x, scores)
+        # return self.variational_lowerbound(y, x, scores)
 
     def _meanfield_update_sweep(self, y, x):
         scores, z = self._meanfield_update_labels(y, x)
@@ -358,22 +361,20 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                                               for _y, _x in zip(self.target, self.input))
 
     def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
-        x = np.atleast_2d(x).T if x.ndim < 2 else x
+        # Mainly for plotting basis functions
+        x = np.reshape(x, (-1, self.dcol))
 
-        _x = x if not self.whitend\
+        x = x if not self.whitend \
             else self.input_transform.transform(x)
 
-        _labels = self.used_labels if sparse else range(self.size)
+        labels = self.used_labels if sparse else range(self.size)
+        activations = np.zeros((len(x), len(labels)))
 
-        activations = np.zeros((len(_x), len(_labels)))
-        for n in range(len(_x)):
-            for i, idx in enumerate(_labels):
-                if type == 'gaussian':
-                    _act = self.basis[idx].log_posterior_predictive_gaussian(_x[n, :])
-                else:
-                    _act = self.basis[idx].log_posterior_predictive_studentt(_x[n, :])
-                activations[n, i] = np.exp(_act)
+        for i, idx in enumerate(labels):
+            activations[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
+                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
+        activations = np.exp(activations)
         activations = activations / np.sum(activations, axis=1, keepdims=True)
         return activations
 
@@ -381,110 +382,85 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         # compute posterior mixing weights
         weights = self.gating.posterior.mean()
 
-        # calculate the marginal likelihood of query for each cluster
-        # calculate the normalization term for mean function for query
-        marginal_likelihood = np.zeros((self.size, ))
-        effective_weights = np.zeros((self.size, ))
+        labels = self.used_labels if sparse else range(self.size)
+        log_posterior_predictive = np.zeros((len(x), len(labels)))
 
-        _labels = self.used_labels if sparse else range(self.size)
-        for idx in _labels:
-            if type == 'gaussian':
-                marginal_likelihood[idx] = np.exp(self.basis[idx].log_posterior_predictive_gaussian(x))
-            elif type == 'studentt':
-                marginal_likelihood[idx] = np.exp(self.basis[idx].log_posterior_predictive_studentt(x))
-            effective_weights[idx] = weights[idx] * marginal_likelihood[idx]
+        for i, idx in enumerate(labels):
+            log_posterior_predictive[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
+                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        effective_weights = effective_weights / np.sum(effective_weights)
+        effective_weights = (weights[labels] * np.exp(log_posterior_predictive))
+        effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
-    def meanfield_prediction(self, x, y=None, compute_nlpd=False,
+    def meanfield_prediction(self, x, y=None,
                              prediction='average', incremental=False,
                              type='gaussian', sparse=False):
 
-        if compute_nlpd:
-            assert y is not None
+        x = np.reshape(x, (-1, self.dcol))
 
-        if self.whitend:
-            x = np.squeeze(self.input_transform.transform(np.atleast_2d(x)))
-            if y is not None:
-                y = np.squeeze(self.target_transform.transform(np.atleast_2d(y)))
+        compute_nlpd = False
+        if y is not None:
+            y = np.reshape(y, (-1, self.drow))
+            compute_nlpd = True
 
-        target, input = y, x
+        from mimo.util.data import transform, inverse_transform
 
-        dim = self.models[0].likelihood.drow
-        mu, var, stdv, nlpd = np.zeros((dim, )), np.zeros((dim, )), np.zeros((dim, )), 0.
+        input = transform(x, trans=self.input_transform)
+        target = None if y is None else transform(y, trans=self.target_transform)
+
+        drow = self.drow
+
+        # var is the diagonal variance for plots
+        mu, var, nlpd = np.zeros((len(x), drow)),\
+                        np.zeros((len(x), drow)),\
+                        np.zeros((len(x), ))
 
         weights = self.meanfield_predictive_gating(input, sparse, type)
 
         if prediction == 'mode':
-            mode = np.argmax(weights)
-
-            if type == 'gaussian':
-                mu, _sigma, df = self.models[mode].posterior_predictive_gaussian(input)
-                var = np.diag(_sigma)  # consider only diagonal variances for plots
-                if compute_nlpd:
-                    nlpd = np.exp(mvn_logpdf(target, mu, _sigma))
-            else:
-                mu, _sigma, df = self.models[mode].posterior_predictive_studentt(input)
-                var = np.diag(_sigma * df / (df - 2))  # consider only diagonal variances for plots
-                if compute_nlpd:
-                    nlpd = np.exp(mvt_logpdf(target, mu, _sigma, df))
+            mode = np.argmax(weights, axis=1)
+            for n, _mode in enumerate(mode):
+                if type == 'gaussian':
+                    mu[n, :], _lmbda = self.models[_mode].posterior_predictive_gaussian(input[n, :])
+                    var[n, :] = 1. / np.diag(_lmbda)
+                    if compute_nlpd:
+                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_gaussian(target[n, :], input[n, :]))
+                else:
+                    mu[n, :], _lmbda, _df = self.models[_mode].posterior_predictive_studentt(input[n, :])
+                    var[n, :] = _df / (_df - 2) * 1. / np.diag(_lmbda)
+                    if compute_nlpd:
+                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_studentt(target[n, :], input[n, :]))
 
         elif prediction == 'average':
             _labels = self.used_labels if sparse else range(self.size)
-            for idx in _labels:
+            for i, idx in enumerate(_labels):
                 if type == 'gaussian':
-                    _mu, _sigma, _df = self.models[idx].posterior_predictive_gaussian(input)
-                    _var = np.diag(_sigma)  # consider only diagonal variances for plots
+                    _mu, _lmbda = self.models[idx].posterior_predictive_gaussian(input)
+                    _var = 1. / np.vstack(list(map(np.diag, _lmbda)))
                     if compute_nlpd:
-                        nlpd += weights[idx] * np.exp(mvn_logpdf(target, _mu, _sigma))
+                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_gaussian(target, input))
                 else:
-                    _mu, _sigma, _df = self.models[idx].posterior_predictive_studentt(input)
-                    _var = np.diag(_sigma * _df / (_df - 2))  # consider only diagonal variances for plots
+                    _mu, _lmbda, _df = self.models[idx].posterior_predictive_studentt(input)
+                    _var = _df / (_df - 2) * (1. / np.vstack(list(map(np.diag, _lmbda))))
                     if compute_nlpd:
-                        nlpd += weights[idx] * np.exp(mvt_logpdf(target, _mu, _sigma, _df))
+                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_studentt(target, input))
 
                 # Mean of a mixture = sum of weighted means
-                mu += _mu * weights[idx]
-
+                mu += np.einsum('nk,n->nk', _mu, weights[:, i])
                 # Variance of a mixture = sum of weighted variances + ...
                 # ... + sum of weighted squared means - squared sum of weighted means
-                var += (_var + _mu**2) * weights[idx]
+                var += np.einsum('nk,n->nk', (_var + _mu**2), weights[:, i])
             var -= mu**2
 
         nlpd = - 1.0 * np.log(nlpd) if compute_nlpd else None
 
-        if self.whitend:
-            mu = np.squeeze(self.target_transform.inverse_transform(np.atleast_2d(mu)))
-            trans = np.sqrt(self.target_transform.explained_variance_[:, None])\
-                    * self.target_transform.components_
-            var = np.diag(trans @ np.diag(var) @ trans.T)
-
-        # only diagonal elements
-        stdv = np.sqrt(var)
+        mu, var = inverse_transform(mu, var, trans=self.target_transform)
 
         if incremental:
-            mu += x[:dim]
+            mu += x[:, :drow]
 
-        return mu, var, stdv, nlpd
-
-    def parallel_meanfield_prediction(self, x, y=None, compute_nlpd=False,
-                                      prediction='average', incremental=False,
-                                      type='gaussian', sparse=False):
-
-        def _loop(kwargs):
-            return self.meanfield_prediction(kwargs['x'], kwargs['y'],
-                                             compute_nlpd, prediction,
-                                             incremental, type, sparse)
-
-        kwargs_list = []
-        for n in range(len(x)):
-            _x = x[n, :]
-            _y = None if y is None else y[n, :]
-            kwargs_list.append({'x': _x, 'y': _y})
-
-        with Pool(processes=nb_cores) as p:
-            res = p.map(_loop, kwargs_list, chunksize=int(len(x) / nb_cores))
-
-        mean, var, std, nlpd = list(map(np.vstack, zip(*res)))
-        return mean, var, std, nlpd
+        if compute_nlpd:
+            return mu, var, np.sqrt(var), nlpd
+        else:
+            return mu, var, np.sqrt(var)

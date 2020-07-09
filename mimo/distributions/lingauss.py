@@ -122,7 +122,7 @@ class LinearGaussianWithPrecision(Conditional):
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
 
-    def statistics(self, y, x, keepdim=False):
+    def statistics(self, y, x, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
             idx = np.logical_and(~np.isnan(y).any(axis=1),
                                  ~np.isnan(x).any(axis=1))
@@ -136,7 +136,7 @@ class LinearGaussianWithPrecision(Conditional):
             yyT = np.einsum('nk,nh->nkh', y, y)
             n = np.ones((y.shape[0], ))
 
-            if not keepdim:
+            if not vectorize:
                 yxT = np.sum(yxT, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 yyT = np.sum(yyT, axis=0)
@@ -144,11 +144,11 @@ class LinearGaussianWithPrecision(Conditional):
 
             return Stats([yxT, xxT, yyT, n])
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, y, x))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, y, x, weights, keepdim=False):
+    def weighted_statistics(self, y, x, weights, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
             idx = np.logical_and(~np.isnan(y).any(axis=1),
                                  ~np.isnan(x).any(axis=1))
@@ -162,7 +162,7 @@ class LinearGaussianWithPrecision(Conditional):
             yyT = np.einsum('nk,n,nh->nkh', y, weights, y)
             n = weights
 
-            if not keepdim:
+            if not vectorize:
                 yxT = np.sum(yxT, axis=0)
                 xxT = np.sum(xxT, axis=0)
                 yyT = np.sum(yyT, axis=0)
@@ -170,9 +170,9 @@ class LinearGaussianWithPrecision(Conditional):
 
             return Stats([yxT, xxT, yyT, n])
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = list(map(func, y, x, weights))
-            return stats if keepdim else reduce(add, stats)
+            return stats if vectorize else reduce(add, stats)
 
     @property
     def base(self):
