@@ -56,35 +56,35 @@ class TiedGaussiansWithPrecision:
         for c in self.components:
             c.lmbda = value
 
-    def statistics(self, data, labels, keepdim=False):
+    def statistics(self, data, labels, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             labels = labels[idx]
 
-            stats = [c.statistics(data[labels == idx, :], keepdim)
+            stats = [c.statistics(data[labels == idx, :], vectorize)
                      for idx, c in enumerate(self.components)]
 
             return Stats(stats)
         else:
-            func = partial(self.statistics, keepdim=keepdim)
+            func = partial(self.statistics, vectorize=vectorize)
             stats = list(map(func, data, labels))
-            return list(stats) if keepdim else reduce(add, stats)
+            return list(stats) if vectorize else reduce(add, stats)
 
-    def weighted_statistics(self, data, weights, keepdim=False):
+    def weighted_statistics(self, data, weights, vectorize=False):
         if isinstance(data, np.ndarray):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
             weights = weights[idx]
 
-            stats = [c.weighted_statistics(data, weights[:, idx], keepdim)
+            stats = [c.weighted_statistics(data, weights[:, idx], vectorize)
                      for idx, c in enumerate(self.components)]
 
             return Stats(stats)
         else:
-            func = partial(self.weighted_statistics, keepdim=keepdim)
+            func = partial(self.weighted_statistics, vectorize=vectorize)
             stats = map(func, data, weights)
-            return list(stats) if keepdim else reduce(add, stats)
+            return list(stats) if vectorize else reduce(add, stats)
 
     # Max likelihood
     def max_likelihood(self, data, weights):
