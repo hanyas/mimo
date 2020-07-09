@@ -6,10 +6,10 @@ from mimo.distributions import Categorical
 from mimo.distributions import GaussianWithDiagonalPrecision
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import LinearGaussianWithPrecision
-from mimo.distributions import NormalWishart
 from mimo.distributions import TiedGaussiansWithPrecision
 
-from mimo.util.matrix import invpd
+from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
+from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
 
 
 class CategoricalWithDirichlet:
@@ -227,46 +227,27 @@ class GaussianWithNormalWishart:
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
-    def log_marginal_likelihood(self, x):
-        x = np.atleast_2d(x)
-
-        stats = self.likelihood.statistics(x)
-        natparam = self.prior.nat_param + stats
-        params = NormalWishart.nat_to_std(natparam)
-
-        log_partition_prior = self.prior.log_partition()
-        log_partition_posterior = self.posterior.log_partition(params)
-
-        return log_partition_posterior - log_partition_prior\
-               - 0.5 * len(x) * self.likelihood.dim * np.log(np.pi)
+    def posterior_predictive_gaussian(self):
+        mu, kappa, psi, nu = self.posterior.params
+        df = nu - self.likelihood.dim + 1
+        c = 1. + 1. / kappa
+        lmbda = df * psi / c
+        return mu, lmbda
 
     def log_posterior_predictive_gaussian(self, x):
-        x = np.atleast_2d(x)
+        mu, lmbda = self.posterior_predictive_gaussian()
+        return GaussianWithPrecision(mu=mu, lmbda=lmbda).log_likelihood(x)
 
-        stats = self.likelihood.statistics(x)
-        natparam = self.posterior.nat_param + stats
-        mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
-
-        loc = mu
-        scale = invpd(kappa * psi)
-
-        from mimo.util.stats import multivariate_gaussian_loglik
-        return multivariate_gaussian_loglik(x, loc, scale)
+    def posterior_predictive_studentt(self):
+        mu, kappa, psi, nu = self.posterior.params
+        df = nu - self.likelihood.dim + 1
+        c = 1. + 1. / kappa
+        lmbda = df * psi / c
+        return mu, lmbda, df
 
     def log_posterior_predictive_studentt(self, x):
-        x = np.atleast_2d(x)
-
-        stats = self.likelihood.statistics(x)
-        natparam = self.posterior.nat_param + stats
-        mu, kappa, psi, nu = NormalWishart.nat_to_std(natparam)
-
-        # Following Bishop notation
-        loc = mu
-        df = nu + 1 - self.likelihood.dim
-        scale = invpd(df * kappa * psi / (1 + kappa))
-
-        from mimo.util.stats import multivariate_studentt_loglik
-        return multivariate_studentt_loglik(x, loc, scale, df)
+        mu, lmbda, df = self.posterior_predictive_studentt()
+        return mvt_logpdf(x, mu, lmbda, df)
 
 
 class GaussianWithNormalGamma:
@@ -461,36 +442,48 @@ class LinearGaussianWithMatrixNormalWishart:
         return q_entropy - qp_cross_entropy
 
     def posterior_predictive_gaussian(self, x):
+        x = np.reshape(x, (-1, self.likelihood.dcol))
+        nb = x.shape[0]
+
         if self.likelihood.affine:
-            x = np.hstack((x, 1.))
+            x = np.hstack((x, np.ones((len(x), 1))))
 
         M, K, psi, nu = self.posterior.params
 
-        # https://tminka.github.io/papers/minka-gaussian.pdf
-        mu = M @ x
+        df = nu - self.likelihood.drow + 1
+        mus = np.einsum('kh,...h->...k', M, x)
 
-        # variance of approximate Gaussian
-        sigma = invpd(nu * psi)  # Misleading in Minka
+        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        if nb == 1:
+            return mus[0], lmbdas[0]
+        else:
+            return mus, lmbdas
 
-        return mu, sigma, nu
+    def log_posterior_predictive_gaussian(self, y, x):
+        mus, lmbdas = self.posterior_predictive_gaussian(x)
+        return mvn_logpdf(y, mus, lmbdas)
 
     def posterior_predictive_studentt(self, x):
-        if self.likelihood.affine:
-            x = np.hstack((x, 1.))
+        x = np.reshape(x, (-1, self.likelihood.dcol))
+        nb = x.shape[0]
 
-        xxT = np.outer(x, x)
+        if self.likelihood.affine:
+            x = np.hstack((x, np.ones((len(x), 1))))
 
         M, K, psi, nu = self.posterior.params
 
-        # https://tminka.github.io/papers/minka-linear.pdf
-        c = 1. - x.T @ np.linalg.inv(K + xxT) @ x
+        df = nu - self.likelihood.drow + 1
+        mus = np.einsum('kh,...h->...k', M, x)
 
-        # https://tminka.github.io/papers/minka-gaussian.pdf
-        df = nu
-        mu = M @ x
+        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
 
-        # variance of a student-t
-        sigma = (1. / c) * invpd(psi * df)  # Misleading in Minka
-        var = sigma * df / (df - 2)
+        if nb == 1:
+            return mus[0], lmbdas[0], df
+        else:
+            return mus, lmbdas, df
 
-        return mu, sigma, nu
+    def log_posterior_predictive_studentt(self, y, x):
+        mus, lmbdas, df = self.posterior_predictive_studentt(x)
+        return mvt_logpdf(y, mu=mus, lmbda=lmbdas, df=df)
