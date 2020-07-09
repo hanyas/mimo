@@ -53,11 +53,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     @property
     def drow(self):
-        return self.model[0].drow()
+        return self.models[0].likelihood.drow
 
     @property
     def dcol(self):
-        return self.models[0].dcol()
+        return self.models[0].likelihood.dcol
 
     @property
     def used_labels(self):
