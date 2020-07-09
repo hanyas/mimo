@@ -53,7 +53,7 @@ def _job(kwargs):
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-3 * np.eye(nb_params)
+    K = 1e-3
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -64,7 +64,7 @@ def _job(kwargs):
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K, nu=target_dim + 1,
+                                K=K * np.eye(nb_params), nu=target_dim + 1,
                                 psi=np.eye(target_dim) * psi_mnw)
 
         aux = MatrixNormalWishart(**models_hypparams)
@@ -182,14 +182,13 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # mean prediction
-    mu_predict, _, _, _ =\
-        dpglm.parallel_meanfield_prediction(input, prediction='average', sparse=True)
+    mu, _, _ = dpglm.meanfield_prediction(input, prediction='average', sparse=True)
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
-    evar = explained_variance_score(target, mu_predict)
-    mse = mean_squared_error(target, mu_predict)
-    smse = 1. - r2_score(target, mu_predict)
+    evar = explained_variance_score(target, mu)
+    mse = mean_squared_error(target, mu)
+    smse = 1. - r2_score(target, mu)
 
     print('MEAN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
 
@@ -197,23 +196,22 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 1)
 
     axes[0].scatter(input, target, facecolors='none', edgecolors='k', linewidth=0.5)
-    axes[0].scatter(input, mu_predict, marker='x', c='b', linewidth=0.5)
+    axes[0].scatter(input, mu, marker='x', c='b', linewidth=0.5)
     plt.ylabel('y')
 
     # mean prediction
-    mu_predict, _, _, _ =\
-        dpglm.parallel_meanfield_prediction(input, prediction='mode', sparse=True)
+    mu, _, _ = dpglm.meanfield_prediction(input, prediction='mode')
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
 
-    mse = mean_squared_error(target, mu_predict)
-    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
-    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
+    mse = mean_squared_error(target, mu)
+    evar = explained_variance_score(target, mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu, multioutput='variance_weighted')
 
     print('Mode - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
 
-    axes[0].scatter(input, mu_predict, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
+    axes[0].scatter(input, mu, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
 
     # plot gaussian activations
     axes[1].set_xlabel('x')
@@ -250,29 +248,29 @@ if __name__ == "__main__":
     # plot three experts
     plt.figure()
     axis = np.linspace(0, 1, 500).reshape(-1, 1)
-    mu_predict = []
+    mu = []
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[0] @ q).tolist()
-        mu_predict.append(_mu_predict)
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='green')
+        _mu = (regcoeff[0] @ q).tolist()
+        mu.append(_mu)
+    mu = np.asarray(mu).reshape(-1, 1)
+    plt.plot(axis, mu, linewidth=2, c='green')
 
-    mu_predict = []
+    mu = []
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[1] @ q).tolist()
-        mu_predict.append(_mu_predict)
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='orange')
+        _mu = (regcoeff[1] @ q).tolist()
+        mu.append(_mu)
+    mu = np.asarray(mu).reshape(-1, 1)
+    plt.plot(axis, mu, linewidth=2, c='orange')
 
-    mu_predict = []
+    mu = []
     for t in range(len(axis)):
         q = np.hstack((axis[t, :], 1.))
-        _mu_predict = (regcoeff[2] @ q).tolist()
-        mu_predict.append(_mu_predict)
-    mu_predict = np.asarray(mu_predict).reshape(-1, 1)
-    plt.plot(axis, mu_predict, linewidth=2, c='purple')
+        _mu = (regcoeff[2] @ q).tolist()
+        mu.append(_mu)
+    mu = np.asarray(mu).reshape(-1, 1)
+    plt.plot(axis, mu, linewidth=2, c='purple')
 
     # plot data
     plt.scatter(input, target, facecolors='none', edgecolors='k', linewidth=0.5)
