@@ -11,14 +11,13 @@ from mimo.util.decorate import pass_target_and_input_arg
 from mimo.util.decorate import pass_target_input_and_labels_arg
 
 from mimo.util.stats import sample_discrete_from_log
-from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
-from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
 
 from mimo.util.text import progprint_xrange
 
-import pathos
-from pathos.pools import _ProcessPool as Pool
-nb_cores = pathos.multiprocessing.cpu_count()
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+
+eps = np.finfo(np.float64).tiny
 
 
 class BayesianMixtureOfLinearGaussians(Conditional):
@@ -70,7 +69,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     def add_data(self, y, x, whiten=False,
                  target_transform=False,
-                 input_transform=False):
+                 input_transform=False,
+                 transform_type='PCA'):
 
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
@@ -81,13 +81,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             self.whitend = True
 
             if not (target_transform and input_transform):
-                from sklearn.decomposition import PCA
 
                 Y = np.vstack([_y for _y in y])
                 X = np.vstack([_x for _x in x])
 
-                self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
-                self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+                if transform_type == 'PCA':
+                    self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
+                    self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
+                else:
+                    self.target_transform = StandardScaler()
+                    self.input_transform = StandardScaler()
 
                 self.target_transform.fit(Y)
                 self.input_transform.fit(X)
