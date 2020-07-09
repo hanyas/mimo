@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-2 * np.eye(nb_params)
+    K = 1e-2
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -92,7 +92,7 @@ if __name__ == "__main__":
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K, nu=target_dim + 1,
+                                K=K * np.eye(nb_params), nu=target_dim + 1,
                                 psi=np.eye(target_dim) * psi_mnw)
 
         aux = MatrixNormalWishart(**models_hypparams)
@@ -173,8 +173,8 @@ if __name__ == "__main__":
 
         # predict on all data
         sparse = False if (n + 1) < args.nb_splits else True
-        mu, var, std, _ = dpglm.parallel_meanfield_prediction(x=input, sparse=False,
-                                                              prediction=args.prediction)
+        mu, var, std = dpglm.meanfield_prediction(x=input, sparse=False,
+                                                  prediction=args.prediction)
 
         mu = np.hstack(mu)
         var = np.hstack(var)

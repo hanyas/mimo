@@ -68,7 +68,7 @@ def _job(kwargs):
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-3 * np.eye(nb_params)
+    K = 1e-3
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -79,7 +79,7 @@ def _job(kwargs):
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K, nu=target_dim + 1,
+                                K=K * np.eye(nb_params), nu=target_dim + 1,
                                 psi=np.eye(target_dim) * psi_mnw)
 
         aux = MatrixNormalWishart(**models_hypparams)
@@ -199,19 +199,18 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # predict
-    mu_predict, var_predict, std_predict, _\
-        = dpglm.parallel_meanfield_prediction(input, prediction=args.prediction)
+    mu, var, std = dpglm.meanfield_prediction(input, prediction=args.prediction)
 
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
 
-    mse = mean_squared_error(target, mu_predict)
-    evar = explained_variance_score(target, mu_predict, multioutput='variance_weighted')
-    smse = 1. - r2_score(target, mu_predict, multioutput='variance_weighted')
+    mse = mean_squared_error(target, mu)
+    evar = explained_variance_score(target, mu, multioutput='variance_weighted')
+    smse = 1. - r2_score(target, mu, multioutput='variance_weighted')
 
     print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
 
     plt.figure()
     plt.scatter(target[:, 0], target[:, 1], s=1)
-    plt.scatter(mu_predict[:, 0], mu_predict[:, 1], s=1, c='r')
+    plt.scatter(mu[:, 0], mu[:, 1], s=1, c='r')
 
     plt.show()
