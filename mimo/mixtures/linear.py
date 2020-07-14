@@ -389,7 +389,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             log_posterior_predictive[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
                 if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        effective_weights = (weights[labels] * np.exp(log_posterior_predictive))
+        effective_weights = weights[labels] * np.exp(log_posterior_predictive)
         effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
