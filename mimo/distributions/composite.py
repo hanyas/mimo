@@ -430,6 +430,13 @@ class MatrixNormalWishart(Distribution):
     def log_base(self):
         return np.log(self.base)
 
+    def statistics(self, A, lmbda):
+        # Stats corresponding to a diagonal Gamma prior on K
+        a = 0.5 * A.shape[0] * np.ones((A.shape[-1]))
+        b = - 0.5 * np.einsum('kh,km,mh->h', A - self.matnorm.M,
+                              lmbda, A - self.matnorm.M)
+        return Stats([a, b])
+
     @property
     def nat_param(self):
         return self.std_to_nat(self.params)
@@ -447,7 +454,7 @@ class MatrixNormalWishart(Distribution):
         # stats = [lmbda @ A,
         #          -0.5 * lmbda @ AAT,
         #          -0.5 * lmbda,
-        #          0.5 * log_lmbda]
+        #          0.5 * logdet_lmbda]
 
         M = params[0].dot(params[1])
         K = params[1]
@@ -474,7 +481,7 @@ class MatrixNormalWishart(Distribution):
         # stats = [lmbda @ A,
         #          -0.5 * lmbda @ AAT,
         #          -0.5 * lmbda,
-        #          0.5 * log_lmbda]
+        #          0.5 * logdet_lmbda]
 
         E_Lmbda_A = self.wishart.nu * self.wishart.psi @ self.matnorm.M
         E_AT_Lmbda_A = - 0.5 * (self.drow * invpd(self.matnorm.K) + self.matnorm.M.T.dot(E_Lmbda_A))
