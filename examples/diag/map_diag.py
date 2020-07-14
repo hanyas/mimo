@@ -22,4 +22,4 @@ prior = NormalGamma(**hypparams)
 
 model = GaussianWithNormalGamma(prior=prior)
 model.max_aposteriori(data)
-print("ML mean"+"\n", model.likelihood.mu.T, "\n"+"ML sigma"+"\n", model.likelihood.sigma)
+print("MAP mean"+"\n", model.likelihood.mu.T, "\n"+"MAP sigma"+"\n", model.likelihood.sigma)

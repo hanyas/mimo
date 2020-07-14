@@ -32,4 +32,4 @@ prior = MatrixNormalWishart(**hypparams)
 
 model = LinearGaussianWithMatrixNormalWishart(prior, affine=False)
 model.max_aposteriori(y=y, x=x)
-print("ML transf."+"\n", model.likelihood.A, "\n"+"ML covariance"+"\n", model.likelihood.sigma)
+print("MAP transf."+"\n", model.likelihood.A, "\n"+"MAP covariance"+"\n", model.likelihood.sigma)
