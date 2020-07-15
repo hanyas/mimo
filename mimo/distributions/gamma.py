@@ -8,6 +8,9 @@ from mimo.abstraction import Statistics as Stats
 
 
 class Gamma(Distribution):
+    # In comparison to a Wishart distribution
+    # alpha = nu / 2.
+    # beta = 1. / (2. * psi)
 
     def __init__(self, alphas, betas):
         self.alphas = alphas  # shape

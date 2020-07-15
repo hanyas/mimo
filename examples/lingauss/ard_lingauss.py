@@ -13,15 +13,15 @@ nb_samples, nb_features = 100, 100
 
 X = np.random.randn(nb_samples, nb_features)
 
-lambda_ = 4.
+lambda_ = 1e-2
 w = np.zeros(nb_features)
 
 relevant_features = np.random.randint(0, nb_features, 10)
 for i in relevant_features:
-    w[i] = stats.norm.rvs(loc=0, scale=1. / np.sqrt(lambda_))
+    w[i] = stats.norm.rvs(loc=0., scale=1. / np.sqrt(lambda_))
 
-alpha_ = 50.
-noise = stats.norm.rvs(loc=0, scale=1. / np.sqrt(alpha_), size=nb_samples)
+alpha_ = 10.
+noise = stats.norm.rvs(loc=0., scale=1. / np.sqrt(alpha_), size=nb_samples)
 
 y = np.dot(X, w) + noise
 y = y.reshape(-1, 1)
@@ -37,7 +37,7 @@ std.resample(y=y, x=X)
 print("Gibbs transf."+"\n", std.likelihood.A, "\n"+"Gibbs covariance"+"\n", std.likelihood.sigma)
 
 hyphypparams = dict(alphas=1. * np.ones(nb_features),
-                    betas=5e-4 * np.ones(nb_features))
+                    betas=1. / 1e2 * np.ones(nb_features))
 
 hypprior = Gamma(**hyphypparams)
 
