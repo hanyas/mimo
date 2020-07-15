@@ -17,14 +17,30 @@ from mimo.mixtures import BayesianMixtureOfLinearGaussians
 
 from mimo.util.text import progprint_xrange
 
+from dataclasses import dataclass
+
+
+@dataclass
+class ILR(object):
+
+    nb_models: int
+    affine: bool
+    gating_alpha: float
+    basis_psi: float
+    basis_kappa: float
+    model_psi: float
+    model_K: float
+
 
 class InfiniteLinearRegression:
     """
     This class serves as an abstract RegressionModel template
     """
     def __init__(self, input_dim, output_dim,
-                 basis_prior, model_prior,
-                 gating_prior, nb_models, affine=True):
+                 nb_models, affine,
+                 gating_alpha,
+                 basis_psi, basis_kappa,
+                 model_psi, model_K):
         """
         The constructor for RegressionModel.
 
@@ -38,39 +54,35 @@ class InfiniteLinearRegression:
 
         self.nb_models = nb_models
 
-        self.gating_prior = gating_prior
-        self.basis_prior = basis_prior
-        self.model_prior = model_prior
-
         self.affine = affine
 
-        # number of parameters per regressor
+        # number of parameters per local regressor
         self.nb_params = self.k + 1 if self.affine else self.k
 
-        basis_prior_list = []
-        model_prior_list = []
+        basis_prior = []
+        model_prior = []
 
         for n in range(self.nb_models):
             basis_hypparams = dict(mu=np.zeros((self.k,)),
-                                   psi=np.eye(self.k) * self.basis_prior['psi'],
-                                   kappa=self.basis_prior['kappa'], nu=self.k + 2)
+                                   psi=np.eye(self.k) * basis_psi,
+                                   kappa=basis_kappa, nu=self.k + 2)
 
-            basis_prior_list.append(NormalWishart(**basis_hypparams))
+            basis_prior.append(NormalWishart(**basis_hypparams))
 
             model_hypparams = dict(M=np.zeros((self.d, self.nb_params)),
-                                   K=np.eye(self.nb_params) * self.model_prior['K'],
-                                   psi=np.eye(self.d) * self.model_prior['psi'], nu=self.d + 2)
+                                   K=np.eye(self.nb_params) * model_K,
+                                   psi=np.eye(self.d) * model_psi, nu=self.d + 2)
 
-            model_prior_list.append(MatrixNormalWishart(**model_hypparams))
+            model_prior.append(MatrixNormalWishart(**model_hypparams))
 
         gating_hypparams = dict(K=self.nb_models,
                                 gammas=np.ones((self.nb_models,)),
-                                deltas=np.ones((self.nb_models,)) * self.gating_prior['alpha'])
+                                deltas=np.ones((self.nb_models,)) * gating_alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
         self.regressor = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                           basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(self.nb_models)],
-                                                          models=[LinearGaussianWithMatrixNormalWishart(basis_prior[i], affine=self.affine)
+                                                          models=[LinearGaussianWithMatrixNormalWishart(model_prior[i], affine=self.affine)
                                                                   for i in range(self.nb_models)])
 
     def fit(self, output, input,
