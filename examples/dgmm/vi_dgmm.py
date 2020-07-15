@@ -25,14 +25,16 @@ components = [GaussianWithCovariance(mu=np.array([1., 1.]), sigma=0.25 * np.eye(
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
-obs, z = gmm.rvs(1000)
+obs, z = gmm.rvs(500)
 gmm.plot(obs)
 
 gating_hypparams = dict(K=2, alphas=np.ones((2, )))
 gating_prior = Dirichlet(**gating_hypparams)
 
-components_hypparams = dict(mu=np.zeros((2, )), kappas=1. * np.ones((2, )),
-                            alphas=1e1 * np.ones((2, )), betas=1e-1 * np.ones((2, )))
+components_hypparams = dict(mu=np.zeros((2, )),
+                            kappas=1e-2 * np.ones((2, )),
+                            alphas=1. * np.ones((2, )),
+                            betas=1. / (2. * 1e4) * np.ones((2, )))
 components_prior = NormalGamma(**components_hypparams)
 
 model = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
@@ -43,7 +45,7 @@ model.add_data(obs)
 
 model.resample()
 print('Variational Inference')
-for _ in progprint_xrange(1000):
+for _ in progprint_xrange(2500):
     model.meanfield_update()
 
 plt.figure()

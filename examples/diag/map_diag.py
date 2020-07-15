@@ -16,8 +16,8 @@ model = GaussianWithDiagonalCovariance(mu=np.zeros((dim, )))
 model.max_likelihood(data)
 print("ML mean"+"\n", model.mu.T, "\n"+"ML sigma"+"\n", model.sigma)
 
-hypparams = dict(mu=np.zeros((dim, )), kappas=0.05 * np.ones((dim, )),
-                 alphas=np.ones((dim, )), betas=2. * np.ones((dim, )))
+hypparams = dict(mu=np.zeros((dim, )), kappas=1e-2 * np.ones((dim, )),
+                 alphas=1. * np.ones((dim, )), betas=1. / 2. * np.ones((dim, )))
 prior = NormalGamma(**hypparams)
 
 model = GaussianWithNormalGamma(prior=prior)
