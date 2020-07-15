@@ -6,6 +6,7 @@ from mimo.distributions import Categorical
 from mimo.distributions import GaussianWithDiagonalPrecision
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import LinearGaussianWithPrecision
+from mimo.distributions import LinearGaussianWithDiagonalPrecision
 from mimo.distributions import TiedGaussiansWithPrecision
 
 from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
@@ -183,7 +184,7 @@ class GaussianWithNormalWishart:
             self.likelihood = GaussianWithPrecision(mu=mu, lmbda=lmbda)
 
     def empirical_bayes(self, data):
-        self.prior.nat_param = self.likelihood.get_statistics(data)
+        self.prior.nat_param = self.likelihood.statistics(data)
         self.likelihood.params = self.prior.rvs()
         return self
 
@@ -226,6 +227,11 @@ class GaussianWithNormalWishart:
         q_entropy = self.posterior.entropy()
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
+
+    def log_marginal_likelihood(self):
+        log_partition_prior = self.prior.log_partition()
+        log_partition_posterior = self.posterior.log_partition()
+        return log_partition_posterior - log_partition_prior
 
     def posterior_predictive_gaussian(self):
         mu, kappa, psi, nu = self.posterior.params
@@ -317,6 +323,38 @@ class GaussianWithNormalGamma:
         qp_cross_entropy = self.prior.cross_entropy(self.posterior)
         return q_entropy - qp_cross_entropy
 
+    def log_marginal_likelihood(self):
+        log_partition_prior = self.prior.log_partition()
+        log_partition_posterior = self.posterior.log_partition()
+        return log_partition_posterior - log_partition_prior
+
+    def posterior_predictive_gaussian(self):
+        mu, kappas, alphas, betas = self.posterior.params
+        c = 1. + 1. / kappas
+        lmbdas = (alphas / betas) * 1. / c
+        return mu, lmbdas
+
+    def log_posterior_predictive_gaussian(self, x):
+        mu, lmbdas = self.posterior_predictive_gaussian()
+        return GaussianWithDiagonalPrecision(mu=mu, lmbdas=lmbdas).log_likelihood(x)
+
+    def posterior_predictive_studentt(self):
+        mu, kappas, alphas, betas = self.posterior.params
+        dfs = 2. * alphas
+        c = 1. + 1. / kappas
+        lmbdas = (alphas / betas) * 1. / c
+        return mu, lmbdas, dfs
+
+    def log_posterior_predictive_studentt(self, x):
+        mu, lmbdas, dfs = self.posterior_predictive_studentt()
+        log_posterior = 0.
+        for _x, _mu, _lmbda, _df in zip(x, mu, lmbdas, dfs):
+            log_posterior += mvt_logpdf(_x.reshape(-1, 1),
+                                        _mu.reshape(-1, 1),
+                                        _lmbda.reshape(-1, 1, 1),
+                                        _df)
+        return log_posterior
+
 
 class TiedGaussiansWithNormalWishart:
 
@@ -378,7 +416,7 @@ class TiedGaussiansWithNormalWishart:
 class LinearGaussianWithMatrixNormalWishart:
     """
     Multivariate Gaussian distribution with a linear mean function.
-    Uses a conjugate Matrix-Normal/Inverse-Wishart prior.
+    Uses a conjugate Matrix-Normal Wishart prior.
     Parameters are linear transf. and covariance matrix:
         A, lmbda
     """
@@ -398,8 +436,10 @@ class LinearGaussianWithMatrixNormalWishart:
             self.likelihood = LinearGaussianWithPrecision(A=A, lmbda=lmbda,
                                                           affine=affine)
 
-    def empirical_bayes(self, data):
-        raise NotImplementedError
+    def empirical_bayes(self, y, x):
+        self.prior.nat_param = self.likelihood.statistics(y, x)
+        self.likelihood.params = self.prior.rvs()
+        return self
 
     # Max a posteriori
     def max_aposteriori(self, y, x, weights=None):
@@ -487,3 +527,118 @@ class LinearGaussianWithMatrixNormalWishart:
     def log_posterior_predictive_studentt(self, y, x):
         mus, lmbdas, df = self.posterior_predictive_studentt(x)
         return mvt_logpdf(y, mu=mus, lmbda=lmbdas, df=df)
+
+
+class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
+    # This class is not really done
+    # ARD is implemented only for Gibbs sampling
+
+    def __init__(self, prior, hypprior, likelihood=None, affine=True):
+        # Matrix-Normal-Wishart prior
+        self.prior = prior
+
+        # Matrix-Normal-Wishart posterior
+        self.posterior = copy.deepcopy(prior)
+
+        # Diagonal Gamma hyper prior
+        self.hypprior = hypprior
+
+        # Diagonal Gamma hyper posterior
+        self.hypposterior = copy.deepcopy(hypprior)
+
+        # Linear Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            A, lmbda = self.prior.rvs()
+            self.likelihood = LinearGaussianWithPrecision(A=A, lmbda=lmbda,
+                                                          affine=affine)
+
+    def empirical_bayes(self, y, x):
+        raise NotImplementedError
+
+    # Gibbs sampling
+    def resample(self, y=[], x=[], nb_iter=10):
+        for _ in range(nb_iter):
+            A, lmbda = self.likelihood.params
+            hyperstats = self.prior.statistics(A, lmbda)
+            self.hypposterior.nat_param = self.hypprior.nat_param + hyperstats
+
+            self.prior.matnorm.K = np.diag(self.hypposterior.rvs())
+
+            stats = self.likelihood.statistics(y, x)
+            self.posterior.nat_param = self.prior.nat_param + stats
+
+            self.likelihood.params = self.posterior.rvs()
+        return self
+
+    # Mean field
+    def meanfield_update(self, y, x, weights=None):
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def variational_lowerbound(self):
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
+
+    def posterior_predictive_gaussian(self, x):
+        x = np.reshape(x, (-1, self.likelihood.dcol))
+        nb = x.shape[0]
+
+        if self.likelihood.affine:
+            x = np.hstack((x, np.ones((len(x), 1))))
+
+        M, K, psi, nu = self.posterior.params
+
+        df = nu - self.likelihood.drow + 1
+        mus = np.einsum('kh,...h->...k', M, x)
+
+        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        if nb == 1:
+            return mus[0], lmbdas[0]
+        else:
+            return mus, lmbdas
+
+    def log_posterior_predictive_gaussian(self, y, x):
+        mus, lmbdas = self.posterior_predictive_gaussian(x)
+        return mvn_logpdf(y, mus, lmbdas)
+
+    def posterior_predictive_studentt(self, x):
+        x = np.reshape(x, (-1, self.likelihood.dcol))
+        nb = x.shape[0]
+
+        if self.likelihood.affine:
+            x = np.hstack((x, np.ones((len(x), 1))))
+
+        M, K, psi, nu = self.posterior.params
+
+        df = nu - self.likelihood.drow + 1
+        mus = np.einsum('kh,...h->...k', M, x)
+
+        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+
+        if nb == 1:
+            return mus[0], lmbdas[0], df
+        else:
+            return mus, lmbdas, df
+
+    def log_posterior_predictive_studentt(self, y, x):
+        mus, lmbdas, df = self.posterior_predictive_studentt(x)
+        return mvt_logpdf(y, mu=mus, lmbda=lmbdas, df=df)
+

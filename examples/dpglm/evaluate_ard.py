@@ -10,7 +10,8 @@ import mimo
 from mimo.distributions import NormalGamma
 from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalGamma
-from mimo.distributions import LinearGaussianWithMatrixNormalWishart
+from mimo.distributions import LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance
+from mimo.distributions import Gamma
 
 from mimo.distributions import StickBreaking
 from mimo.distributions import Dirichlet
@@ -46,6 +47,7 @@ def _job(kwargs):
 
     basis_prior = []
     models_prior = []
+    models_hypprior = []
 
     # initialize Normal
     alpha_ng = 1.
@@ -54,7 +56,11 @@ def _job(kwargs):
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
-    K = 1e-1
+    K = 1e0
+
+    # initialize ard-Gamma
+    alphas_ard = 2.
+    betas_ard = 1. / (1. * 1e2)
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
@@ -72,14 +78,23 @@ def _job(kwargs):
         aux = MatrixNormalWishart(**models_hypparams)
         models_prior.append(aux)
 
+        models_hyphypparams = dict(alphas=alphas_ard * np.ones(nb_params),
+                                   betas=betas_ard * np.ones(nb_params))
+
+        aux = Gamma(**models_hyphypparams)
+        models_hypprior.append(aux)
+
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                  basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                 models=[LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance(models_prior[i],
+                                                                                                                    models_hypprior[i],
+                                                                                                                    affine=args.affine)
                                                          for i in range(args.nb_models)])
 
     else:
@@ -88,7 +103,9 @@ def _job(kwargs):
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                                  basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                 models=[LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance(models_prior[i],
+                                                                                                                    models_hypprior[i],
+                                                                                                                    affine=args.affine)
                                                          for i in range(args.nb_models)])
     dpglm.add_data(target, input, whiten=True,
                    transform_type='Standard')
@@ -126,11 +143,6 @@ def _job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
-
     return dpglm
 
 
@@ -157,8 +169,8 @@ if __name__ == "__main__":
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
@@ -188,6 +200,8 @@ if __name__ == "__main__":
     # training data
     nb_train = args.nb_train
     input, target = data[:nb_train, :1], data[:nb_train, 1:]
+    noise = npr.randn(len(input), 2) * 1e6
+    input = np.hstack((input, noise))
 
     dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
                                      train_input=input,
@@ -208,29 +222,21 @@ if __name__ == "__main__":
     print('TRAIN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'NLPD:',
            nlpd.mean(), 'Compnents:', len(dpglm.used_labels))
 
-    fig, axes = plt.subplots(2, 1)
+    fig, axes = plt.subplots(1, 1)
 
     # # plot prediction
     sorter = np.argsort(input[:, 0], axis=0).flatten()
     sorted_input, sorted_target = input[sorter, 0], target[sorter, 0]
     sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
 
-    axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
-    axes[0].plot(sorted_input, sorted_mu, color='crimson')
+    axes.scatter(sorted_input, sorted_target, s=0.75, color='k')
+    axes.plot(sorted_input, sorted_mu, color='crimson')
     for c in [1., 2., 3.]:
-        axes[0].fill_between(sorted_input,
-                             sorted_mu - c * sorted_std,
-                             sorted_mu + c * sorted_std,
-                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+        axes.fill_between(sorted_input,
+                          sorted_mu - c * sorted_std,
+                          sorted_mu + c * sorted_std,
+                          edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
-    axes[0].set_ylabel('y')
-
-    # plot gaussian activations
-    axes[1].set_xlabel('x')
-    axes[1].set_ylabel('p(x)')
-
-    activations = dpglm.meanfield_predictive_activation(sorted_input)
-    for i in range(len(dpglm.used_labels)):
-        axes[1].plot(sorted_input, activations[:, i])
+    axes.set_ylabel('y')
 
     plt.show()
