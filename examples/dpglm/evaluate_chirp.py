@@ -30,17 +30,17 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=5000, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=False)
+    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=0.9, type=float)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -105,7 +105,8 @@ if __name__ == "__main__":
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                  basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                         for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
@@ -113,24 +114,35 @@ if __name__ == "__main__":
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                                  basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                         for i in range(args.nb_models)])
 
     anim = []
+
+    from sklearn.preprocessing import StandardScaler
+    input_transform = StandardScaler()
+    target_transform = StandardScaler()
+
+    input_transform.fit(input)
+    target_transform.fit(target)
 
     split_size = int(nb_train / args.nb_splits)
     for n in range(args.nb_splits):
         print('Processing data split ' + str(n + 1) + ' out of ' + str(args.nb_splits))
 
-        # remove old data
-        try:
-            dpglm.clear_data()
-        except IndexError:
-            print('Model has no data')
+        # # remove old data
+        # try:
+        #     dpglm.clear_data()
+        # except IndexError:
+        #     print('Model has no data')
 
         _input = input[n * split_size: (n + 1) * split_size, :]
         _target = target[n * split_size: (n + 1) * split_size, :]
 
-        dpglm.add_data(y=_target, x=_input, whiten=False)
+        dpglm.add_data(y=_target, x=_input,
+                       whiten=True,
+                       input_transform=input_transform,
+                       target_transform=target_transform)
 
         # set posterior to prior
         import copy
@@ -171,6 +183,12 @@ if __name__ == "__main__":
                                                    maxiter=args.meanfield_iters,
                                                    progprint=args.verbose)
 
+            import copy
+            dpglm.gating.prior = dpglm.gating.posterior
+            for i in range(dpglm.size):
+                dpglm.basis[i].prior = dpglm.basis[i].posterior
+                dpglm.models[i].prior = dpglm.models[i].posterior
+
         # predict on all data
         sparse = False if (n + 1) < args.nb_splits else True
         mu, var, std = dpglm.meanfield_prediction(x=input, sparse=False,
@@ -187,7 +205,10 @@ if __name__ == "__main__":
         plt.plot(input, mu, color='crimson')
 
         for c in [1., 2.]:
-            plt.fill_between(input.flatten(), mu - c * std, mu + c * std, color=(0, 0, 1, 0.05))
+            plt.fill_between(input.flatten(),
+                             mu - c * std,
+                             mu + c * std,
+                             color=(0, 0, 1, 0.05))
 
         plt.ylim((-2.5, 2.5))
 
