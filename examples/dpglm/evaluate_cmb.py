@@ -7,9 +7,9 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo.distributions import NormalWishart
+from mimo.distributions import NormalGamma
 from mimo.distributions import MatrixNormalWishart
-from mimo.distributions import GaussianWithNormalWishart
+from mimo.distributions import GaussianWithNormalGamma
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 from mimo.distributions import StickBreaking
@@ -48,8 +48,9 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e1
-    kappa = 1e-2
+    alpha_ng = 1.
+    beta_ng = 1. / (2. * 1e1)
+    kappas = 1e-2
 
     # initialize Matrix-Normal
     psi_mnw = 1e0
@@ -57,10 +58,11 @@ def _job(kwargs):
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
-                               psi=np.eye(input_dim) * psi_nw,
-                               kappa=kappa, nu=input_dim + 1)
+                               alphas=np.ones(input_dim) * alpha_ng,
+                               betas=np.ones(input_dim) * beta_ng,
+                               kappas=np.ones(input_dim) * kappas)
 
-        aux = NormalWishart(**basis_hypparams)
+        aux = NormalGamma(**basis_hypparams)
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
@@ -76,17 +78,20 @@ def _job(kwargs):
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                         for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=True)
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                         for i in range(args.nb_models)])
+    dpglm.add_data(target, input, whiten=True,
+                   transform_type='Standard')
 
     for _ in range(args.super_iters):
         # Gibbs sampling
@@ -206,7 +211,7 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 1)
 
     # # plot prediction
-    sorter = np.argsort(input, axis=0).flatten()
+    sorter = np.argsort(input[:, 0], axis=0).flatten()
     sorted_input, sorted_target = input[sorter, 0], target[sorter, 0]
     sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
 
