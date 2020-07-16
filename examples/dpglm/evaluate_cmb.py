@@ -195,7 +195,7 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # predict on training
-    mu, var, std, nlpd =\
+    mu, var, std, nlpd = \
         dpglm.meanfield_prediction(input, target, prediction=args.prediction)
 
     # metrics
