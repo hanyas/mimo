@@ -114,7 +114,22 @@ class InfiniteLinearRegression:
                                                           models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
                                                                   for i in range(self.nb_models)])
 
-        self.regressor.add_data(output, input, whiten=False)
+        from sklearn.preprocessing import StandardScaler
+
+        target_transform = StandardScaler()
+        target_transform.mean_ = np.array([0., 0.])
+        target_transform.scale_ = np.array([1., 1.])
+        target_transform.var_ = np.array([1., 1.]) ** 2
+
+        input_transform = StandardScaler()
+        input_transform.mean_ = np.array([-1., 0., 0., 0.])
+        input_transform.scale_ = np.array([1., 1., 10., 2.])
+        input_transform.var_ = np.array([1., 1., 10., 2.]) ** 2
+
+        self.regressor.add_data(output, input, whiten=True,
+                                transform_type='Standard',
+                                target_transform=target_transform,
+                                input_transform=input_transform)
 
         for i in range(self.super_iters):
             # Gibbs sampling
@@ -154,5 +169,8 @@ class InfiniteLinearRegression:
                     self.regressor.models[n].prior = self.regressor.models[n].posterior
 
     def predict(self, X):
-        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average')
+        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average', variance='full')
         return mu, var
+
+    def save(self):
+        pass
