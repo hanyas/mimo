@@ -360,42 +360,76 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return 2. * self.nb_params - 2. * sum(self.log_likelihood(_y, _x)
                                               for _y, _x in zip(self.target, self.input))
 
-    def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
+    def meanfield_predictive_activation(self, x, dist='gaussian'):
         # Mainly for plotting basis functions
         x = np.reshape(x, (-1, self.dcol))
 
         x = x if not self.whitend \
             else self.input_transform.transform(x)
 
-        labels = self.used_labels if sparse else range(self.size)
+        labels = self.used_labels
         activations = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
             activations[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
-                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
+                if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
         activations = np.exp(activations)
         activations = activations / np.sum(activations, axis=1, keepdims=True)
         return activations
 
-    def meanfield_predictive_gating(self, x, sparse=False, type='gaussian'):
+    def meanfield_predictive_gating(self, x, dist='gaussian'):
         # compute posterior mixing weights
         weights = self.gating.posterior.mean()
 
-        labels = self.used_labels if sparse else range(self.size)
+        labels = range(self.size)
         log_posterior_predictive = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
             log_posterior_predictive[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
-                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
+                if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
         effective_weights = weights[labels] * np.exp(log_posterior_predictive)
         effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
+    def meanfield_predictive_moments(self, x, dist='gaussian'):
+        # returns only diagonal variance
+        mu, var = np.zeros((len(x), self.drow, self.size)),\
+                  np.zeros((len(x), self.drow, self.size))
+
+        for n, model in enumerate(self.models):
+            if dist == 'gaussian':
+                mu[..., n], _lmbda = model.posterior_predictive_gaussian(x)
+                var[..., n] = 1. / np.vstack(list(map(np.diag, _lmbda)))
+            else:
+                mu[..., n], _lmbda, _df = model.posterior_predictive_studentt(x)
+                var[..., n] = _df / (_df - 2) * (1. / np.vstack(list(map(np.diag, _lmbda))))
+
+        return mu, var
+
+    def meanfiled_log_predictive_likelihood(self, y, x, dist='gaussian'):
+        lpd = np.zeros((len(x), self.size))
+
+        for n, model in enumerate(self.models):
+            lpd[:, n] = model.log_posterior_predictive_gaussian(y, x)\
+                if dist == 'gaussian' else model.log_posterior_predictive_studentt(y, x)
+
+        return lpd
+
+    @staticmethod
+    def _mixture_moments(mus, vars, weights):
+        # Mean of a mixture = sum of weighted means
+        mu = np.einsum('nkl,nl->nk', mus, weights)
+        # Variance of a mixture = sum of weighted variances + ...
+        # ... + sum of weighted squared means - squared sum of weighted means
+        var = np.einsum('nkl,nl->nk', vars + mus ** 2, weights) - mu ** 2
+        return mu, var
+
     def meanfield_prediction(self, x, y=None,
-                             prediction='average', incremental=False,
-                             type='gaussian', sparse=False):
+                             prediction='average',
+                             incremental=False,
+                             dist='gaussian'):
 
         x = np.reshape(x, (-1, self.dcol))
 
@@ -409,56 +443,30 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         input = transform(x, trans=self.input_transform)
         target = None if y is None else transform(y, trans=self.target_transform)
 
-        drow = self.drow
-
-        # var is the diagonal variance for plots
-        mu, var, nlpd = np.zeros((len(x), drow)),\
-                        np.zeros((len(x), drow)),\
-                        np.zeros((len(x), ))
-
-        weights = self.meanfield_predictive_gating(input, sparse, type)
+        weights = self.meanfield_predictive_gating(input, dist)
+        mus, vars = self.meanfield_predictive_moments(input, dist)
 
         if prediction == 'mode':
-            mode = np.argmax(weights, axis=1)
-            for n, _mode in enumerate(mode):
-                if type == 'gaussian':
-                    mu[n, :], _lmbda = self.models[_mode].posterior_predictive_gaussian(input[n, :])
-                    var[n, :] = 1. / np.diag(_lmbda)
-                    if compute_nlpd:
-                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_gaussian(target[n, :], input[n, :]))
-                else:
-                    mu[n, :], _lmbda, _df = self.models[_mode].posterior_predictive_studentt(input[n, :])
-                    var[n, :] = _df / (_df - 2) * 1. / np.diag(_lmbda)
-                    if compute_nlpd:
-                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_studentt(target[n, :], input[n, :]))
-
+            k = np.argmax(weights, axis=1)
+            idx = (range(len(k)), ..., k)
+            mu, var = mus[idx], vars[idx]
         elif prediction == 'average':
-            _labels = self.used_labels if sparse else range(self.size)
-            for i, idx in enumerate(_labels):
-                if type == 'gaussian':
-                    _mu, _lmbda = self.models[idx].posterior_predictive_gaussian(input)
-                    _var = 1. / np.vstack(list(map(np.diag, _lmbda)))
-                    if compute_nlpd:
-                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_gaussian(target, input))
-                else:
-                    _mu, _lmbda, _df = self.models[idx].posterior_predictive_studentt(input)
-                    _var = _df / (_df - 2) * (1. / np.vstack(list(map(np.diag, _lmbda))))
-                    if compute_nlpd:
-                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_studentt(target, input))
+            labels = range(self.size)
+            mu, var = self._mixture_moments(mus[..., labels],
+                                            vars[..., labels], weights)
+        else:
+            raise NotImplementedError
 
-                # Mean of a mixture = sum of weighted means
-                mu += np.einsum('nk,n->nk', _mu, weights[:, i])
-                # Variance of a mixture = sum of weighted variances + ...
-                # ... + sum of weighted squared means - squared sum of weighted means
-                var += np.einsum('nk,n->nk', (_var + _mu**2), weights[:, i])
-            var -= mu**2
-
-        nlpd = - 1.0 * np.log(nlpd) if compute_nlpd else None
+        nlpd = None
+        if compute_nlpd:
+            lpd = self.meanfiled_log_predictive_likelihood(target, input)
+            lw = np.log(weights + eps)
+            nlpd = -1.0 * logsumexp(lpd + lw, axis=1)
 
         mu, var = inverse_transform(mu, var, trans=self.target_transform)
 
         if incremental:
-            mu += x[:, :drow]
+            mu += x[:, :self.drow]
 
         if compute_nlpd:
             return mu, var, np.sqrt(var), nlpd
