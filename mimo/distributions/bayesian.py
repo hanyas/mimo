@@ -495,10 +495,7 @@ class LinearGaussianWithMatrixNormalWishart:
 
         c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
         lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-        if nb == 1:
-            return mus[0], lmbdas[0]
-        else:
-            return mus, lmbdas
+        return mus, lmbdas
 
     def log_posterior_predictive_gaussian(self, y, x):
         mus, lmbdas = self.posterior_predictive_gaussian(x)
@@ -518,11 +515,7 @@ class LinearGaussianWithMatrixNormalWishart:
 
         c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
         lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-
-        if nb == 1:
-            return mus[0], lmbdas[0], df
-        else:
-            return mus, lmbdas, df
+        return mus, lmbdas, df
 
     def log_posterior_predictive_studentt(self, y, x):
         mus, lmbdas, df = self.posterior_predictive_studentt(x)
@@ -609,10 +602,7 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
 
         c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
         lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-        if nb == 1:
-            return mus[0], lmbdas[0]
-        else:
-            return mus, lmbdas
+        return mus, lmbdas
 
     def log_posterior_predictive_gaussian(self, y, x):
         mus, lmbdas = self.posterior_predictive_gaussian(x)
@@ -632,11 +622,7 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
 
         c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
         lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-
-        if nb == 1:
-            return mus[0], lmbdas[0], df
-        else:
-            return mus, lmbdas, df
+        return mus, lmbdas, df
 
     def log_posterior_predictive_studentt(self, y, x):
         mus, lmbdas, df = self.posterior_predictive_studentt(x)

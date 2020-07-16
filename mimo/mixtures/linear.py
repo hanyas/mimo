@@ -389,22 +389,21 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             log_posterior_predictive[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
                 if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        effective_weights = weights[labels] * np.exp(log_posterior_predictive)
+        effective_weights = weights[labels] * np.exp(log_posterior_predictive) + eps
         effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
     def meanfield_predictive_moments(self, x, dist='gaussian'):
-        # returns only diagonal variance
         mu, var = np.zeros((len(x), self.drow, self.size)),\
-                  np.zeros((len(x), self.drow, self.size))
+                  np.zeros((len(x), self.drow, self.drow, self.size))
 
         for n, model in enumerate(self.models):
             if dist == 'gaussian':
                 mu[..., n], _lmbda = model.posterior_predictive_gaussian(x)
-                var[..., n] = 1. / np.vstack(list(map(np.diag, _lmbda)))
+                var[..., n] = np.linalg.inv(_lmbda)
             else:
                 mu[..., n], _lmbda, _df = model.posterior_predictive_studentt(x)
-                var[..., n] = _df / (_df - 2) * (1. / np.vstack(list(map(np.diag, _lmbda))))
+                var[..., n] = np.linalg.inv(_lmbda) * _df / (_df - 2)
 
         return mu, var
 
@@ -423,13 +422,15 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         mu = np.einsum('nkl,nl->nk', mus, weights)
         # Variance of a mixture = sum of weighted variances + ...
         # ... + sum of weighted squared means - squared sum of weighted means
-        var = np.einsum('nkl,nl->nk', vars + mus ** 2, weights) - mu ** 2
+        var = np.einsum('nkhl,nl->nkh', vars + np.einsum('nkl,nhl->nkhl', mus, mus), weights)\
+              - np.einsum('nk,nh->nkh', mu, mu)
         return mu, var
 
     def meanfield_prediction(self, x, y=None,
                              prediction='average',
+                             dist='gaussian',
                              incremental=False,
-                             dist='gaussian'):
+                             variance='diagonal'):
 
         x = np.reshape(x, (-1, self.dcol))
 
@@ -468,7 +469,15 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         if incremental:
             mu += x[:, :self.drow]
 
+        diag = np.vstack(list(map(np.diag, var)))
+
         if compute_nlpd:
-            return mu, var, np.sqrt(var), nlpd
+            if variance == 'diagonal':
+                return mu, diag, np.sqrt(diag), nlpd
+            else:
+                return mu, var, np.sqrt(diag), nlpd
         else:
-            return mu, var, np.sqrt(var)
+            if variance == 'diagonal':
+                return mu, diag, np.sqrt(diag)
+            else:
+                return mu, var, np.sqrt(diag)
