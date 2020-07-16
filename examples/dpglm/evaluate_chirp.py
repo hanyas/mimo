@@ -190,9 +190,7 @@ if __name__ == "__main__":
                 dpglm.models[i].prior = dpglm.models[i].posterior
 
         # predict on all data
-        sparse = False if (n + 1) < args.nb_splits else True
-        mu, var, std = dpglm.meanfield_prediction(x=input, sparse=False,
-                                                  prediction=args.prediction)
+        mu, var, std = dpglm.meanfield_prediction(x=input, prediction=args.prediction)
 
         mu = np.hstack(mu)
         var = np.hstack(var)

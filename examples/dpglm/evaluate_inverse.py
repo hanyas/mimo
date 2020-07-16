@@ -48,7 +48,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e0
+    psi_nw = 1e1
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -58,7 +58,7 @@ def _job(kwargs):
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
                                psi=np.eye(input_dim) * psi_nw,
-                               kappa=kappa, nu=input_dim + 1 + 100)
+                               kappa=kappa, nu=input_dim + 1)
 
         aux = NormalWishart(**basis_hypparams)
         basis_prior.append(aux)
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=5, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=10, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
@@ -182,7 +182,7 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # mean prediction
-    mu, _, _ = dpglm.meanfield_prediction(input, prediction='average', sparse=True)
+    mu, _, _ = dpglm.meanfield_prediction(input, prediction='average')
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
