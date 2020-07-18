@@ -296,7 +296,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         if self.has_data():
             for _y, _x in zip(self.target, self.input):
-                self.labels.append(np.argmax(self.scores(_y, _x), axis=1))
+                self.labels.append(np.argmax(self.expected_scores(_y, _x), axis=1))
 
     def _meanfield_sgdstep_parameters(self, y, x, scores, prob, stepsize):
         self._meanfield_sgdstep_components(y, x, scores, prob, stepsize)
@@ -331,8 +331,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     def _variational_lowerbound_data(self, y, x, scores):
         vlb = 0.
-        vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x)) for b, r in zip(self.basis, scores.T)])
-        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)) for m, r in zip(self.models, scores.T)])
+        vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x))
+                       for b, r in zip(self.basis, scores.T)])
+        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x, m.likelihood.affine))
+                       for m, r in zip(self.models, scores.T)])
         return vlb
 
     def variational_lowerbound(self, y, x, scores):
