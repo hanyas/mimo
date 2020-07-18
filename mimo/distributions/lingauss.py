@@ -93,9 +93,9 @@ class LinearGaussianWithPrecision(Conditional):
     def predict(self, x):
         if self.affine:
             A, b = self.A[:, :-1], self.A[:, -1]
-            y = np.einsum('kh,...h->...k', A, x) + b.T
+            y = np.einsum('kh,...h->...k', A, x, optimize='optimal') + b.T
         else:
-            y = np.einsum('kh,...h->...k', self.A, x)
+            y = np.einsum('kh,...h->...k', self.A, x, optimize='optimal')
 
         return y
 
@@ -116,7 +116,7 @@ class LinearGaussianWithPrecision(Conditional):
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu, optimize='optimal')\
+                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
                   - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize='optimal')
 
         log_lik[bads] = 0
@@ -290,9 +290,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def predict(self, x):
         if self.affine:
             A, b = self.A[:, :-1], self.A[:, -1]
-            y = np.einsum('kh,...h->...k', A, x) + b.T
+            y = np.einsum('kh,...h->...k', A, x, optimize='optimal') + b.T
         else:
-            y = np.einsum('kh,...h->...k', self.A, x)
+            y = np.einsum('kh,...h->...k', self.A, x, optimize='optimal')
 
         return y
 
@@ -312,9 +312,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         y = np.nan_to_num(y).reshape((-1, self.drow))
 
         mu = self.mean(x)
-        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y)\
+        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
                   - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y)
+                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize='optimal')
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -328,9 +328,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,nh->nkh', y, x)
-            xxT = np.einsum('nk,nh->nkh', x, x)
-            yy = np.einsum('nk,nk->nk', y, y)
+            yxT = np.einsum('nk,nh->nkh', y, x, optimize='optimal')
+            xxT = np.einsum('nk,nh->nkh', x, x, optimize='optimal')
+            yy = np.einsum('nk,nk->nk', y, y, optimize='optimal')
             n = np.ones((y.shape[0], ))
 
             if not vectorize:
@@ -354,9 +354,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,n,nh->nkh', y, weights, x)
-            xxT = np.einsum('nk,n,nh->nkh', x, weights, x)
-            yy = np.einsum('nk,n,nh->nk', y, weights, y)
+            yxT = np.einsum('nk,n,nh->nkh', y, weights, x, optimize='optimal')
+            xxT = np.einsum('nk,n,nh->nkh', x, weights, x, optimize='optimal')
+            yy = np.einsum('nk,n,nh->nk', y, weights, y, optimize='optimal')
             n = weights
 
             if not vectorize:

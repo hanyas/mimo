@@ -82,8 +82,8 @@ class GaussianWithCovariance(Distribution):
         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
         x = np.nan_to_num(x).reshape((-1, self.dim))
 
-        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x)
+        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize='optimal')\
+                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize='optimal')
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -94,7 +94,7 @@ class GaussianWithCovariance(Distribution):
             data = data[idx]
 
             x = data
-            xxT = np.einsum('nk,nh->nkh', data, data)
+            xxT = np.einsum('nk,nh->nkh', data, data, optimize='optimal')
             n = np.ones((data.shape[0], ))
 
             if not vectorize:
@@ -114,8 +114,8 @@ class GaussianWithCovariance(Distribution):
             data = data[idx]
             weights = weights[idx]
 
-            x = np.einsum('n,nk->nk', weights, data)
-            xxT = np.einsum('nk,n,nh->nkh', data, weights, data)
+            x = np.einsum('n,nk->nk', weights, data, optimize='optimal')
+            xxT = np.einsum('nk,n,nh->nkh', data, weights, data, optimize='optimal')
             n = weights
 
             if not vectorize:
