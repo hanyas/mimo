@@ -52,7 +52,9 @@ class InfiniteLinearRegression:
                  super_iters, gibbs_iters,
                  vi_iters, vi_earlystop,
                  svi_iters, svi_batch_size,
-                 svi_step_size):
+                 svi_step_size,
+                 output_mean, output_std,
+                 input_mean, input_std):
         """
         The constructor for RegressionModel.
 
@@ -104,17 +106,33 @@ class InfiniteLinearRegression:
         self.svi_batch_size = svi_batch_size
         self.svi_step_size = svi_step_size
 
+        from sklearn.preprocessing import StandardScaler
+
+        self.output_transform = StandardScaler()
+        self.output_transform.mean_ = output_mean
+        self.output_transform.scale_ = output_std
+        self.output_transform.var_ = output_std ** 2
+
+        self.input_transform = StandardScaler()
+        self.input_transform.mean_ = input_mean
+        self.input_transform.scale_ = input_std
+        self.input_transform.var_ = input_std ** 2
+
     def fit(self, input, output, verbose=True):
         """
         Fits the model to the training data.
         """
 
-        self.regressor = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(self.gating_prior),
-                                                          basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
-                                                          models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
-                                                                  for i in range(self.nb_models)])
+        self.regressor = BayesianMixtureOfLinearGaussians(
+            gating=CategoricalWithStickBreaking(self.gating_prior),
+            basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
+            models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
+                    for i in range(self.nb_models)])
 
-        self.regressor.add_data(output, input, whiten=False)
+        self.regressor.add_data(output, input, whiten=True,
+                                transform_type='Standard',
+                                target_transform=self.output_transform,
+                                input_transform=self.input_transform)
 
         for i in range(self.super_iters):
             # Gibbs sampling
@@ -154,9 +172,12 @@ class InfiniteLinearRegression:
                     self.regressor.models[n].prior = self.regressor.models[n].posterior
 
     def predict(self, X):
-        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average')
+        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='mode', variance='full')
         return mu, var
 
     def elatoric(self):
         var = self.regressor.meanfield_elatoric()
         return np.mean(var, axis=-1)
+
+    def save(self, path):
+        pass
