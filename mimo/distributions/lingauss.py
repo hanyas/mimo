@@ -115,9 +115,9 @@ class LinearGaussianWithPrecision(Conditional):
         y = np.nan_to_num(y).reshape((-1, self.drow))
 
         mu = self.mean(x)
-        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y)
+        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
+                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu, optimize='optimal')\
+                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize='optimal')
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -131,9 +131,9 @@ class LinearGaussianWithPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,nh->nkh', y, x)
-            xxT = np.einsum('nk,nh->nkh', x, x)
-            yyT = np.einsum('nk,nh->nkh', y, y)
+            yxT = np.einsum('nk,nh->nkh', y, x, optimize='optimal')
+            xxT = np.einsum('nk,nh->nkh', x, x, optimize='optimal')
+            yyT = np.einsum('nk,nh->nkh', y, y, optimize='optimal')
             n = np.ones((y.shape[0], ))
 
             if not vectorize:
@@ -157,9 +157,9 @@ class LinearGaussianWithPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,n,nh->nkh', y, weights, x)
-            xxT = np.einsum('nk,n,nh->nkh', x, weights, x)
-            yyT = np.einsum('nk,n,nh->nkh', y, weights, y)
+            yxT = np.einsum('nk,n,nh->nkh', y, weights, x, optimize='optimal')
+            xxT = np.einsum('nk,n,nh->nkh', x, weights, x, optimize='optimal')
+            yyT = np.einsum('nk,n,nh->nkh', y, weights, y, optimize='optimal')
             n = weights
 
             if not vectorize:
