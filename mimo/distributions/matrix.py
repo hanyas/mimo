@@ -118,7 +118,7 @@ class MatrixNormalWithPrecision(Distribution):
 
         # Gaussian likelihood on vector dist.
         bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
-        xr = np.nan_to_num(xr).reshape((-1, self.drow * self.dcol))
+        xr = np.nan_to_num(xr, copy=False).reshape((-1, self.drow * self.dcol))
 
         log_lik = np.einsum('k,kh,nh->n', mu, self.lmbda, xr)\
                   - 0.5 * np.einsum('nk,kh,nh->n', xr, self.lmbda, xr)
@@ -267,7 +267,7 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
 
         # Gaussian likelihood on vector dist.
         bads = np.isnan(np.atleast_2d(xr)).any(axis=1)
-        xr = np.nan_to_num(xr).reshape((-1, self.drow * self.dcol))
+        xr = np.nan_to_num(xr, copy=False).reshape((-1, self.drow * self.dcol))
 
         log_lik = np.einsum('k,kh,nh->n', mu, self.omega, xr)\
                   - 0.5 * np.einsum('nk,kh,nh->n', xr, self.omega, xr)

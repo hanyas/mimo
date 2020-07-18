@@ -80,7 +80,7 @@ class MixtureOfGaussians(Distribution):
         component_scores = np.empty((N, K))
         for idx, c in enumerate(self.components):
             component_scores[:, idx] = c.log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -262,7 +262,7 @@ class BayesianMixtureOfGaussians(Distribution):
         component_scores = np.empty((N, K))
         for idx, c in enumerate(self.components):
             component_scores[:, idx] = c.likelihood.log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -323,7 +323,7 @@ class BayesianMixtureOfGaussians(Distribution):
         component_scores = np.empty((N, K))
         for idx, c in enumerate(self.components):
             component_scores[:, idx] = c.posterior.expected_log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
             gating_scores = self.gating.posterior.expected_statistics()
