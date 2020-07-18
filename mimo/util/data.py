@@ -23,10 +23,7 @@ def inverse_transform(mu, var=None, trans=None):
             mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_\
                 if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
 
-            _diag = np.stack(list(map(np.diag, var)))
-            _covar = np.einsum('kh,nhj,ji->nki', mat, _diag, mat.T)
-            _var = np.vstack(list(map(np.diag, _covar)))
-
+            _var = np.einsum('kh,nhj,ji->nki', mat, var, mat.T)
             return _mu, _var
 
 

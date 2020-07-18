@@ -392,7 +392,7 @@ class BayesianMixtureOfGaussians(Distribution):
 
         if self.has_data():
             for _obs in self.obs:
-                self.labels.append(np.argmax(self.scores(_obs), axis=1))
+                self.labels.append(np.argmax(self.expected_scores(_obs), axis=1))
 
     def _meanfield_sgdstep_parameters(self, obs, scores, prob, stepsize):
         self._meanfield_sgdstep_components(obs, scores, prob, stepsize)
