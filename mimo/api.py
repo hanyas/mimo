@@ -52,7 +52,9 @@ class InfiniteLinearRegression:
                  super_iters, gibbs_iters,
                  vi_iters, vi_earlystop,
                  svi_iters, svi_batch_size,
-                 svi_step_size):
+                 svi_step_size,
+                 output_mean, output_std,
+                 input_mean, input_std):
         """
         The constructor for RegressionModel.
 
@@ -104,32 +106,33 @@ class InfiniteLinearRegression:
         self.svi_batch_size = svi_batch_size
         self.svi_step_size = svi_step_size
 
+        from sklearn.preprocessing import StandardScaler
+
+        self.output_transform = StandardScaler()
+        self.output_transform.mean_ = output_mean
+        self.output_transform.scale_ = output_std
+        self.output_transform.var_ = output_std ** 2
+
+        self.input_transform = StandardScaler()
+        self.input_transform.mean_ = input_mean
+        self.input_transform.scale_ = input_std
+        self.input_transform.var_ = input_std ** 2
+
     def fit(self, input, output, verbose=True):
         """
         Fits the model to the training data.
         """
 
-        self.regressor = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(self.gating_prior),
-                                                          basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
-                                                          models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
-                                                                  for i in range(self.nb_models)])
-
-        from sklearn.preprocessing import StandardScaler
-
-        target_transform = StandardScaler()
-        target_transform.mean_ = np.array([0., 0.])
-        target_transform.scale_ = np.array([1., 1.])
-        target_transform.var_ = np.array([1., 1.]) ** 2
-
-        input_transform = StandardScaler()
-        input_transform.mean_ = np.array([-1., 0., 0., 0.])
-        input_transform.scale_ = np.array([1., 1., 10., 2.])
-        input_transform.var_ = np.array([1., 1., 10., 2.]) ** 2
+        self.regressor = BayesianMixtureOfLinearGaussians(
+            gating=CategoricalWithStickBreaking(self.gating_prior),
+            basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
+            models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
+                    for i in range(self.nb_models)])
 
         self.regressor.add_data(output, input, whiten=True,
                                 transform_type='Standard',
-                                target_transform=target_transform,
-                                input_transform=input_transform)
+                                target_transform=self.output_transform,
+                                input_transform=self.input_transform)
 
         for i in range(self.super_iters):
             # Gibbs sampling
@@ -169,8 +172,8 @@ class InfiniteLinearRegression:
                     self.regressor.models[n].prior = self.regressor.models[n].posterior
 
     def predict(self, X):
-        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average', variance='full')
+        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='mode', variance='full')
         return mu, var
 
-    def save(self):
+    def save(self, path):
         pass
