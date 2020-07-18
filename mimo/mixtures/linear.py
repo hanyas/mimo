@@ -428,7 +428,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
               - np.einsum('nk,nh->nkh', mu, mu)
         return mu, var
 
-    def meanfield_eleatoric(self, dist='gaussian'):
+    def meanfield_aleatoric(self, dist='gaussian'):
         var = np.zeros((self.drow, self.drow, self.size))
         for n, model in enumerate(self.models):
             _, _, psi, nu = model.posterior.params

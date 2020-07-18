@@ -175,8 +175,8 @@ class InfiniteLinearRegression:
         mu, var, _ = self.regressor.meanfield_prediction(X, prediction='mode', variance='full')
         return mu, var
 
-    def elatoric(self):
-        var = self.regressor.meanfield_elatoric()
+    def aleatoric(self):
+        var = self.regressor.meanfield_aleatoric()
         return np.mean(var, axis=-1)
 
     def save(self, path):
