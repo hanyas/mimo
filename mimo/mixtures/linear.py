@@ -426,6 +426,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         var = np.einsum('nkl,nl->nk', vars + mus ** 2, weights) - mu ** 2
         return mu, var
 
+    def meanfield_eleatoric(self, dist='gaussian'):
+        var = np.zeros((self.drow, self.drow, self.size))
+        for n, model in enumerate(self.models):
+            _, _, psi, nu = model.posterior.params
+            df = nu - model.likelihood.drow + 1
+            var[..., n] = np.linalg.inv(psi * df) if dist == 'gaussian'\
+                else np.linalg.inv(psi * df) * df / (df - 2.)
+
+        return var
+
     def meanfield_prediction(self, x, y=None,
                              prediction='average',
                              incremental=False,

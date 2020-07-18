@@ -156,3 +156,7 @@ class InfiniteLinearRegression:
     def predict(self, X):
         mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average')
         return mu, var
+
+    def elatoric(self):
+        var = self.regressor.meanfield_elatoric()
+        return np.mean(var, axis=-1)
