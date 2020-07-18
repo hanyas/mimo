@@ -77,7 +77,7 @@ class GaussianWithDiagonalCovariance(Distribution):
 
     def log_likelihood(self, x):
         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
-        x = np.nan_to_num(x).reshape((-1, self.dim))
+        x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
 
         log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x)\
                   - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x)
@@ -279,7 +279,7 @@ class GaussianWithDiagonalPrecision(Distribution):
 
     def log_likelihood(self, x):
         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
-        x = np.nan_to_num(x).reshape((-1, self.dim))
+        x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
 
         log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x)\
                   - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x)

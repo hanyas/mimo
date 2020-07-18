@@ -163,7 +163,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.likelihood.log_likelihood(x)
             component_scores[:, idx] += m.likelihood.log_likelihood(y, x)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -225,7 +225,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
             component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
             gating_scores = self.gating.posterior.expected_statistics()
