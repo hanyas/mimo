@@ -52,9 +52,7 @@ class InfiniteLinearRegression:
                  super_iters, gibbs_iters,
                  vi_iters, vi_earlystop,
                  svi_iters, svi_batch_size,
-                 svi_step_size,
-                 output_mean, output_std,
-                 input_mean, input_std):
+                 svi_step_size):
         """
         The constructor for RegressionModel.
 
@@ -109,14 +107,7 @@ class InfiniteLinearRegression:
         from sklearn.preprocessing import StandardScaler
 
         self.output_transform = StandardScaler()
-        self.output_transform.mean_ = output_mean
-        self.output_transform.scale_ = output_std
-        self.output_transform.var_ = output_std ** 2
-
         self.input_transform = StandardScaler()
-        self.input_transform.mean_ = input_mean
-        self.input_transform.scale_ = input_std
-        self.input_transform.var_ = input_std ** 2
 
     def fit(self, input, output, verbose=True):
         """
