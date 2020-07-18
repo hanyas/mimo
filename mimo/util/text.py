@@ -22,7 +22,7 @@ def progprint_xrange(*args, **kwargs):
     return progprint(xr, total=len(xr), **kwargs)
 
 
-def progprint(iterator, total=None, perline=100, show_times=True):
+def progprint(iterator, total=None, perline=25, show_times=True):
     times = []
     idx = 0
     if total is not None:
