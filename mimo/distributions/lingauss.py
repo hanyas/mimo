@@ -131,16 +131,16 @@ class LinearGaussianWithPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,nh->nkh', y, x, optimize='optimal')
-            xxT = np.einsum('nk,nh->nkh', x, x, optimize='optimal')
-            yyT = np.einsum('nk,nh->nkh', y, y, optimize='optimal')
-            n = np.ones((y.shape[0], ))
+            if vectorize:
+                contract = 'nk,nh->nkh'
+                n = np.ones((y.shape[0], ))
+            else:
+                contract = 'nk,nh->kh'
+                n = y.shape[0]
 
-            if not vectorize:
-                yxT = np.sum(yxT, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                yyT = np.sum(yyT, axis=0)
-                n = np.sum(n, axis=0)
+            yxT = np.einsum(contract, y, x, optimize='optimal')
+            xxT = np.einsum(contract, x, x, optimize='optimal')
+            yyT = np.einsum(contract, y, y, optimize='optimal')
 
             return Stats([yxT, xxT, yyT, n])
         else:
@@ -157,16 +157,16 @@ class LinearGaussianWithPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,n,nh->nkh', y, weights, x, optimize='optimal')
-            xxT = np.einsum('nk,n,nh->nkh', x, weights, x, optimize='optimal')
-            yyT = np.einsum('nk,n,nh->nkh', y, weights, y, optimize='optimal')
-            n = weights
+            if vectorize:
+                contract = 'nk,n,nh->nkh'
+                n = weights
+            else:
+                contract = 'nk,n,nh->kh'
+                n = np.sum(weights)
 
-            if not vectorize:
-                yxT = np.sum(yxT, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                yyT = np.sum(yyT, axis=0)
-                n = np.sum(n, axis=0)
+            yxT = np.einsum(contract, y, weights, x, optimize='optimal')
+            xxT = np.einsum(contract, x, weights, x, optimize='optimal')
+            yyT = np.einsum(contract, y, weights, y, optimize='optimal')
 
             return Stats([yxT, xxT, yyT, n])
         else:
@@ -328,16 +328,16 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,nh->nkh', y, x, optimize='optimal')
-            xxT = np.einsum('nk,nh->nkh', x, x, optimize='optimal')
-            yy = np.einsum('nk,nk->nk', y, y, optimize='optimal')
-            n = np.ones((y.shape[0], ))
+            if vectorize:
+                c0, c1 = 'nk,nh->nkh', 'nk,nk->nk'
+                n = np.ones((y.shape[0], ))
+            else:
+                c0, c1 = 'nk,nh->kh', 'nk,nk->k'
+                n = y.shape[0]
 
-            if not vectorize:
-                yxT = np.sum(yxT, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                yy = np.sum(yy, axis=0)
-                n = np.sum(n, axis=0)
+            yxT = np.einsum(c0, y, x, optimize='optimal')
+            xxT = np.einsum(c0, x, x, optimize='optimal')
+            yy = np.einsum(c1, y, y, optimize='optimal')
 
             return Stats([yxT, xxT, yy, n])
         else:
@@ -354,16 +354,16 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            yxT = np.einsum('nk,n,nh->nkh', y, weights, x, optimize='optimal')
-            xxT = np.einsum('nk,n,nh->nkh', x, weights, x, optimize='optimal')
-            yy = np.einsum('nk,n,nh->nk', y, weights, y, optimize='optimal')
-            n = weights
+            if vectorize:
+                c0, c1 = 'nk,n,nh->nkh', 'nk,n,nk->nk'
+                n = weights
+            else:
+                c0, c1 = 'nk,n,nh->kh', 'nk,n,nk->k'
+                n = np.sum(weights)
 
-            if not vectorize:
-                yxT = np.sum(yxT, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                yy = np.sum(yy, axis=0)
-                n = np.sum(n, axis=0)
+            yxT = np.einsum(c0, y, weights, x, optimize='optimal')
+            xxT = np.einsum(c0, x, weights, x, optimize='optimal')
+            yy = np.einsum(c1, y, weights, y, optimize='optimal')
 
             return Stats([yxT, xxT, yy, n])
         else:
