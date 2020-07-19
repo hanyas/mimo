@@ -93,14 +93,15 @@ class GaussianWithCovariance(Distribution):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
-            x = data
-            xxT = np.einsum('nk,nh->nkh', data, data, optimize='optimal')
-            n = np.ones((data.shape[0], ))
+            if vectorize:
+                c0, c1 = 'nk->nk', 'nk,nh->nkh'
+                n = np.ones((data.shape[0], ))
+            else:
+                c0, c1 = 'nk->k', 'nk,nh->kh'
+                n = data.shape[0]
 
-            if not vectorize:
-                x = np.sum(x, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                n = np.sum(n, axis=0)
+            x = np.einsum(c0, data, optimize='optimal')
+            xxT = np.einsum(c1, data, data, optimize='optimal')
 
             return Stats([x, n, xxT, n])
         else:
@@ -114,14 +115,15 @@ class GaussianWithCovariance(Distribution):
             data = data[idx]
             weights = weights[idx]
 
-            x = np.einsum('n,nk->nk', weights, data, optimize='optimal')
-            xxT = np.einsum('nk,n,nh->nkh', data, weights, data, optimize='optimal')
-            n = weights
+            if vectorize:
+                c0, c1 = 'n,nk->nk', 'nk,n,nh->nkh'
+                n = weights
+            else:
+                c0, c1 = 'n,nk->k', 'nk,n,nh->kh'
+                n = np.sum(weights)
 
-            if not vectorize:
-                x = np.sum(x, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                n = np.sum(n, axis=0)
+            x = np.einsum(c0, weights, data, optimize='optimal')
+            xxT = np.einsum(c1, data, weights, data, optimize='optimal')
 
             return Stats([x, n, xxT, n])
         else:
@@ -282,7 +284,7 @@ class GaussianWithPrecision(Distribution):
         x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
 
         log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize='optimal')\
-                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x,  optimize='optimal')
+                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize='optimal')
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -292,14 +294,15 @@ class GaussianWithPrecision(Distribution):
             idx = ~np.isnan(data).any(axis=1)
             data = data[idx]
 
-            x = data
-            xxT = np.einsum('nk,nh->nkh', data, data, optimize='optimal')
-            n = np.ones((data.shape[0], ))
+            if vectorize:
+                c0, c1 = 'nk->nk', 'nk,nh->nkh'
+                n = np.ones((data.shape[0], ))
+            else:
+                c0, c1 = 'nk->k', 'nk,nh->kh'
+                n = data.shape[0]
 
-            if not vectorize:
-                x = np.sum(x, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                n = np.sum(n, axis=0)
+            x = np.einsum(c0, data, optimize='optimal')
+            xxT = np.einsum(c1, data, data, optimize='optimal')
 
             return Stats([x, n, xxT, n])
         else:
@@ -313,14 +316,15 @@ class GaussianWithPrecision(Distribution):
             data = data[idx]
             weights = weights[idx]
 
-            x = np.einsum('n,nk->nk', weights, data, optimize='optimal')
-            xxT = np.einsum('nk,n,nh->nkh', data, weights, data, optimize='optimal')
-            n = weights
+            if vectorize:
+                c0, c1 = 'n,nk->nk', 'nk,n,nh->nkh'
+                n = weights
+            else:
+                c0, c1 = 'n,nk->k', 'nk,n,nh->kh'
+                n = np.sum(weights)
 
-            if not vectorize:
-                x = np.sum(x, axis=0)
-                xxT = np.sum(xxT, axis=0)
-                n = np.sum(n, axis=0)
+            x = np.einsum(c0, weights, data, optimize='optimal')
+            xxT = np.einsum(c1, data, weights, data, optimize='optimal')
 
             return Stats([x, n, xxT, n])
         else:
