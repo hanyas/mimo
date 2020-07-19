@@ -25,7 +25,7 @@ def multivariate_gaussian_loglik(xs, mu, lmbda):
     # Accepts vectorized parameters
     d = mu.shape[-1]
 
-    xc = np.nan_to_num(xs) - mu
+    xc = np.nan_to_num(xs, copy=False) - mu
     log_exp = - 0.5 * np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
     log_norm = - 0.5 * d * np.log(2. * np.pi)\
                + 0.5 * np.linalg.slogdet(lmbda)[1]
@@ -36,7 +36,7 @@ def multivariate_studentt_loglik(xs, mu, lmbda, df):
     # Accepts vectorized parameters
     d = mu.shape[-1]
 
-    xc = np.nan_to_num(xs) - mu
+    xc = np.nan_to_num(xs, copy=False) - mu
     delta = np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
     return sc.special.gammaln((df + d) / 2.) - sc.special.gammaln(df / 2.)\
            + 0.5 * np.linalg.slogdet(lmbda)[1] - (d / 2.) * np.log(df * np.pi)\

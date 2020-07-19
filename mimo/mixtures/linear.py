@@ -163,7 +163,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.likelihood.log_likelihood(x)
             component_scores[:, idx] += m.likelihood.log_likelihood(y, x)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -225,7 +225,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
             component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
             gating_scores = self.gating.posterior.expected_statistics()
@@ -427,6 +427,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         var = np.einsum('nkhl,nl->nkh', vars + np.einsum('nkl,nhl->nkhl', mus, mus), weights)\
               - np.einsum('nk,nh->nkh', mu, mu)
         return mu, var
+
+    def meanfield_aleatoric(self, dist='gaussian'):
+        var = np.zeros((self.drow, self.drow, self.size))
+        for n, model in enumerate(self.models):
+            _, _, psi, nu = model.posterior.params
+            df = nu - model.likelihood.drow + 1
+            var[..., n] = np.linalg.inv(psi * df) if dist == 'gaussian'\
+                else np.linalg.inv(psi * df) * df / (df - 2.)
+
+        return var
 
     def meanfield_prediction(self, x, y=None,
                              prediction='average',
