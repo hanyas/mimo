@@ -111,8 +111,8 @@ class LinearGaussianWithPrecision(Conditional):
         bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                               np.isnan(np.atleast_2d(y)).any(axis=1))
 
-        x = np.nan_to_num(x).reshape((-1, self.dcol))
-        y = np.nan_to_num(y).reshape((-1, self.drow))
+        x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
+        y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
@@ -308,8 +308,8 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         bads = np.logical_and(np.isnan(np.atleast_2d(x)).any(axis=1),
                               np.isnan(np.atleast_2d(y)).any(axis=1))
 
-        x = np.nan_to_num(x).reshape((-1, self.dcol))
-        y = np.nan_to_num(y).reshape((-1, self.drow))
+        x = np.nan_to_num(x, copy=False).reshape((-1, self.dcol))
+        y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
