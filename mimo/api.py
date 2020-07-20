@@ -104,6 +104,12 @@ class InfiniteLinearRegression:
         self.svi_batch_size = svi_batch_size
         self.svi_step_size = svi_step_size
 
+        self.regressor = BayesianMixtureOfLinearGaussians(
+            gating=CategoricalWithStickBreaking(self.gating_prior),
+            basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
+            models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
+                    for i in range(self.nb_models)])
+
         from sklearn.preprocessing import StandardScaler
 
         self.output_transform = StandardScaler()
@@ -113,12 +119,6 @@ class InfiniteLinearRegression:
         """
         Fits the model to the training data.
         """
-
-        self.regressor = BayesianMixtureOfLinearGaussians(
-            gating=CategoricalWithStickBreaking(self.gating_prior),
-            basis=[GaussianWithNormalWishart(self.basis_prior[i]) for i in range(self.nb_models)],
-            models=[LinearGaussianWithMatrixNormalWishart(self.model_prior[i], affine=self.affine)
-                    for i in range(self.nb_models)])
 
         self.regressor.add_data(output, input, whiten=True,
                                 transform_type='Standard',
@@ -162,13 +162,15 @@ class InfiniteLinearRegression:
                     self.regressor.basis[n].prior = self.regressor.basis[n].posterior
                     self.regressor.models[n].prior = self.regressor.models[n].posterior
 
+        self.regressor.clear_data()
+
     def predict(self, X):
-        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='mode', variance='full')
+        mu, var, _ = self.regressor.meanfield_prediction(X, prediction='average', variance='full')
         return mu, var
 
     def aleatoric(self):
         var = self.regressor.meanfield_aleatoric()
-        return np.mean(var, axis=-1)
+        return np.sum(var, axis=-1)
 
     def save(self, path):
         pass
