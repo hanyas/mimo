@@ -436,7 +436,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             var[..., n] = np.linalg.inv(psi * df) if dist == 'gaussian'\
                 else np.linalg.inv(psi * df) * df / (df - 2.)
 
-        return var
+        weights = self.gating.posterior.mean()
+        weighted_var = np.einsum('khn,n->khn', var, weights)
+
+        return weighted_var
 
     def meanfield_prediction(self, x, y=None,
                              prediction='average',
