@@ -483,7 +483,6 @@ class LinearGaussianWithMatrixNormalWishart:
 
     def posterior_predictive_gaussian(self, x):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -503,7 +502,6 @@ class LinearGaussianWithMatrixNormalWishart:
 
     def posterior_predictive_studentt(self, x):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -590,7 +588,6 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
 
     def posterior_predictive_gaussian(self, x):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -610,7 +607,6 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
 
     def posterior_predictive_studentt(self, x):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))

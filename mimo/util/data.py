@@ -9,22 +9,27 @@ def transform(mu, trans=None):
         return trans.transform(mu)
 
 
-def inverse_transform(mu, var=None, trans=None):
+def inverse_transform_mean(mu, trans):
     if trans is None:
-        if var is None:
-            return mu
-        else:
-            return mu, var
+        return mu
     else:
-        _mu = trans.inverse_transform(mu)
-        if var is None:
-            return _mu
-        else:
-            mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_\
-                if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
+        return trans.inverse_transform(mu)
 
-            _var = np.einsum('kh,nhj,ji->nki', mat, var, mat.T)
-            return _mu, _var
+
+def inverse_transform_variance(var, trans):
+    if trans is None:
+        return var
+    else:
+        mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_ \
+            if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
+
+        return np.einsum('kh,...hj,ji->...ki', mat, var, mat.T)
+
+
+def inverse_transform(mu, var, trans=None):
+    _mu = inverse_transform_mean(mu, trans)
+    _var = inverse_transform_variance(var, trans)
+    return _mu, var
 
 
 def tofloat(x):
