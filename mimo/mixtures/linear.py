@@ -260,7 +260,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         scores, z = self._meanfield_update_sweep(y, x)
         if self.has_data():
             self.labels = z
-        # return self.variational_lowerbound(y, x, scores)
+        return self.variational_lowerbound(y, x, scores)
 
     def _meanfield_update_sweep(self, y, x):
         scores, z = self._meanfield_update_labels(y, x)
@@ -437,9 +437,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 else np.linalg.inv(psi * df) * df / (df - 2.)
 
         weights = self.gating.posterior.mean()
-        weighted_var = np.einsum('khn,n->khn', var, weights)
+        var = np.einsum('khn,n->kh', var, weights)
 
-        return weighted_var
+        from mimo.util.data import inverse_transform_variance
+        return inverse_transform_variance(var, self.target_transform)
 
     def meanfield_prediction(self, x, y=None,
                              prediction='average',
