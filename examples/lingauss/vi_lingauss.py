@@ -32,4 +32,4 @@ prior = MatrixNormalWishart(**hypparams)
 
 model = LinearGaussianWithMatrixNormalWishart(prior, affine=False)
 model.meanfield_update(y=y, x=x)
-print("ML transf."+"\n", model.likelihood.A, "\n"+"ML covariance"+"\n", model.likelihood.sigma)
+print("VI transf."+"\n", model.likelihood.A, "\n"+"VI covariance"+"\n", model.likelihood.sigma)

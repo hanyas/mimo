@@ -43,7 +43,6 @@ model.add_data(obs)
 
 print('Gibbs Sampling')
 for _ in progprint_xrange(1000):
-    print(model.gating.likelihood.params)
     model.resample()
 
 plt.figure()
