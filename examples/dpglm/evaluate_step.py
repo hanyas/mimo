@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
     axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    for c in [1., 2.]:
+    for c in [1., 2., 3.]:
         axes[0].fill_between(sorted_input,
                              sorted_mu - c * sorted_std,
                              sorted_mu + c * sorted_std,
