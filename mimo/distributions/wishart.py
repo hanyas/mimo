@@ -2,8 +2,8 @@ import numpy as np
 import numpy.random as npr
 
 import scipy as sc
-from scipy import stats
 from scipy.special import multigammaln, digamma
+from scipy.linalg.lapack import get_lapack_funcs
 
 from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
@@ -45,23 +45,28 @@ class Wishart(Distribution):
 
         return self._psi_chol
 
+    # copied from scipy
     def rvs(self, size=1):
-        assert size == 1
+        # Random normal variates for off-diagonal elements
+        n_tril = self.dim * (self.dim - 1) // 2
+        covariances = npr.normal(size=n_tril).reshape((n_tril,))
 
-        # # This is slow
-        # return stats.wishart(df=self.nu, scale=self.psi).rvs(size).reshape(self.dim, self.dim)
+        # Random chi-square variates for diagonal elements
+        variances = (np.r_[[npr.chisquare(self.nu - (i + 1) + 1, size=1)**0.5
+                            for i in range(self.dim)]].reshape((self.dim,)).T)
 
-        # This is faster
-        # use matlab's heuristic for choosing between the two different sampling schemes
-        if (self.nu <= 81 + self.dim) and (self.nu == np.round(self.nu)):
-            # direct
-            X = np.dot(self.psi_chol, np.random.normal(size=(int(self.dim), int(self.nu))))
-        else:
-            A = np.diag(np.sqrt(npr.chisquare(self.nu - np.arange(self.dim))))
-            A[np.tri(self.dim, k=-1, dtype=bool)] = npr.normal(size=int(self.dim * (self.dim - 1) / 2.))
-            X = np.dot(self.psi_chol, A)
+        A = np.zeros((self.dim, self.dim))
 
-        return np.dot(X, X.T)
+        # Input the covariances
+        tril_idx = np.tril_indices(self.dim, k=-1)
+        A[tril_idx] = covariances
+
+        # Input the variances
+        diag_idx = np.diag_indices(self.dim)
+        A[diag_idx] = variances
+
+        T = np.dot(self.psi_chol, A)
+        return np.dot(T, T.T)
 
     def mean(self):
         return self.nu * self.psi
@@ -188,22 +193,41 @@ class InverseWishart(Distribution):
             self._psi_chol = np.linalg.cholesky(self.psi)
         return self._psi_chol
 
+    # copied from scipy
     def rvs(self, size=1):
-        assert size == 1
+        # Random normal variates for off-diagonal elements
+        n_tril = self.dim * (self.dim - 1) // 2
+        covariances = npr.normal(size=n_tril).reshape((n_tril,))
 
-        # # This is slow
-        # return stats.invwishart(df=self.nu, scale=self.psi).rvs(size).reshape(self.dim, self.dim)
+        # Random chi-square variates for diagonal elements
+        variances = (np.r_[[npr.chisquare(self.nu - (i + 1) + 1, size=1)**0.5
+                            for i in range(self.dim)]].reshape((self.dim,)).T)
 
-        # This is faster
-        if (self.nu <= 81 + self.dim) and (self.nu == np.round(self.nu)):
-            x = npr.randn(int(self.nu), self.dim)
+        A = np.zeros((self.dim, self.dim))
+
+        # Input the covariances
+        tril_idx = np.tril_indices(self.dim, k=-1)
+        A[tril_idx] = covariances
+
+        # Input the variances
+        diag_idx = np.diag_indices(self.dim)
+        A[diag_idx] = variances
+
+        eye = np.eye(self.dim)
+
+        L, lower = sc.linalg.cho_factor(self.psi, lower=True)
+        inv_scale = sc.linalg.cho_solve((L, lower), eye)
+        C = sc.linalg.cholesky(inv_scale, lower=True)
+
+        trtrs = get_lapack_funcs(('trtrs'), (A,))
+
+        T = np.dot(C, A)
+        if self.dim > 1:
+            T, _ = trtrs(T, eye, lower=True)
         else:
-            x = np.diag(np.sqrt(np.atleast_1d(stats.chi2.rvs(self.nu - np.arange(self.dim)))))
-            x[np.triu_indices_from(x, 1)] = npr.randn(self.dim * (self.dim - 1) // 2)
-        R = np.linalg.qr(x, 'r')
-        T = sc.linalg.solve_triangular(R.T, self.psi_chol.T, lower=True).T
+            T = 1. / T
 
-        return np.dot(T, T.T)
+        return np.dot(T.T, T)
 
     def mean(self):
         assert self.nu > (self.dim + 1)
