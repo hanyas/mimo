@@ -7,9 +7,9 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo.distributions import NormalGamma
+from mimo.distributions import NormalGamma, NormalWishart
 from mimo.distributions import MatrixNormalWishart
-from mimo.distributions import GaussianWithNormalGamma
+from mimo.distributions import GaussianWithNormalGamma, GaussianWithNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 from mimo.distributions import StickBreaking
@@ -90,8 +90,8 @@ def _job(kwargs):
                                                  basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=True,
-                   transform_type='Standard')
+
+    dpglm.add_data(target, input, whiten=True)
 
     for _ in range(args.super_iters):
         # Gibbs sampling
@@ -158,12 +158,12 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
