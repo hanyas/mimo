@@ -238,6 +238,7 @@ class GaussianWithDiagonalPrecision(Distribution):
     def lmbdas(self, value):
         self._lmbdas = value
         self._lmbda_chol = None
+        self._lmbda_chol_inv = None
 
     @property
     def lmbda(self):
