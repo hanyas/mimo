@@ -7,9 +7,9 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo.distributions import NormalGamma, NormalWishart
+from mimo.distributions import NormalGamma
 from mimo.distributions import MatrixNormalWishart
-from mimo.distributions import GaussianWithNormalGamma, GaussianWithNormalWishart
+from mimo.distributions import GaussianWithNormalGamma
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 from mimo.distributions import StickBreaking
