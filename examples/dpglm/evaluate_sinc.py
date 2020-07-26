@@ -291,8 +291,7 @@ if __name__ == "__main__":
 
     # plot gaussian activations
     activations = dpglms[choice].meanfield_predictive_activation(input)
-    for i in range(len(dpglms[choice].used_labels)):
-        axes[1].plot(input, activations[:, i])
+    axes[1].plot(input, activations)
 
     # save figs
     import tikzplotlib
