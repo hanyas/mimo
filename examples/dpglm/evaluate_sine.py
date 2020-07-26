@@ -244,7 +244,6 @@ if __name__ == "__main__":
     axes[1].set_ylabel('p(x)')
 
     activations = dpglm.meanfield_predictive_activation(sorted_input)
-    for i in range(activations.shape[-1]):
-        axes[1].plot(sorted_input, activations[:, i])
+    axes[1].plot(sorted_input, activations)
 
     plt.show()

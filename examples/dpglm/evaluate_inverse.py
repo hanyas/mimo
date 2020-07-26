@@ -86,7 +86,8 @@ def _job(kwargs):
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                                  basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=False)
+    dpglm.add_data(target, input, whiten=False,
+                   labels_from_prior=True)
 
     for _ in range(args.super_iters):
         # Gibbs sampling
@@ -221,7 +222,7 @@ if __name__ == "__main__":
     activations = dpglm.meanfield_predictive_activation(sorted_input)
 
     colours = ['green', 'orange', 'purple']
-    for i in range(len(dpglm.used_labels)):
+    for i in dpglm.used_labels:
         axes[1].plot(sorted_input, activations[:, i], color=colours[i])
 
     # set working directory

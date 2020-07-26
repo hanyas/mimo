@@ -252,9 +252,8 @@ if __name__ == "__main__":
     axes[1].set_xlabel('x')
     axes[1].set_ylabel('p(x)')
 
-    activations = dpglm.meanfield_predictive_activation(sorted_trans_input)
-    for i in range(len(dpglm.used_labels)):
-        axes[1].plot(sorted_input, activations[:, i])
+    activations = dpglm.meanfield_predictive_activation(sorted_input)
+    axes[1].plot(sorted_input, activations)
 
     # set working directory
     dataset = 'step_poly_features'
