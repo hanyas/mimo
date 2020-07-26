@@ -49,7 +49,7 @@ def _job(kwargs):
 
     # initialize Normal
     alpha_ng = 1.
-    beta_ng = 1. / (2 * 1e2)
+    beta_ng = 1. / (1 * 1e2)
     kappas = 1e-2
 
     # initialize Matrix-Normal
@@ -93,17 +93,17 @@ def _job(kwargs):
     dpglm.add_data(target, input, whiten=True,
                    transform_type='Standard')
 
+    # Gibbs sampling
+    if args.verbose:
+        print("Gibbs Sampling")
+
+    gibbs_iter = range(args.gibbs_iters) if not args.verbose \
+        else progprint_xrange(args.gibbs_iters)
+
+    for _ in gibbs_iter:
+        dpglm.resample()
+
     for _ in range(args.super_iters):
-        # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
-
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
-
-        for _ in gibbs_iter:
-            dpglm.resample()
-
         if args.stochastic:
             # Stochastic meanfield VI
             if args.verbose:
@@ -157,13 +157,13 @@ if __name__ == "__main__":
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=5, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=25, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=512, type=int)
@@ -237,14 +237,14 @@ if __name__ == "__main__":
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes[0].set_ylabel('y')
-    axes[0].set_ylim(-25., 25.)
+    axes[0].set_ylim(-8., 8.)
 
     # plot gaussian activations
     axes[1].set_xlabel('x')
     axes[1].set_ylabel('p(x)')
 
     activations = dpglm.meanfield_predictive_activation(sorted_input)
-    for i in range(len(dpglm.used_labels)):
+    for i in range(activations.shape[-1]):
         axes[1].plot(sorted_input, activations[:, i])
 
     plt.show()
