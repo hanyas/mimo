@@ -15,7 +15,7 @@ from mimo.util.stats import sample_discrete_from_log
 from mimo.util.text import progprint_xrange
 
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 eps = np.finfo(np.float64).tiny
 
@@ -87,9 +87,14 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 if transform_type == 'PCA':
                     self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
                     self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
-                else:
+                elif transform_type == 'Standard':
                     self.target_transform = StandardScaler()
                     self.input_transform = StandardScaler()
+                elif transform_type == 'MinMax':
+                    self.target_transform = MinMaxScaler((-1., 1.))
+                    self.input_transform = MinMaxScaler((-1., 1.))
+                else:
+                    raise NotImplementedError
 
                 self.target_transform.fit(Y)
                 self.input_transform.fit(X)
@@ -265,7 +270,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         scores, z = self._meanfield_update_sweep(y, x)
         if self.has_data():
             self.labels = z
-        return self.variational_lowerbound(y, x, scores)
+        # return self.variational_lowerbound(y, x, scores)
 
     def _meanfield_update_sweep(self, y, x):
         scores, z = self._meanfield_update_labels(y, x)
