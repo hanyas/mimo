@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 
 def transform(mu, trans=None):
@@ -20,8 +21,13 @@ def inverse_transform_variance(var, trans):
     if trans is None:
         return var
     else:
-        mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_ \
-            if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
+        mat = None
+        if isinstance(trans, PCA):
+            mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_
+        elif isinstance(trans, StandardScaler):
+            mat = np.diag(np.sqrt(trans.var_))
+        elif isinstance(trans, MinMaxScaler):
+            mat = np.diag(trans.scale_)
 
         return np.einsum('kh,...hj,ji->...ki', mat, var, mat.T)
 
@@ -29,7 +35,7 @@ def inverse_transform_variance(var, trans):
 def inverse_transform(mu, var, trans=None):
     _mu = inverse_transform_mean(mu, trans)
     _var = inverse_transform_variance(var, trans)
-    return _mu, var
+    return _mu, _var
 
 
 def tofloat(x):
