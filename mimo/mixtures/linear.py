@@ -395,16 +395,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
-    def meanfield_predictive_moments(self, x, dist='gaussian'):
+    def meanfield_predictive_moments(self, x, dist='gaussian', aleatoric_only=False):
         mu, var = np.zeros((len(x), self.drow, self.size)),\
                   np.zeros((len(x), self.drow, self.drow, self.size))
 
         for n, model in enumerate(self.models):
             if dist == 'gaussian':
-                mu[..., n], _lmbda = model.posterior_predictive_gaussian(x)
+                mu[..., n], _lmbda = model.posterior_predictive_gaussian(x, aleatoric_only)
                 var[..., n] = np.linalg.inv(_lmbda)
             else:
-                mu[..., n], _lmbda, _df = model.posterior_predictive_studentt(x)
+                mu[..., n], _lmbda, _df = model.posterior_predictive_studentt(x, aleatoric_only)
                 var[..., n] = np.linalg.inv(_lmbda) * _df / (_df - 2)
 
         return mu, var
@@ -428,18 +428,26 @@ class BayesianMixtureOfLinearGaussians(Conditional):
               - np.einsum('nk,nh->nkh', mu, mu)
         return mu, var
 
-    def meanfield_aleatoric(self, dist='gaussian'):
-        var = np.zeros((self.drow, self.drow, self.size))
-        for n, model in enumerate(self.models):
-            _, _, psi, nu = model.posterior.params
-            df = nu - model.likelihood.drow + 1
-            var[..., n] = np.linalg.inv(psi * df) if dist == 'gaussian'\
-                else np.linalg.inv(psi * df) * df / (df - 2.)
-
-        weights = self.gating.posterior.mean()
-        var = np.einsum('khn,n->kh', var, weights)
-
+    def meanfield_predictive_aleatoric(self, dist='gaussian'):
         from mimo.util.data import inverse_transform_variance
+        weights = self.gating.posterior.mean()
+
+        mus, vars = np.zeros((self.size, self.drow)),\
+                    np.zeros((self.size, self.drow, self.drow))
+
+        for n, (basis, model) in enumerate(zip(self.basis, self.models)):
+            x = basis.posterior.gaussian.mu
+            if dist == 'gaussian':
+                mus[n, :], _lmbda = model.posterior_predictive_gaussian(x, True)
+                vars[n, ...] = np.linalg.inv(_lmbda)
+            else:
+                mus[n, :], _lmbda, _df = model.posterior_predictive_studentt(x, True)
+                vars[n, ...] = np.linalg.inv(_lmbda) * _df / (_df - 2)
+
+        mu = np.einsum('nk,n->k', mus, weights)
+        var = np.einsum('nkh,n->kh', vars + np.einsum('nk,nh->nkh', mus, mus), weights)\
+              - np.einsum('k,h->kh', mu, mu)
+
         return inverse_transform_variance(var, self.target_transform)
 
     def meanfield_prediction(self, x, y=None,
