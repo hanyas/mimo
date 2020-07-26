@@ -374,14 +374,16 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         x = x if not self.whitend \
             else self.input_transform.transform(x)
 
-        labels = self.used_labels
+        weights = self.gating.posterior.mean()
+
+        labels = range(self.size)
         activations = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
             activations[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
                 if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        activations = np.exp(activations)
+        activations = weights[labels] * np.exp(activations) + eps
         activations = activations / np.sum(activations, axis=1, keepdims=True)
         return activations
 
