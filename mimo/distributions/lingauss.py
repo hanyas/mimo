@@ -93,9 +93,9 @@ class LinearGaussianWithPrecision(Conditional):
     def predict(self, x):
         if self.affine:
             A, b = self.A[:, :-1], self.A[:, -1]
-            y = np.einsum('kh,...h->...k', A, x, optimize='optimal') + b.T
+            y = np.einsum('kh,...h->...k', A, x, optimize=True) + b.T
         else:
-            y = np.einsum('kh,...h->...k', self.A, x, optimize='optimal')
+            y = np.einsum('kh,...h->...k', self.A, x, optimize=True)
 
         return y
 
@@ -115,9 +115,9 @@ class LinearGaussianWithPrecision(Conditional):
         y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
 
         mu = self.mean(x)
-        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
+        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
                   - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize='optimal')
+                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -138,9 +138,9 @@ class LinearGaussianWithPrecision(Conditional):
                 contract = 'nk,nh->kh'
                 n = y.shape[0]
 
-            yxT = np.einsum(contract, y, x, optimize='optimal')
-            xxT = np.einsum(contract, x, x, optimize='optimal')
-            yyT = np.einsum(contract, y, y, optimize='optimal')
+            yxT = np.einsum(contract, y, x, optimize=True)
+            xxT = np.einsum(contract, x, x, optimize=True)
+            yyT = np.einsum(contract, y, y, optimize=True)
 
             return Stats([yxT, xxT, yyT, n])
         else:
@@ -164,9 +164,9 @@ class LinearGaussianWithPrecision(Conditional):
                 contract = 'nk,n,nh->kh'
                 n = np.sum(weights)
 
-            yxT = np.einsum(contract, y, weights, x, optimize='optimal')
-            xxT = np.einsum(contract, x, weights, x, optimize='optimal')
-            yyT = np.einsum(contract, y, weights, y, optimize='optimal')
+            yxT = np.einsum(contract, y, weights, x, optimize=True)
+            xxT = np.einsum(contract, x, weights, x, optimize=True)
+            yyT = np.einsum(contract, y, weights, y, optimize=True)
 
             return Stats([yxT, xxT, yyT, n])
         else:
@@ -290,9 +290,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def predict(self, x):
         if self.affine:
             A, b = self.A[:, :-1], self.A[:, -1]
-            y = np.einsum('kh,...h->...k', A, x, optimize='optimal') + b.T
+            y = np.einsum('kh,...h->...k', A, x, optimize=True) + b.T
         else:
-            y = np.einsum('kh,...h->...k', self.A, x, optimize='optimal')
+            y = np.einsum('kh,...h->...k', self.A, x, optimize=True)
 
         return y
 
@@ -312,9 +312,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         y = np.nan_to_num(y, copy=False).reshape((-1, self.drow))
 
         mu = self.mean(x)
-        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize='optimal')\
+        log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
                   - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize='optimal')
+                  - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -335,9 +335,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
                 c0, c1 = 'nk,nh->kh', 'nk,nk->k'
                 n = y.shape[0]
 
-            yxT = np.einsum(c0, y, x, optimize='optimal')
-            xxT = np.einsum(c0, x, x, optimize='optimal')
-            yy = np.einsum(c1, y, y, optimize='optimal')
+            yxT = np.einsum(c0, y, x, optimize=True)
+            xxT = np.einsum(c0, x, x, optimize=True)
+            yy = np.einsum(c1, y, y, optimize=True)
 
             return Stats([yxT, xxT, yy, n])
         else:
@@ -361,9 +361,9 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
                 c0, c1 = 'nk,n,nh->kh', 'nk,n,nk->k'
                 n = np.sum(weights)
 
-            yxT = np.einsum(c0, y, weights, x, optimize='optimal')
-            xxT = np.einsum(c0, x, weights, x, optimize='optimal')
-            yy = np.einsum(c1, y, weights, y, optimize='optimal')
+            yxT = np.einsum(c0, y, weights, x, optimize=True)
+            xxT = np.einsum(c0, x, weights, x, optimize=True)
+            yy = np.einsum(c1, y, weights, y, optimize=True)
 
             return Stats([yxT, xxT, yy, n])
         else:

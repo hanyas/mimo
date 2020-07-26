@@ -7,10 +7,15 @@ from mimo.abstraction import Statistics as Stats
 
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
+
 from mimo.distributions import LinearGaussianWithPrecision
+from mimo.distributions import LinearGaussianWithDiagonalPrecision
+
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
+
 from mimo.distributions import MatrixNormalWithPrecision
+from mimo.distributions import MatrixNormalWithDiagonalPrecision
 
 from mimo.util.matrix import invpd, blockarray
 from mimo.util.data import extendlists
@@ -147,7 +152,7 @@ class NormalWishart(Distribution):
         E_logdet_lmbda = 2. * _E_logdet_lmbda
 
         xc = np.einsum('nk,kh,nh->n', x - self.gaussian.mu, self.wishart.psi,
-                       x - self.gaussian.mu, optimize='optimal')
+                       x - self.gaussian.mu, optimize=True)
 
         # see Eqs. 10.64, 10.67, and 10.71 in Bishop
         # sneaky gaussian/quadratic identity hidden here
