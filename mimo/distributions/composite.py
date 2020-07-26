@@ -565,7 +565,63 @@ class MatrixNormalWishart(Distribution):
 
         xy = np.hstack((x, y))
 
-        res += np.einsum('ni,ni->n', xy.dot(parammat), xy, optimize='optimal')
+        res += np.einsum('ni,ni->n', xy.dot(parammat), xy, optimize=True)
         res += - self.drow / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdet_lmbda
 
         return res
+
+
+class MatrixNormalGamma(Distribution):
+
+    def __init__(self, M, K, alphas, betas):
+        self.matnorm = MatrixNormalWithDiagonalPrecision(M=M, K=K)
+        self.gamma = Gamma(alphas=alphas, betas=betas)
+
+    @property
+    def dcol(self):
+        return self.matnorm.dcol
+
+    @property
+    def drow(self):
+        return self.matnorm.drow
+
+    @property
+    def params(self):
+        return self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas
+
+    @params.setter
+    def params(self, values):
+        self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas = values
+
+    def rvs(self, size=1):
+        lmbdas = self.gamma.rvs()
+        self.matnorm.vs = lmbdas
+        A = self.matnorm.rvs()
+        return A, lmbdas
+
+    def mean(self):
+        return self.matnorm.mean(), self.gamma.mean()
+
+    def mode(self):
+        return self.matnorm.mode(), self.gamma.mode()
+
+    def log_likelihood(self, x):
+        A, lmbdas = x
+        return MatrixNormalWithDiagonalPrecision(M=self.matnorm.M, vs=lmbdas,
+                                                 K=self.matnorm.K).log_likelihood(A)\
+               + self.gamma.log_likelihood(lmbdas)
+
+    @property
+    def base(self):
+        return self.matnorm.base * self.gamma.base
+
+    def log_base(self):
+        return np.log(self.base)
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
