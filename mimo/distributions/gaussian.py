@@ -82,8 +82,8 @@ class GaussianWithCovariance(Distribution):
         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
         x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
 
-        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize='optimal')\
-                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize='optimal')
+        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize=True)\
+                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize=True)
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -100,8 +100,8 @@ class GaussianWithCovariance(Distribution):
                 c0, c1 = 'nk->k', 'nk,nh->kh'
                 n = data.shape[0]
 
-            x = np.einsum(c0, data, optimize='optimal')
-            xxT = np.einsum(c1, data, data, optimize='optimal')
+            x = np.einsum(c0, data, optimize=True)
+            xxT = np.einsum(c1, data, data, optimize=True)
 
             return Stats([x, n, xxT, n])
         else:
@@ -122,8 +122,8 @@ class GaussianWithCovariance(Distribution):
                 c0, c1 = 'n,nk->k', 'nk,n,nh->kh'
                 n = np.sum(weights)
 
-            x = np.einsum(c0, weights, data, optimize='optimal')
-            xxT = np.einsum(c1, data, weights, data, optimize='optimal')
+            x = np.einsum(c0, weights, data, optimize=True)
+            xxT = np.einsum(c1, data, weights, data, optimize=True)
 
             return Stats([x, n, xxT, n])
         else:
@@ -283,8 +283,8 @@ class GaussianWithPrecision(Distribution):
         bads = np.isnan(np.atleast_2d(x)).any(axis=1)
         x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
 
-        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize='optimal')\
-                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize='optimal')
+        log_lik = np.einsum('k,kh,nh->n', self.mu, self.lmbda, x, optimize=True)\
+                  - 0.5 * np.einsum('nk,kh,nh->n', x, self.lmbda, x, optimize=True)
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
@@ -301,8 +301,8 @@ class GaussianWithPrecision(Distribution):
                 c0, c1 = 'nk->k', 'nk,nh->kh'
                 n = data.shape[0]
 
-            x = np.einsum(c0, data, optimize='optimal')
-            xxT = np.einsum(c1, data, data, optimize='optimal')
+            x = np.einsum(c0, data, optimize=True)
+            xxT = np.einsum(c1, data, data, optimize=True)
 
             return Stats([x, n, xxT, n])
         else:
@@ -323,8 +323,8 @@ class GaussianWithPrecision(Distribution):
                 c0, c1 = 'n,nk->k', 'nk,n,nh->kh'
                 n = np.sum(weights)
 
-            x = np.einsum(c0, weights, data, optimize='optimal')
-            xxT = np.einsum(c1, data, weights, data, optimize='optimal')
+            x = np.einsum(c0, weights, data, optimize=True)
+            xxT = np.einsum(c1, data, weights, data, optimize=True)
 
             return Stats([x, n, xxT, n])
         else:
