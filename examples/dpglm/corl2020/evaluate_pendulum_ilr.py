@@ -7,15 +7,18 @@ import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo.distributions import NormalWishart
+
+from mimo.distributions import NormalGamma
+from mimo.distributions import GaussianWithNormalGamma
+
 from mimo.distributions import MatrixNormalWishart
-from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 from mimo.distributions import StickBreaking
+from mimo.distributions import CategoricalWithStickBreaking
+
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
-from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
 from mimo.util.text import progprint_xrange
@@ -48,8 +51,9 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e-1
-    kappa = 1e-2
+    alpha_ng = 1.
+    beta_ng = 1. / (2. * 1e-1)
+    kappas = 1e-2
 
     # initialize Matrix-Normal
     psi_mnw = 1e1
@@ -57,10 +61,11 @@ def _job(kwargs):
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim, )),
-                               psi=np.eye(input_dim) * psi_nw,
-                               kappa=kappa, nu=input_dim + 1)
+                               alphas=np.ones(input_dim) * alpha_ng,
+                               betas=np.ones(input_dim) * beta_ng,
+                               kappas=np.ones(input_dim) * kappas)
 
-        aux = NormalWishart(**basis_hypparams)
+        aux = NormalGamma(**basis_hypparams)
         basis_prior.append(aux)
 
         models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
@@ -76,7 +81,7 @@ def _job(kwargs):
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -85,7 +90,7 @@ def _job(kwargs):
         gating_prior = Dirichlet(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -97,7 +102,7 @@ def _job(kwargs):
     target_transform.var_ = np.array([1., 1.])**2
 
     input_transform = StandardScaler()
-    input_transform.mean_ = np.array([-1., 0., 0., 0.])
+    input_transform.mean_ = np.array([0., 0., 0., 0.])
     input_transform.scale_ = np.array([1., 1., 10., 2.])
     input_transform.var_ = np.array([1., 1., 10., 2.])**2
 
@@ -111,7 +116,7 @@ def _job(kwargs):
         if args.verbose:
             print("Gibbs Sampling")
 
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
+        gibbs_iter = range(args.gibbs_iters) if not args.verbose \
             else progprint_xrange(args.gibbs_iters)
 
         for _ in gibbs_iter:
