@@ -70,12 +70,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     def add_data(self, y, x, whiten=False,
                  target_transform=False,
                  input_transform=False,
-                 transform_type='PCA'):
+                 transform_type='PCA',
+                 labels_from_prior=False):
 
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
-        for _y in y:
-            self.labels.append(self.gating.likelihood.rvs(len(_y)))
 
         if whiten:
             self.whitend = True
@@ -104,6 +103,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         else:
             self.target = y
             self.input = x
+
+        if labels_from_prior:
+            for _y, _x in zip(self.target, self.input):
+                self.labels.append(self.gating.likelihood.rvs(len(_y)))
+        else:
+            self.labels = self._resample_labels(self.target, self.input)
 
     def clear_data(self):
         self.input.clear()
