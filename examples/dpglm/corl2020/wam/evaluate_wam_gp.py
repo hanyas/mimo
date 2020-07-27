@@ -19,11 +19,11 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    train_input = np.load(args.datapath + '/wam/wam_inv_train.npz')['input']
-    train_target = np.load(args.datapath + '/wam/wam_inv_train.npz')['target']
+    train_input = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['input']
+    train_target = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['target']
 
-    test_input = np.load(args.datapath + '/wam/wam_inv_test.npz')['input']
-    test_target = np.load(args.datapath + '/wam/wam_inv_test.npz')['target']
+    test_input = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['input']
+    test_target = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['target']
 
     # scale data
     input_data = np.vstack((train_input, test_input))
@@ -51,7 +51,7 @@ if __name__ == "__main__":
         for i in range(nb_outputs):
             target_transform.fit(target_data[:, i][:, None])
 
-            _gp = GPRegressor(input_size=18, device='gpu',
+            _gp = GPRegressor(input_size=12, device='gpu',
                               input_transform=input_transform,
                               target_transform=target_transform)
 
