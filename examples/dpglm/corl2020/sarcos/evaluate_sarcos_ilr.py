@@ -99,18 +99,17 @@ def _job(kwargs):
                    target_transform=target_transform,
                    input_transform=input_transform)
 
-    for _ in range(args.super_iters):
-        # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
+    # Gibbs sampling
+    if args.verbose:
+        print("Gibbs Sampling")
 
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
+    gibbs_iter = range(args.gibbs_iters) if not args.verbose\
+        else progprint_xrange(args.gibbs_iters)
 
-        for _ in gibbs_iter:
-            dpglm.resample()
+    for _ in gibbs_iter:
+        dpglm.resample()
 
-    for _ in range(args.super_iters):
+    for i in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             if args.verbose:
@@ -133,10 +132,11 @@ def _job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
+        if args.super_iters > 1 and i + 1 < args.super_iters:
+            dpglm.gating.prior = dpglm.gating.posterior
+            for i in range(dpglm.size):
+                dpglm.basis[i].prior = dpglm.basis[i].posterior
+                dpglm.models[i].prior = dpglm.models[i].posterior
 
     return dpglm
 
