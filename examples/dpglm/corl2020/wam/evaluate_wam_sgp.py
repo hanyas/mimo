@@ -19,11 +19,11 @@ if __name__ == "__main__":
 
     np.random.seed(1337)
 
-    train_input = np.load(args.datapath + '/wam/wam_inv_train.npz')['input']
-    train_target = np.load(args.datapath + '/wam/wam_inv_train.npz')['target']
+    train_input = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['input']
+    train_target = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['target']
 
-    test_input = np.load(args.datapath + '/wam/wam_inv_test.npz')['input']
-    test_target = np.load(args.datapath + '/wam/wam_inv_test.npz')['target']
+    test_input = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['input']
+    test_target = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['target']
 
     # scale data
     input_data = np.vstack((train_input, test_input))
