@@ -52,7 +52,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e1
+    psi_nw = 1e2
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -99,18 +99,17 @@ def _job(kwargs):
                    target_transform=target_transform,
                    input_transform=input_transform)
 
-    for _ in range(args.super_iters):
-        # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
+    # Gibbs sampling
+    if args.verbose:
+        print("Gibbs Sampling")
 
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
+    gibbs_iter = range(args.gibbs_iters) if not args.verbose\
+        else progprint_xrange(args.gibbs_iters)
 
-        for _ in gibbs_iter:
-            dpglm.resample()
+    for _ in gibbs_iter:
+        dpglm.resample()
 
-    for _ in range(args.super_iters):
+    for i in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             if args.verbose:
@@ -133,10 +132,11 @@ def _job(kwargs):
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
+        if args.super_iters > 1 and i + 1 < args.super_iters:
+            dpglm.gating.prior = dpglm.gating.posterior
+            for i in range(dpglm.size):
+                dpglm.basis[i].prior = dpglm.basis[i].posterior
+                dpglm.models[i].prior = dpglm.models[i].posterior
 
     return dpglm
 
@@ -159,8 +159,8 @@ if __name__ == "__main__":
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/robot'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
-    parser.add_argument('--prior', help='prior type', default='dirichlet')
-    parser.add_argument('--alpha', help='concentration parameter', default=1., type=float)
+    parser.add_argument('--prior', help='prior type', default='stick-breaking')
+    parser.add_argument('--alpha', help='concentration parameter', default=1000, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=1000, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--svi_iters', help='SVI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-3, type=float)
@@ -187,19 +187,19 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    train_input = np.load(args.datapath + '/wam/wam_inv_train.npz')['input']
-    train_target = np.load(args.datapath + '/wam/wam_inv_train.npz')['target'][:, :1]
+    train_input = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['input']
+    train_target = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['target']
 
-    test_input = np.load(args.datapath + '/wam/wam_inv_test.npz')['input']
-    test_target = np.load(args.datapath + '/wam/wam_inv_test.npz')['target'][:, :1]
+    test_input = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['input']
+    test_target = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['target']
 
     input_data = np.vstack((train_input, test_input))
     target_data = np.vstack((train_target, test_target))
 
     # scale data
     from sklearn.decomposition import PCA
-    input_transform = PCA(n_components=18, whiten=True)
-    target_transform = PCA(n_components=1, whiten=True)
+    input_transform = PCA(n_components=12, whiten=True)
+    target_transform = PCA(n_components=4, whiten=True)
 
     input_transform.fit(input_data)
     target_transform.fit(target_data)
@@ -270,3 +270,30 @@ if __name__ == "__main__":
     dt.to_csv('wam_' + str(args.prior) +
               '_alpha_' + str(args.alpha) + '.csv',
               mode='a', index=True)
+
+    # save model
+    model = dpglms[0]
+    model.clear_data()
+
+    import pickle
+    pickle.dump(model, open("wam_invdyn.p", "wb"))
+
+    # load model
+    loaded = pickle.load(open("wam_invdyn.p", "rb"))
+
+    from mimo.mixtures.linear import CompressedMixtureOfLinearGaussians
+    compressed = CompressedMixtureOfLinearGaussians(mixture=loaded)
+
+    import time
+
+    start = time.time()
+    _exp_output = compressed.prediction(x=test_input[0, :])
+    stop = time.time()
+    print('time:', stop - start)
+    print('exp:', _exp_output)
+
+    start = time.time()
+    _output, _, _ = loaded.meanfield_prediction(x=test_input[0, :])
+    stop = time.time()
+    print('time:', stop - start)
+    print('output:', _output)
