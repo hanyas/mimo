@@ -517,3 +517,56 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 return mu, diag, np.sqrt(diag)
             else:
                 return mu, var, np.sqrt(diag)
+
+
+class CompressedMixtureOfLinearGaussians:
+    # This class compresses the above mixture
+    # for speed at prediction/deployment time
+
+    def __init__(self, mixture):
+        self.mixture = mixture
+
+        self.input_transform = self.mixture.input_transform
+        self.target_transform = self.mixture.target_transform
+
+        self.gating = {'weights': self.mixture.gating.posterior.mean()}
+
+        _basis_mus = np.vstack([b.posterior_predictive_gaussian()[0]
+                                    for b in self.mixture.basis])
+        _basis_lmbdas = np.stack([b.posterior_predictive_gaussian()[1]
+                                  for b in self.mixture.basis], axis=0)
+        _basis_logdet_lmbdas = np.linalg.slogdet(_basis_lmbdas)[1]
+
+        self.basis = {'mus': _basis_mus,
+                      'lmbdas': _basis_lmbdas,
+                      'logdet_lmbdas': _basis_logdet_lmbdas}
+
+        _models_mus = np.stack([m.posterior.matnorm.M for m in self.mixture.models], axis=0)
+        self.models = {'Ms': _models_mus}
+
+    def log_basis_predictive(self, x):
+        from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
+        return mvn_logpdf(x, self.basis['mus'],
+                          self.basis['lmbdas'],
+                          self.basis['logdet_lmbdas'])
+
+    def predictive_gating(self, x):
+        log_basis_predictive = self.log_basis_predictive(x)
+        effective_weights = self.gating['weights'] * np.exp(log_basis_predictive) + eps
+        effective_weights = effective_weights / np.sum(effective_weights)
+        return effective_weights
+
+    def predictive_output(self, x):
+        x = np.hstack((x, 1.))  # assumes affine input
+        return np.einsum('nkh,h->nk', self.models['Ms'], x)
+
+    def prediction(self, x):
+        from mimo.util.data import transform, inverse_transform_mean
+
+        x = np.squeeze(transform(np.atleast_2d(x), self.input_transform))
+
+        weights = self.predictive_gating(x)
+        mus = self.predictive_output(x)
+
+        output = np.einsum('nk,n->k', mus, weights)
+        return inverse_transform_mean(output, trans=self.target_transform)
