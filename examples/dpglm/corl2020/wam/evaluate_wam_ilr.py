@@ -21,7 +21,8 @@ from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
+
+from tqdm import tqdm
 
 import pathos
 from pathos.pools import ProcessPool as Pool
@@ -52,7 +53,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e2
+    psi_nw = 1e0
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -100,34 +101,17 @@ def _job(kwargs):
                    input_transform=input_transform)
 
     # Gibbs sampling
-    if args.verbose:
-        print("Gibbs Sampling")
-
-    gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-        else progprint_xrange(args.gibbs_iters)
-
-    for _ in gibbs_iter:
-        dpglm.resample()
+    dpglm.resample(maxiter=args.gibbs_iters,
+                   progprint=args.verbose)
 
     for i in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
-            if args.verbose:
-                print('Stochastic Variational Inference')
-
-            svi_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
-
-            batch_size = args.svi_batchsize
-            prob = batch_size / float(len(input))
-            for _ in svi_iter:
-                minibatch = npr.permutation(len(input))[:batch_size]
-                dpglm.meanfield_sgdstep(y=target[minibatch, :], x=input[minibatch, :],
-                                        prob=prob, stepsize=args.svi_stepsize)
+            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                               stepsize=args.svi_stepsize,
+                                               batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            if args.verbose:
-                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
@@ -147,7 +131,9 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = npr.randint(1337, 6174)
         kwargs_list.append(kwargs.copy())
 
-    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+    with Pool(processes=min(nb_jobs, nb_cores),
+              initializer=tqdm.set_lock,
+              initargs=(tqdm.get_lock(),)) as p:
         res = p.map(_job, kwargs_list)
 
     return res
@@ -170,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=10, type=int)
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--svi_iters', help='SVI iterations', default=1000, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-3, type=float)
@@ -187,11 +173,11 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    train_input = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['input']
-    train_target = np.load(args.datapath + '/wam4dof/wam_inv_train.npz')['target']
+    train_input = np.load(args.datapath + '/ourwam4dof/wam_inv_train.npz')['input']
+    train_target = np.load(args.datapath + '/ourwam4dof/wam_inv_train.npz')['target']
 
-    test_input = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['input']
-    test_target = np.load(args.datapath + '/wam4dof/wam_inv_test.npz')['target']
+    test_input = np.load(args.datapath + '/ourwam4dof/wam_inv_test.npz')['input']
+    test_target = np.load(args.datapath + '/ourwam4dof/wam_inv_test.npz')['target']
 
     input_data = np.vstack((train_input, test_input))
     target_data = np.vstack((train_target, test_target))
@@ -276,24 +262,24 @@ if __name__ == "__main__":
     model.clear_data()
 
     import pickle
-    pickle.dump(model, open("wam_invdyn.p", "wb"))
+    pickle.dump(model, open("wam_invdyn_slow_4.p", "wb"))
 
-    # load model
-    loaded = pickle.load(open("wam_invdyn.p", "rb"))
-
-    from mimo.mixtures.linear import CompressedMixtureOfLinearGaussians
-    compressed = CompressedMixtureOfLinearGaussians(mixture=loaded)
-
-    import time
-
-    start = time.time()
-    _exp_output = compressed.prediction(x=test_input[0, :])
-    stop = time.time()
-    print('time:', stop - start)
-    print('exp:', _exp_output)
-
-    start = time.time()
-    _output, _, _ = loaded.meanfield_prediction(x=test_input[0, :])
-    stop = time.time()
-    print('time:', stop - start)
-    print('output:', _output)
+    # # load model
+    # loaded = pickle.load(open("wam_invdyn.p", "rb"))
+    #
+    # from mimo.mixtures.linear import CompressedMixtureOfLinearGaussians
+    # compressed = CompressedMixtureOfLinearGaussians(mixture=loaded)
+    #
+    # import time
+    #
+    # start = time.time()
+    # _exp_output = compressed.prediction(x=test_input[0, :])
+    # stop = time.time()
+    # print('time:', stop - start)
+    # print('exp:', _exp_output)
+    #
+    # start = time.time()
+    # _output, _, _ = loaded.meanfield_prediction(x=test_input[0, :])
+    # stop = time.time()
+    # print('time:', stop - start)
+    # print('output:', _output)

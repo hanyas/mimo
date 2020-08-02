@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/robot'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
+    parser.add_argument('--nb_seeds', help='number of seeds', default=5, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=2500, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=2500, type=int)
@@ -179,6 +179,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
+    parser.add_argument('--output', help='choose output', default=0, type=int)
 
     args = parser.parse_args()
 
@@ -195,10 +196,10 @@ if __name__ == "__main__":
     test_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
     train_input = train_data[:, :21]
-    train_target = train_data[:, [22]]
+    train_target = train_data[:, [21 + args.output]]
 
     test_input = test_data[:, :21]
-    test_target = test_data[:, [22]]
+    test_target = test_data[:, [21 + args.output]]
 
     input_data = np.vstack((train_input, test_input))
     target_data = np.vstack((train_target, test_target))
@@ -274,6 +275,5 @@ if __name__ == "__main__":
                                        'nlpd_avg', 'nlpd_std',
                                        'models_avg', 'models_std'])
 
-    dt.to_csv('sarcos_' + str(args.prior) +
-              '_alpha_' + str(args.alpha) + '.csv',
-              mode='a', index=True)
+    dt.to_csv('sarcos_ilr_o_' + str(args.output)
+              + '.csv', mode='a', index=True)
