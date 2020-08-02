@@ -143,27 +143,25 @@ class MatrixNormalWithPrecision(Distribution):
 
 
 class MatrixNormalWithDiagonalPrecision(Distribution):
-    # Matrix normal distribution with diagonal column-
-    # and row precision. Kappa = column / input precision,
-    # Lambda = row / output precision, Omega = Kron(Kappa, Lambda)
-    def __init__(self, M=None, lmbdas=None, kappas=None):
+    def __init__(self, M=None, vs=None, K=None):
         self.M = M
-        self._lmbdas = lmbdas
-        self._kappas = kappas
+
+        self._vs = vs
+        self._K = K
+
+        self._V_chol = None
+        self._K_chol = None
 
         self._lmbda_chol = None
-        self._kappa_chol = None
-
-        self._omega_chol = None
-        self._omega_chol_inv = None
+        self._lmbda_chol_inv = None
 
     @property
     def params(self):
-        return self.M, self.lmbdas, self.kappas
+        return self.M, self.vs, self.K
 
     @params.setter
     def params(self, values):
-        self.M, self.lmbdas, self.kappas = values
+        self.M, self.vs, self.K = values
 
     @property
     def nb_params(self):
@@ -179,79 +177,70 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
         return self.M.shape[0]
 
     @property
-    def lmbdas(self):
-        return self._lmbdas
+    def vs(self):
+        return self._vs
 
-    @lmbdas.setter
-    def lmbdas(self, value):
-        self._lmbdas = value
+    @vs.setter
+    def vs(self, value):
+        self._vs = value
+        self._V_chol = None
+
         self._lmbda_chol = None
+        self._lmbda_chol_inv = None
 
-        self._omega_chol = None
-        self._omega_chol_inv = None
+    @property
+    def V(self):
+        assert self._vs is not None
+        return np.diag(self._vss)
+
+    @property
+    def V_chol(self):
+        if self._V_chol is None:
+            self._V_chol = np.diag(np.sqrt(self._vs))
+        return self._V_chol
+
+    @property
+    def K(self):
+        return self._K
+
+    @K.setter
+    def K(self, value):
+        self._K = value
+        self._K_chol = None
+
+        self._lmbda_chol = None
+        self._lmbda_chol_inv = None
+
+    @property
+    def K_chol(self):
+        # upper cholesky triangle
+        if self._K_chol is None:
+            self._K_chol = sc.linalg.cholesky(self.K, lower=False)
 
     @property
     def lmbda(self):
-        assert self._lmbdas is not None
-        return np.diag(self._lmbdas)
+        return np.kron(self.K, self.V)
 
     @property
     def lmbda_chol(self):
+        # upper cholesky triangle
         if self._lmbda_chol is None:
-            self._lmbda_chol = np.diag(np.sqrt(self._lmbdas))
+            self._lmbda_chol = sc.linalg.cholesky(self.lmbda, lower=False)
         return self._lmbda_chol
 
     @property
-    def kappas(self):
-        return self._kappas
-
-    @kappas.setter
-    def kappas(self, value):
-        self._kappas = value
-        self._kappa_chol = None
-
-        self._omega_chol = None
-        self._omega_chol_inv = None
-
-    @property
-    def kappa(self):
-        assert self._kappas is not None
-        return np.diag(self._kappas)
-
-    @property
-    def kappa_chol(self):
-        if self._kappa_chol is None:
-            self._kappa_chol = np.diag(np.sqrt(self._kappas))
-        return self._kappa_chol
-
-    @property
-    def omegas(self):
-        return np.diag(np.kron(self.kappa, self.lmbda))
-
-    @property
-    def omega(self):
-        return np.kron(self.kappa, self.lmbda)
-
-    @property
-    def omega_chol(self):
-        # upper cholesky triangle
-        if self._omega_chol is None:
-            self._omega_chol = np.diag(np.sqrt(self.omegas))
-        return self._omega_chol
-
-    @property
-    def omega_chol_inv(self):
-        if self._omega_chol_inv is None:
-            self._omega_chol_inv = np.diag(1. / np.sqrt(self.omegas))
-        return self._omega_chol_inv
+    def lmbda_chol_inv(self):
+        if self._lmbda_chol_inv is None:
+            self._lmbda_chol_inv = sc.linalg.inv(self.lmbda_chol)
+        return self._lmbda_chol_inv
 
     def rvs(self, size=1):
         if size == 1:
-            aux = npr.normal(size=self.drow * self.dcol).dot(self.omega_chol_inv.T)
+            aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (self.drow, self.dcol), order='F')
         else:
             size = tuple([size, self.drow * self.dcol])
-            aux = npr.normal(size=size).dot(self.omega_chol_inv.T)
+            aux = npr.normal(size=size).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (size, self.drow, self.dcol), order='F')
 
     def mean(self):
