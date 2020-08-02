@@ -13,8 +13,6 @@ from mimo.distributions import GaussianWithNormalWishart
 from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussians
 
-from mimo.util.text import progprint_xrange
-
 
 npr.seed(1337)
 
@@ -41,9 +39,7 @@ model = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior)
 
 model.add_data(obs)
 
-print('Gibbs Sampling')
-for _ in progprint_xrange(1000):
-    model.resample()
+model.resample(maxiter=1000)
 
 plt.figure()
 model.plot(obs)

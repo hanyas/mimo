@@ -9,10 +9,13 @@ from mimo.distributions.bayesian import CategoricalWithStickBreaking
 
 from mimo.util.decorate import pass_obs_arg, pass_obs_and_labels_arg
 from mimo.util.stats import sample_discrete_from_log
-from mimo.util.text import progprint_xrange
+from mimo.util.data import batches
 
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from tqdm import tqdm
+from pathos.helpers import mp
 
 
 class MixtureOfGaussians(Distribution):
@@ -92,21 +95,33 @@ class MixtureOfGaussians(Distribution):
         score /= np.sum(score, axis=1, keepdims=True)
         return score
 
-    def max_likelihood(self, obs):
+    def max_likelihood(self, obs, maxiter=1, progprint=True):
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
         obs = obs if isinstance(obs, list) else [obs]
 
-        # Expectation step
-        scores = []
-        for _obs in obs:
-            scores.append(self.scores(_obs))
+        with tqdm(total=maxiter, desc=f'EM #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                # Expectation step
+                scores = []
+                for _obs in obs:
+                    scores.append(self.scores(_obs))
 
-        # Maximization step
-        for idx, c in enumerate(self.components):
-            c.max_likelihood([_obs for _obs in obs],
-                             [_score[:, idx] for _score in scores])
+                # Maximization step
+                for idx, c in enumerate(self.components):
+                    c.max_likelihood([_obs for _obs in obs],
+                                     [_score[:, idx] for _score in scores])
 
-        # mixture weights
-        self.gating.max_likelihood(None, scores)
+                # mixture weights
+                self.gating.max_likelihood(None, scores)
+
+                pbar.update(1)
 
     def plot(self, obs=None, color=None, legend=False, alpha=None):
         obs = obs if isinstance(obs, list) else [obs]
@@ -190,10 +205,10 @@ class BayesianMixtureOfGaussians(Distribution):
         return used_labels
 
     def add_data(self, obs, whiten=False,
-                 transform_type='PCA'):
+                 transform_type='PCA',
+                 labels_from_prior=False):
+
         obs = obs if isinstance(obs, list) else [obs]
-        for _obs in obs:
-            self.labels.append(self.gating.likelihood.rvs(len(_obs)))
 
         if whiten:
             self.whitend = True
@@ -202,14 +217,24 @@ class BayesianMixtureOfGaussians(Distribution):
 
             if transform_type == 'PCA':
                 self.transform = PCA(n_components=data.shape[-1], whiten=True)
-            else:
+            elif transform_type == 'Standard':
                 self.transform = StandardScaler()
+            elif transform_type == 'MinMax':
+                self.transform = MinMaxScaler((-1., 1.))
+            else:
+                raise NotImplementedError
 
             self.transform.fit(data)
             for _obs in obs:
                 self.obs.append(self.transform.transform(_obs))
         else:
             self.obs = obs
+
+        if labels_from_prior:
+            for _obs in self.obs:
+                self.labels.append(self.gating.likelihood.rvs(len(_obs)))
+        else:
+            self.labels = self._resample_labels(self.obs)
 
     def clear_data(self):
         self.obs.clear()
@@ -276,29 +301,56 @@ class BayesianMixtureOfGaussians(Distribution):
 
     # Expectation-Maximization
     @pass_obs_arg
-    def max_aposteriori(self, obs):
-        # Expectation step
-        scores = []
-        for _obs in obs:
-            scores.append(self.scores(_obs))
+    def max_aposteriori(self, obs, maxiter=1, progprint=True):
 
-        # Maximization step
-        for idx, c in enumerate(self.components):
-            c.max_aposteriori([_obs for _obs in obs],
-                              [_score[:, idx] for _score in scores])
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
 
-        # mixture weights
-        self.gating.max_aposteriori(None, scores)
+        obs = obs if isinstance(obs, list) else [obs]
+
+        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                # Expectation step
+                scores = []
+                for _obs in obs:
+                    scores.append(self.scores(_obs))
+
+                # Maximization step
+                for idx, c in enumerate(self.components):
+                    c.max_aposteriori([_obs for _obs in obs],
+                                      [_score[:, idx] for _score in scores])
+
+                # mixture weights
+                self.gating.max_aposteriori(None, scores)
+
+                pbar.update(1)
 
     # Gibbs sampling
     @pass_obs_and_labels_arg
-    def resample(self, obs=None, labels=None):
-        self._resample_components(obs, labels)
-        self._resample_gating(labels)
-        labels = self._resample_labels(obs)
+    def resample(self, obs=None, labels=None,
+                 maxiter=1, progprint=True):
 
-        if self.has_data():
-            self.labels = labels
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'Gibbs #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                self._resample_components(obs, labels)
+                self._resample_gating(labels)
+                labels = self._resample_labels(obs)
+
+                if self.has_data():
+                    self.labels = labels
+
+                pbar.update(1)
 
     def _resample_components(self, obs, labels):
         for idx, c in enumerate(self.components):
@@ -340,17 +392,25 @@ class BayesianMixtureOfGaussians(Distribution):
 
         return r
 
-    def meanfield_coordinate_descent(self, tol=1e-1, maxiter=250, progprint=False):
+    def meanfield_coordinate_descent(self, tol=1e-2, maxiter=250, progprint=True):
         elbo = []
-        step_iterator = range(maxiter) if not progprint else progprint_xrange(maxiter)
-        for _ in step_iterator:
-            elbo.append(self.meanfield_update())
-            if elbo[-1] is not None and len(elbo) > 1:
-                if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    if progprint:
-                        print('\n')
-                    return elbo
-        print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'VI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                elbo.append(self.meanfield_update())
+                if elbo[-1] is not None and len(elbo) > 1:
+                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                        return elbo
+                pbar.update(1)
+
+        # print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
 
     @pass_obs_arg
@@ -385,8 +445,30 @@ class BayesianMixtureOfGaussians(Distribution):
                                [_score[:, idx] for _score in scores])
 
     # SVI
+    def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
+                                     maxiter=500, progprint=True):
+
+        assert self.has_data()
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        prob = batchsize / float(sum(len(_obs) for _obs in self.obs))
+
+        with tqdm(total=maxiter, desc=f'SVI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                for _obs in self.obs:
+                    for batch in batches(batchsize, len(_obs)):
+                        self.meanfield_sgdstep(_obs[batch, :], prob, stepsize)
+                pbar.update(1)
+
     def meanfield_sgdstep(self, obs, prob, stepsize):
         obs = obs if isinstance(obs, list) else [obs]
+
         scores, _ = self._meanfield_update_labels(obs)
         self._meanfield_sgdstep_parameters(obs, scores, prob, stepsize)
 

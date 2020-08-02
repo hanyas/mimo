@@ -13,8 +13,6 @@ from mimo.distributions import GaussianWithNormalGamma
 from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussians
 
-from mimo.util.text import progprint_xrange
-
 
 npr.seed(1337)
 
@@ -44,9 +42,7 @@ model = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior)
 model.add_data(obs)
 
 model.resample()
-print('Variational Inference')
-for _ in progprint_xrange(2500):
-    model.meanfield_update()
+model.meanfield_coordinate_descent(maxiter=2500)
 
 plt.figure()
 model.plot(obs)

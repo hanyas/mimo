@@ -9,9 +9,7 @@ from mimo.distributions import Categorical
 from mimo.distributions import TiedGaussiansWithPrecision
 from mimo.mixtures import MixtureOfTiedGaussians
 
-from mimo.util.text import progprint_xrange
-
-# npr.seed(1337)
+npr.seed(1337)
 
 gating = Categorical(K=2)
 
@@ -32,9 +30,7 @@ ensemble = TiedGaussiansWithPrecision(mus=[npr.randn(2,),
 
 model = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 
-print('Expecation Maximization')
-for _ in progprint_xrange(500):
-    model.max_likelihood(obs)
+model.max_likelihood(obs, maxiter=500)
 
 plt.figure()
 model.plot(obs)

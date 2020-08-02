@@ -13,8 +13,6 @@ from mimo.distributions import GaussianWithNormalWishart
 
 from mimo.mixtures import BayesianMixtureOfGaussians
 
-from mimo.util.text import progprint_xrange
-
 
 npr.seed(1337)
 
@@ -45,23 +43,15 @@ gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                  components=[GaussianWithNormalWishart(components_prior)
                                              for _ in range(nb_models)])
 
-gmm.add_data(data)
+gmm.add_data(data, labels_from_prior=True)
 
 allscores = []
 allmodels = []
 for superitr in range(5):
     # Gibbs sampling to wander around the posterior
-    print('Gibbs Sampling')
-    for _ in progprint_xrange(25):
-        gmm.resample()
-
-    print('Stochastic Mean Field')
-    gmm.resample()
-    minibatchsize = 128
-    prob = minibatchsize / float(nb_samples)
-    for _ in progprint_xrange(100):
-        minibatch = npr.permutation(nb_samples)[:minibatchsize]
-        gmm.meanfield_sgdstep(obs=data[minibatch, :], prob=prob, stepsize=5e-4)
+    gmm.resample(maxiter=25)
+    # Stochastic Meanfield VI
+    gmm.meanfield_stochastic_descent(stepsize=1e-2, maxiter=100, batchsize=128)
 
     allscores.append(gmm.meanfield_update())
     allmodels.append(copy.deepcopy(gmm))

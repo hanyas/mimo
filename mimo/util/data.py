@@ -2,6 +2,15 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
+from itertools import islice
+import random
+
+
+def batches(batchsize, datasize):
+    idx_all = random.sample(range(datasize), batchsize)
+    idx_iter = iter(idx_all)
+    yield from iter(lambda: list(islice(idx_iter, batchsize)), [])
+
 
 def transform(mu, trans=None):
     if trans is None:

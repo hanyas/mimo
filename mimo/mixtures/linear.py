@@ -11,11 +11,13 @@ from mimo.util.decorate import pass_target_and_input_arg
 from mimo.util.decorate import pass_target_input_and_labels_arg
 
 from mimo.util.stats import sample_discrete_from_log
-
-from mimo.util.text import progprint_xrange
+from mimo.util.data import batches
 
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from tqdm import tqdm
+from pathos.helpers import mp
 
 eps = np.finfo(np.float64).tiny
 
@@ -187,29 +189,54 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return score
 
     @pass_target_and_input_arg
-    def max_aposteriori(self, y=None, x=None):
-        # Expectation step
-        scores = []
-        for _y, _x in zip(y, x):
-            scores.append(self.scores(_y, _x))
+    def max_aposteriori(self, y=None, x=None, maxiter=1, progprint=True):
 
-        # Maximization step
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            b.max_aposteriori([_x for _x in x], [_score[:, idx] for _score in scores])
-            m.max_aposteriori([_y for _y in y], [_score[:, idx] for _score in scores])
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
 
-        # mixture weights
-        self.gating.max_aposteriori(None, scores)
+        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                # Expectation step
+                scores = []
+                for _y, _x in zip(y, x):
+                    scores.append(self.scores(_y, _x))
+
+                # Maximization step
+                for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                    b.max_aposteriori([_x for _x in x], [_score[:, idx] for _score in scores])
+                    m.max_aposteriori([_y for _y in y], [_score[:, idx] for _score in scores])
+
+                # mixture weights
+                self.gating.max_aposteriori(None, scores)
+
+                pbar.update(1)
 
     # Gibbs sampling
     @pass_target_input_and_labels_arg
-    def resample(self, y=None, x=None, z=None):
-        self._resample_components(y, x, z)
-        self._resample_gating(z)
-        z = self._resample_labels(y, x)
+    def resample(self, y=None, x=None, z=None,
+                 maxiter=1, progprint=True):
 
-        if self.has_data():
-            self.labels = z
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'Gibbs #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                self._resample_components(y, x, z)
+                self._resample_gating(z)
+                z = self._resample_labels(y, x)
+
+                if self.has_data():
+                    self.labels = z
+
+                pbar.update(1)
 
     def _resample_components(self, y, x, z):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
@@ -252,17 +279,25 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         return r
 
-    def meanfield_coordinate_descent(self, tol=1e-1, maxiter=250, progprint=False):
+    def meanfield_coordinate_descent(self, tol=1e-2, maxiter=250, progprint=True):
         elbo = []
-        step_iterator = range(maxiter) if not progprint else progprint_xrange(maxiter)
-        for _ in step_iterator:
-            elbo.append(self.meanfield_update())
-            if elbo[-1] is not None and len(elbo) > 1:
-                if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    if progprint:
-                        print('\n')
-                    return elbo
-        print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'VI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                elbo.append(self.meanfield_update())
+                if elbo[-1] is not None and len(elbo) > 1:
+                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                        return elbo
+                pbar.update(1)
+
+        # print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
 
     @pass_target_and_input_arg
@@ -289,7 +324,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self._meanfield_update_gating(scores)
 
     def _meanfield_update_gating(self, scores):
-        self.gating.meanfield_update(None, [_score for _score in scores])
+        self.gating.meanfield_update(None, scores)
 
     def _meanfield_update_components(self, y, x, scores):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
@@ -297,6 +332,28 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             m.meanfield_update([_y for _y in y], [_x for _x in x], [_score[:, idx] for _score in scores])
 
     # SVI
+    def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
+                                     maxiter=500, progprint=True):
+
+        assert self.has_data()
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        x, y = self.input, self.target
+        prob = batchsize / float(sum(len(_x) for _x in x))
+
+        with tqdm(total=maxiter, desc=f'SVI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+                for _x, _y in zip(x, y):
+                    for batch in batches(batchsize, len(_x)):
+                        _mx, _my = _x[batch, :], _y[batch, :]
+                        self.meanfield_sgdstep(_my, _mx, prob, stepsize)
+                pbar.update(1)
+
     def meanfield_sgdstep(self, y, x, prob, stepsize):
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
