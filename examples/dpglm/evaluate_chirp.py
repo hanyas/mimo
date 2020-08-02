@@ -18,7 +18,6 @@ from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
 
@@ -35,12 +34,12 @@ if __name__ == "__main__":
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=10, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=25, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=0.9, type=float)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -65,6 +64,7 @@ if __name__ == "__main__":
     data = np.hstack((x, y))
 
     input, target = data[:, :1], data[:, 1:]
+
     # prepare model
     input_dim, target_dim = 1, 1
 
@@ -100,11 +100,13 @@ if __name__ == "__main__":
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -113,7 +115,8 @@ if __name__ == "__main__":
         gating_prior = Dirichlet(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -152,39 +155,22 @@ if __name__ == "__main__":
             dpglm.models[i].prior = copy.deepcopy(dpglm.models[i].posterior)
 
         # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
-
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
-
-        for _ in gibbs_iter:
-            dpglm.resample()
+        dpglm.resample(maxiter=args.gibbs_iters)
 
         # train model
         for _ in range(args.super_iters):
-
             if args.stochastic:
                 # Stochastic meanfield VI
-                if args.verbose:
-                    print('Stochastic Variational Inference')
-
-                svi_iter = range(args.gibbs_iters) if not args.verbose\
-                    else progprint_xrange(args.svi_iters)
-
-                prob = split_size / float(len(input))
-                dpglm.meanfield_sgdstep(y=_target, x=_input,
-                                        prob=prob, stepsize=args.svi_stepsize)
-
+                dpglm.meanfield_stochastic_descent(stepsize=args.svi_stepsize,
+                                                   batchsize=split_size,
+                                                   maxiter=1)
             if args.deterministic:
                 # Meanfield VI
-                if args.verbose:
-                    print("Variational Inference")
                 dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                    maxiter=args.meanfield_iters,
                                                    progprint=args.verbose)
 
-            import copy
+            # empirical Bayes
             dpglm.gating.prior = dpglm.gating.posterior
             for i in range(dpglm.size):
                 dpglm.basis[i].prior = dpglm.basis[i].posterior

@@ -5,7 +5,7 @@ from mimo.distributions import GaussianWithDiagonalCovariance
 from mimo.distributions import NormalGamma
 from mimo.distributions import GaussianWithNormalGamma
 
-# npr.seed(1337)
+npr.seed(1337)
 
 dim, nb_samples, nb_datasets = 3, 500, 5
 dist = GaussianWithDiagonalCovariance(mu=npr.randn(dim), sigmas=1. * npr.rand(dim))

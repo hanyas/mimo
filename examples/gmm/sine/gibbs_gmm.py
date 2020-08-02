@@ -10,8 +10,6 @@ from mimo.distributions import GaussianWithNormalWishart
 
 from mimo.mixtures import BayesianMixtureOfGaussians
 
-from mimo.util.text import progprint_xrange
-
 
 npr.seed(1337)
 
@@ -42,11 +40,9 @@ gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                  components=[GaussianWithNormalWishart(components_prior)
                                              for _ in range(nb_models)])
 
-gmm.add_data(data)
+gmm.add_data(data, labels_from_prior=True)
 
-print('Gibbs Sampling')
-for _ in progprint_xrange(2500):
-    gmm.resample()
+gmm.resample(maxiter=2500)
 
 
 plt.figure()

@@ -6,7 +6,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 
-# npr.seed(1337)
+npr.seed(1337)
 
 dcol = 50
 drow = 1

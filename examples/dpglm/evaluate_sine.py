@@ -18,9 +18,9 @@ from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
@@ -53,7 +53,7 @@ def _job(kwargs):
     kappas = 1e-2
 
     # initialize Matrix-Normal
-    psi_mnw = 1e0
+    psi_mnw = 1e1
     K = 1e-2
 
     for n in range(args.nb_models):
@@ -94,34 +94,17 @@ def _job(kwargs):
                    transform_type='Standard')
 
     # Gibbs sampling
-    if args.verbose:
-        print("Gibbs Sampling")
-
-    gibbs_iter = range(args.gibbs_iters) if not args.verbose \
-        else progprint_xrange(args.gibbs_iters)
-
-    for _ in gibbs_iter:
-        dpglm.resample()
+    dpglm.resample(maxiter=args.gibbs_iters,
+                   progprint=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
-            if args.verbose:
-                print('Stochastic Variational Inference')
-
-            svi_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
-
-            batch_size = args.svi_batchsize
-            prob = batch_size / float(len(input))
-            for _ in svi_iter:
-                minibatch = npr.permutation(len(input))[:batch_size]
-                dpglm.meanfield_sgdstep(y=target[minibatch, :], x=input[minibatch, :],
-                                        prob=prob, stepsize=args.svi_stepsize)
+            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                               stepsize=args.svi_stepsize,
+                                               batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            if args.verbose:
-                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
@@ -140,7 +123,9 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+    with Pool(processes=min(nb_jobs, nb_cores),
+              initializer=tqdm.set_lock,
+              initargs=(tqdm.get_lock(),)) as p:
         res = p.map(_job, kwargs_list)
 
     return res
@@ -157,16 +142,16 @@ if __name__ == "__main__":
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
-    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=512, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=25, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=100, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-1, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=128, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -237,7 +222,7 @@ if __name__ == "__main__":
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes[0].set_ylabel('y')
-    axes[0].set_ylim(-8., 8.)
+    axes[0].set_ylim(-15., 15.)
 
     # plot gaussian activations
     axes[1].set_xlabel('x')

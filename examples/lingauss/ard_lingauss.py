@@ -7,7 +7,7 @@ from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance
 from mimo.distributions import Gamma
 
-# np.random.seed(1337)
+np.random.seed(1337)
 
 nb_samples, nb_features = 100, 100
 
