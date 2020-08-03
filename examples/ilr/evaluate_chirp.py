@@ -3,6 +3,9 @@ import argparse
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import numpy as np
 import numpy.random as npr
 
@@ -46,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--nb_train', help='size of train dataset', default=1000, type=int)
-    parser.add_argument('--nb_splits', help='number of dataset splits', default=10, type=int)
+    parser.add_argument('--nb_splits', help='number of dataset splits', default=25, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
@@ -79,7 +82,7 @@ if __name__ == "__main__":
     kappa = 1e-2
 
     # initialize Matrix-Normal
-    psi_mnw = 1e0
+    psi_mnw = 1e1
     K = 1e-2
 
     for n in range(args.nb_models):
@@ -200,8 +203,8 @@ if __name__ == "__main__":
 
         anim.append(fig)
 
-        plt.show()
-        plt.pause(1)
+        # plt.show()
+        # plt.pause(1)
 
         # set working directory
         dataset = 'chirp'
@@ -220,7 +223,7 @@ if __name__ == "__main__":
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
 
-    fps = 4
+    fps = 10
 
 
     def make_frame(t):
