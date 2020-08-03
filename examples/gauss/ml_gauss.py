@@ -18,7 +18,7 @@ model.max_likelihood(data)
 print("ML mean"+"\n", model.mu.T, "\n"+"ML sigma"+"\n", model.sigma)
 
 
-hypparams = dict(mu=np.zeros((dim, )), kappa=0.05, psi=np.eye(dim), nu=dim + 1)
+hypparams = dict(mu=np.zeros((dim, )), kappa=0.01, psi=np.eye(dim), nu=dim + 1)
 prior = NormalWishart(**hypparams)
 
 model = GaussianWithNormalWishart(prior=prior)

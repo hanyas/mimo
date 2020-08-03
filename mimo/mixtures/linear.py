@@ -11,11 +11,13 @@ from mimo.util.decorate import pass_target_and_input_arg
 from mimo.util.decorate import pass_target_input_and_labels_arg
 
 from mimo.util.stats import sample_discrete_from_log
-
-from mimo.util.text import progprint_xrange
+from mimo.util.data import batches
 
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from tqdm import tqdm
+from pathos.helpers import mp
 
 eps = np.finfo(np.float64).tiny
 
@@ -70,12 +72,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     def add_data(self, y, x, whiten=False,
                  target_transform=False,
                  input_transform=False,
-                 transform_type='PCA'):
+                 transform_type='PCA',
+                 labels_from_prior=False):
 
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
-        for _y in y:
-            self.labels.append(self.gating.likelihood.rvs(len(_y)))
 
         if whiten:
             self.whitend = True
@@ -88,9 +89,14 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 if transform_type == 'PCA':
                     self.target_transform = PCA(n_components=Y.shape[-1], whiten=True)
                     self.input_transform = PCA(n_components=X.shape[-1], whiten=True)
-                else:
+                elif transform_type == 'Standard':
                     self.target_transform = StandardScaler()
                     self.input_transform = StandardScaler()
+                elif transform_type == 'MinMax':
+                    self.target_transform = MinMaxScaler((-1., 1.))
+                    self.input_transform = MinMaxScaler((-1., 1.))
+                else:
+                    raise NotImplementedError
 
                 self.target_transform.fit(Y)
                 self.input_transform.fit(X)
@@ -104,6 +110,12 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         else:
             self.target = y
             self.input = x
+
+        if labels_from_prior:
+            for _y, _x in zip(self.target, self.input):
+                self.labels.append(self.gating.likelihood.rvs(len(_y)))
+        else:
+            self.labels = self._resample_labels(self.target, self.input)
 
     def clear_data(self):
         self.input.clear()
@@ -163,7 +175,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.likelihood.log_likelihood(x)
             component_scores[:, idx] += m.likelihood.log_likelihood(y, x)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -177,29 +189,54 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return score
 
     @pass_target_and_input_arg
-    def max_aposteriori(self, y=None, x=None):
-        # Expectation step
-        scores = []
-        for _y, _x in zip(y, x):
-            scores.append(self.scores(_y, _x))
+    def max_aposteriori(self, y=None, x=None, maxiter=1, progprint=True):
 
-        # Maximization step
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            b.max_aposteriori([_x for _x in x], [_score[:, idx] for _score in scores])
-            m.max_aposteriori([_y for _y in y], [_score[:, idx] for _score in scores])
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
 
-        # mixture weights
-        self.gating.max_aposteriori(None, scores)
+        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                # Expectation step
+                scores = []
+                for _y, _x in zip(y, x):
+                    scores.append(self.scores(_y, _x))
+
+                # Maximization step
+                for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                    b.max_aposteriori([_x for _x in x], [_score[:, idx] for _score in scores])
+                    m.max_aposteriori([_y for _y in y], [_score[:, idx] for _score in scores])
+
+                # mixture weights
+                self.gating.max_aposteriori(None, scores)
+
+                pbar.update(1)
 
     # Gibbs sampling
     @pass_target_input_and_labels_arg
-    def resample(self, y=None, x=None, z=None):
-        self._resample_components(y, x, z)
-        self._resample_gating(z)
-        z = self._resample_labels(y, x)
+    def resample(self, y=None, x=None, z=None,
+                 maxiter=1, progprint=True):
 
-        if self.has_data():
-            self.labels = z
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'Gibbs #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                self._resample_components(y, x, z)
+                self._resample_gating(z)
+                z = self._resample_labels(y, x)
+
+                if self.has_data():
+                    self.labels = z
+
+                pbar.update(1)
 
     def _resample_components(self, y, x, z):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
@@ -225,7 +262,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
             component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
             component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
             gating_scores = self.gating.posterior.expected_statistics()
@@ -242,17 +279,25 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         return r
 
-    def meanfield_coordinate_descent(self, tol=1e-1, maxiter=250, progprint=False):
+    def meanfield_coordinate_descent(self, tol=1e-2, maxiter=250, progprint=True):
         elbo = []
-        step_iterator = range(maxiter) if not progprint else progprint_xrange(maxiter)
-        for _ in step_iterator:
-            elbo.append(self.meanfield_update())
-            if elbo[-1] is not None and len(elbo) > 1:
-                if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    if progprint:
-                        print('\n')
-                    return elbo
-        print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'VI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                elbo.append(self.meanfield_update())
+                if elbo[-1] is not None and len(elbo) > 1:
+                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                        return elbo
+                pbar.update(1)
+
+        # print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
 
     @pass_target_and_input_arg
@@ -279,7 +324,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self._meanfield_update_gating(scores)
 
     def _meanfield_update_gating(self, scores):
-        self.gating.meanfield_update(None, [_score for _score in scores])
+        self.gating.meanfield_update(None, scores)
 
     def _meanfield_update_components(self, y, x, scores):
         for idx, (b, m) in enumerate(zip(self.basis, self.models)):
@@ -287,6 +332,29 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             m.meanfield_update([_y for _y in y], [_x for _x in x], [_score[:, idx] for _score in scores])
 
     # SVI
+    def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
+                                     maxiter=500, progprint=True):
+
+        assert self.has_data()
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        x, y = self.input, self.target
+        prob = batchsize / float(sum(len(_x) for _x in x))
+
+        with tqdm(total=maxiter, desc=f'SVI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                for _x, _y in zip(x, y):
+                    for batch in batches(batchsize, len(_x)):
+                        _mx, _my = _x[batch, :], _y[batch, :]
+                        self.meanfield_sgdstep(_my, _mx, prob, stepsize)
+                pbar.update(1)
+
     def meanfield_sgdstep(self, y, x, prob, stepsize):
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
@@ -296,7 +364,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         if self.has_data():
             for _y, _x in zip(self.target, self.input):
-                self.labels.append(np.argmax(self.scores(_y, _x), axis=1))
+                self.labels.append(np.argmax(self.expected_scores(_y, _x), axis=1))
 
     def _meanfield_sgdstep_parameters(self, y, x, scores, prob, stepsize):
         self._meanfield_sgdstep_components(y, x, scores, prob, stepsize)
@@ -331,8 +399,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     def _variational_lowerbound_data(self, y, x, scores):
         vlb = 0.
-        vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x)) for b, r in zip(self.basis, scores.T)])
-        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)) for m, r in zip(self.models, scores.T)])
+        vlb += np.sum([r.dot(b.posterior.expected_log_likelihood(x))
+                       for b, r in zip(self.basis, scores.T)])
+        vlb += np.sum([r.dot(m.posterior.expected_log_likelihood(y, x, m.likelihood.affine))
+                       for m, r in zip(self.models, scores.T)])
         return vlb
 
     def variational_lowerbound(self, y, x, scores):
@@ -360,42 +430,101 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return 2. * self.nb_params - 2. * sum(self.log_likelihood(_y, _x)
                                               for _y, _x in zip(self.target, self.input))
 
-    def meanfield_predictive_activation(self, x, sparse=True, type='gaussian'):
+    def meanfield_predictive_activation(self, x, dist='gaussian'):
         # Mainly for plotting basis functions
         x = np.reshape(x, (-1, self.dcol))
 
         x = x if not self.whitend \
             else self.input_transform.transform(x)
 
-        labels = self.used_labels if sparse else range(self.size)
+        weights = self.gating.posterior.mean()
+
+        labels = range(self.size)
         activations = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
             activations[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
-                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
+                if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        activations = np.exp(activations)
+        activations = weights[labels] * np.exp(activations) + eps
         activations = activations / np.sum(activations, axis=1, keepdims=True)
         return activations
 
-    def meanfield_predictive_gating(self, x, sparse=False, type='gaussian'):
+    def meanfield_predictive_gating(self, x, dist='gaussian'):
         # compute posterior mixing weights
         weights = self.gating.posterior.mean()
 
-        labels = self.used_labels if sparse else range(self.size)
+        labels = range(self.size)
         log_posterior_predictive = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
             log_posterior_predictive[:, i] = self.basis[idx].log_posterior_predictive_gaussian(x)\
-                if type == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
+                if dist == 'gaussian' else self.basis[idx].log_posterior_predictive_studentt(x)
 
-        effective_weights = weights[labels] * np.exp(log_posterior_predictive)
+        effective_weights = weights[labels] * np.exp(log_posterior_predictive) + eps
         effective_weights = effective_weights / np.sum(effective_weights, axis=1, keepdims=True)
         return effective_weights
 
+    def meanfield_predictive_moments(self, x, dist='gaussian', aleatoric_only=False):
+        mu, var = np.zeros((len(x), self.drow, self.size)),\
+                  np.zeros((len(x), self.drow, self.drow, self.size))
+
+        for n, model in enumerate(self.models):
+            if dist == 'gaussian':
+                mu[..., n], _lmbda = model.posterior_predictive_gaussian(x, aleatoric_only)
+                var[..., n] = np.linalg.inv(_lmbda)
+            else:
+                mu[..., n], _lmbda, _df = model.posterior_predictive_studentt(x, aleatoric_only)
+                var[..., n] = np.linalg.inv(_lmbda) * _df / (_df - 2)
+
+        return mu, var
+
+    def meanfiled_log_predictive_likelihood(self, y, x, dist='gaussian'):
+        lpd = np.zeros((len(x), self.size))
+
+        for n, model in enumerate(self.models):
+            lpd[:, n] = model.log_posterior_predictive_gaussian(y, x)\
+                if dist == 'gaussian' else model.log_posterior_predictive_studentt(y, x)
+
+        return lpd
+
+    @staticmethod
+    def _mixture_moments(mus, vars, weights):
+        # Mean of a mixture = sum of weighted means
+        mu = np.einsum('nkl,nl->nk', mus, weights)
+        # Variance of a mixture = sum of weighted variances + ...
+        # ... + sum of weighted squared means - squared sum of weighted means
+        var = np.einsum('nkhl,nl->nkh', vars + np.einsum('nkl,nhl->nkhl', mus, mus), weights)\
+              - np.einsum('nk,nh->nkh', mu, mu)
+        return mu, var
+
+    def meanfield_predictive_aleatoric(self, dist='gaussian'):
+        from mimo.util.data import inverse_transform_variance
+        weights = self.gating.posterior.mean()
+
+        mus, vars = np.zeros((self.size, self.drow)),\
+                    np.zeros((self.size, self.drow, self.drow))
+
+        for n, (basis, model) in enumerate(zip(self.basis, self.models)):
+            x = basis.posterior.gaussian.mu
+            if dist == 'gaussian':
+                mus[n, :], _lmbda = model.posterior_predictive_gaussian(x, True)
+                vars[n, ...] = np.linalg.inv(_lmbda)
+            else:
+                mus[n, :], _lmbda, _df = model.posterior_predictive_studentt(x, True)
+                vars[n, ...] = np.linalg.inv(_lmbda) * _df / (_df - 2)
+
+        mu = np.einsum('nk,n->k', mus, weights)
+        var = np.einsum('nkh,n->kh', vars + np.einsum('nk,nh->nkh', mus, mus), weights)\
+              - np.einsum('k,h->kh', mu, mu)
+
+        return inverse_transform_variance(var, self.target_transform)
+
     def meanfield_prediction(self, x, y=None,
-                             prediction='average', incremental=False,
-                             type='gaussian', sparse=False):
+                             prediction='average',
+                             dist='gaussian',
+                             incremental=False,
+                             variance='diagonal'):
 
         x = np.reshape(x, (-1, self.dcol))
 
@@ -409,58 +538,93 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         input = transform(x, trans=self.input_transform)
         target = None if y is None else transform(y, trans=self.target_transform)
 
-        drow = self.drow
-
-        # var is the diagonal variance for plots
-        mu, var, nlpd = np.zeros((len(x), drow)),\
-                        np.zeros((len(x), drow)),\
-                        np.zeros((len(x), ))
-
-        weights = self.meanfield_predictive_gating(input, sparse, type)
+        weights = self.meanfield_predictive_gating(input, dist)
+        mus, vars = self.meanfield_predictive_moments(input, dist)
 
         if prediction == 'mode':
-            mode = np.argmax(weights, axis=1)
-            for n, _mode in enumerate(mode):
-                if type == 'gaussian':
-                    mu[n, :], _lmbda = self.models[_mode].posterior_predictive_gaussian(input[n, :])
-                    var[n, :] = 1. / np.diag(_lmbda)
-                    if compute_nlpd:
-                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_gaussian(target[n, :], input[n, :]))
-                else:
-                    mu[n, :], _lmbda, _df = self.models[_mode].posterior_predictive_studentt(input[n, :])
-                    var[n, :] = _df / (_df - 2) * 1. / np.diag(_lmbda)
-                    if compute_nlpd:
-                        nlpd[n] = np.exp(self.models[_mode].log_posterior_predictive_studentt(target[n, :], input[n, :]))
-
+            k = np.argmax(weights, axis=1)
+            idx = (range(len(k)), ..., k)
+            mu, var = mus[idx], vars[idx]
         elif prediction == 'average':
-            _labels = self.used_labels if sparse else range(self.size)
-            for i, idx in enumerate(_labels):
-                if type == 'gaussian':
-                    _mu, _lmbda = self.models[idx].posterior_predictive_gaussian(input)
-                    _var = 1. / np.vstack(list(map(np.diag, _lmbda)))
-                    if compute_nlpd:
-                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_gaussian(target, input))
-                else:
-                    _mu, _lmbda, _df = self.models[idx].posterior_predictive_studentt(input)
-                    _var = _df / (_df - 2) * (1. / np.vstack(list(map(np.diag, _lmbda))))
-                    if compute_nlpd:
-                        nlpd += weights[:, i] * np.exp(self.models[idx].log_posterior_predictive_studentt(target, input))
+            labels = range(self.size)
+            mu, var = self._mixture_moments(mus[..., labels],
+                                            vars[..., labels], weights)
+        else:
+            raise NotImplementedError
 
-                # Mean of a mixture = sum of weighted means
-                mu += np.einsum('nk,n->nk', _mu, weights[:, i])
-                # Variance of a mixture = sum of weighted variances + ...
-                # ... + sum of weighted squared means - squared sum of weighted means
-                var += np.einsum('nk,n->nk', (_var + _mu**2), weights[:, i])
-            var -= mu**2
-
-        nlpd = - 1.0 * np.log(nlpd) if compute_nlpd else None
+        nlpd = None
+        if compute_nlpd:
+            lpd = self.meanfiled_log_predictive_likelihood(target, input)
+            lw = np.log(weights + eps)
+            nlpd = -1.0 * logsumexp(lpd + lw, axis=1)
 
         mu, var = inverse_transform(mu, var, trans=self.target_transform)
 
         if incremental:
-            mu += x[:, :drow]
+            mu += x[:, :self.drow]
+
+        diag = np.vstack(list(map(np.diag, var)))
 
         if compute_nlpd:
-            return mu, var, np.sqrt(var), nlpd
+            if variance == 'diagonal':
+                return mu, diag, np.sqrt(diag), nlpd
+            else:
+                return mu, var, np.sqrt(diag), nlpd
         else:
-            return mu, var, np.sqrt(var)
+            if variance == 'diagonal':
+                return mu, diag, np.sqrt(diag)
+            else:
+                return mu, var, np.sqrt(diag)
+
+
+class CompressedMixtureOfLinearGaussians:
+    # This class compresses the above mixture
+    # for speed at prediction/deployment time
+
+    def __init__(self, mixture):
+        self.mixture = mixture
+
+        self.input_transform = self.mixture.input_transform
+        self.target_transform = self.mixture.target_transform
+
+        self.gating = {'weights': self.mixture.gating.posterior.mean()}
+
+        _basis_mus = np.vstack([b.posterior_predictive_gaussian()[0]
+                                    for b in self.mixture.basis])
+        _basis_lmbdas = np.stack([b.posterior_predictive_gaussian()[1]
+                                  for b in self.mixture.basis], axis=0)
+        _basis_logdet_lmbdas = np.linalg.slogdet(_basis_lmbdas)[1]
+
+        self.basis = {'mus': _basis_mus,
+                      'lmbdas': _basis_lmbdas,
+                      'logdet_lmbdas': _basis_logdet_lmbdas}
+
+        _models_mus = np.stack([m.posterior.matnorm.M for m in self.mixture.models], axis=0)
+        self.models = {'Ms': _models_mus}
+
+    def log_basis_predictive(self, x):
+        from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
+        return mvn_logpdf(x, self.basis['mus'],
+                          self.basis['lmbdas'],
+                          self.basis['logdet_lmbdas'])
+
+    def predictive_gating(self, x):
+        log_basis_predictive = self.log_basis_predictive(x)
+        effective_weights = self.gating['weights'] * np.exp(log_basis_predictive) + eps
+        effective_weights = effective_weights / np.sum(effective_weights)
+        return effective_weights
+
+    def predictive_output(self, x):
+        x = np.hstack((x, 1.))  # assumes affine input
+        return np.einsum('nkh,h->nk', self.models['Ms'], x)
+
+    def prediction(self, x):
+        from mimo.util.data import transform, inverse_transform_mean
+
+        x = np.squeeze(transform(np.atleast_2d(x), self.input_transform))
+
+        weights = self.predictive_gating(x)
+        mus = self.predictive_output(x)
+
+        output = np.einsum('nk,n->k', mus, weights)
+        return inverse_transform_mean(output, trans=self.target_transform)

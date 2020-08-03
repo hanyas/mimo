@@ -9,8 +9,6 @@ from mimo.distributions import GaussianWithDiagonalPrecision
 
 from mimo.mixtures import MixtureOfGaussians
 
-from mimo.util.text import progprint_xrange
-
 
 npr.seed(1337)
 
@@ -31,8 +29,7 @@ components = [GaussianWithDiagonalPrecision(mu=npr.randn(2, ),
 model = MixtureOfGaussians(gating=gating, components=components)
 
 print('Expecation Maximization')
-for _ in progprint_xrange(500):
-    model.max_likelihood(obs)
+model.max_likelihood(obs, maxiter=500)
 
 plt.figure()
 model.plot(obs)

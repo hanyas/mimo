@@ -1,5 +1,15 @@
 import numpy as np
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from itertools import islice
+import random
+
+
+def batches(batchsize, datasize):
+    idx_all = random.sample(range(datasize), batchsize)
+    idx_iter = iter(idx_all)
+    yield from iter(lambda: list(islice(idx_iter, batchsize)), [])
 
 
 def transform(mu, trans=None):
@@ -9,25 +19,32 @@ def transform(mu, trans=None):
         return trans.transform(mu)
 
 
-def inverse_transform(mu, var=None, trans=None):
+def inverse_transform_mean(mu, trans):
     if trans is None:
-        if var is None:
-            return mu
-        else:
-            return mu, var
+        return mu
     else:
-        _mu = trans.inverse_transform(mu)
-        if var is None:
-            return _mu
-        else:
-            mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_\
-                if isinstance(trans, PCA) else np.diag(np.sqrt(trans.var_))
+        return trans.inverse_transform(mu)
 
-            _diag = np.stack(list(map(np.diag, var)))
-            _covar = np.einsum('kh,nhj,ji->nki', mat, _diag, mat.T)
-            _var = np.vstack(list(map(np.diag, _covar)))
 
-            return _mu, _var
+def inverse_transform_variance(var, trans):
+    if trans is None:
+        return var
+    else:
+        mat = None
+        if isinstance(trans, PCA):
+            mat = np.sqrt(trans.explained_variance_[:, None]) * trans.components_
+        elif isinstance(trans, StandardScaler):
+            mat = np.diag(np.sqrt(trans.var_))
+        elif isinstance(trans, MinMaxScaler):
+            mat = np.diag(trans.scale_)
+
+        return np.einsum('kh,...hj,ji->...ki', mat, var, mat.T)
+
+
+def inverse_transform(mu, var, trans=None):
+    _mu = inverse_transform_mean(mu, trans)
+    _var = inverse_transform_variance(var, trans)
+    return _mu, _var
 
 
 def tofloat(x):

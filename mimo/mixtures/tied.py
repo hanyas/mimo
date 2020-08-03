@@ -14,8 +14,11 @@ from mimo.util.decorate import pass_obs_arg, pass_obs_and_labels_arg
 from mimo.util.stats import sample_discrete_from_log
 from mimo.util.text import progprint_xrange
 
-import pathos
-nb_cores = pathos.multiprocessing.cpu_count()
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+from tqdm import tqdm
+from pathos.helpers import mp
 
 
 class MixtureOfTiedGaussians(MixtureOfGaussians):
@@ -45,15 +48,27 @@ class MixtureOfTiedGaussians(MixtureOfGaussians):
     def nb_params(self):
         return self.gating.nb_params + self.ensemble.nb_params
 
-    def max_likelihood(self, obs):
+    def max_likelihood(self, obs, maxiter=1, progprint=True):
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
         obs = obs if isinstance(obs, list) else [obs]
 
-        # Expectation step
-        scores = [self.scores(_obs) for _obs in obs]
+        with tqdm(total=maxiter, desc=f'EM #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                # Expectation step
+                scores = [self.scores(_obs) for _obs in obs]
 
-        # Maximization step
-        self.ensemble.max_likelihood(obs, scores)
-        self.gating.max_likelihood(None, scores)
+                # Maximization step
+                self.ensemble.max_likelihood(obs, scores)
+                self.gating.max_likelihood(None, scores)
+
+                pbar.update(1)
 
 
 class BayesianMixtureOfTiedGaussians(Distribution):
@@ -96,22 +111,37 @@ class BayesianMixtureOfTiedGaussians(Distribution):
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
-    def add_data(self, obs, whiten=False):
+    def add_data(self, obs, whiten=False,
+                 transform_type='PCA',
+                 labels_from_prior=False):
+
         obs = obs if isinstance(obs, list) else [obs]
-        for _obs in obs:
-            self.labels.append(self.gating.likelihood.rvs(len(_obs)))
 
         if whiten:
             self.whitend = True
-            from sklearn.decomposition import PCA
 
             data = np.vstack([_obs for _obs in obs])
-            self.transform = PCA(n_components=data.shape[-1], whiten=True)
+
+            if transform_type == 'PCA':
+                self.transform = PCA(n_components=data.shape[-1], whiten=True)
+            elif transform_type == 'Standard':
+                self.transform = StandardScaler()
+            elif transform_type == 'MinMax':
+                self.transform = MinMaxScaler((-1., 1.))
+            else:
+                raise NotImplementedError
+
             self.transform.fit(data)
             for _obs in obs:
                 self.obs.append(self.transform.transform(_obs))
         else:
             self.obs = obs
+
+        if labels_from_prior:
+            for _obs in self.obs:
+                self.labels.append(self.gating.likelihood.rvs(len(_obs)))
+        else:
+            self.labels = self._resample_labels(self.obs)
 
     def clear_data(self):
         self.obs.clear()
@@ -164,7 +194,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
         component_scores = np.empty((N, K))
         for idx, g in enumerate(self.gaussians):
             component_scores[:, idx] = g.log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
         score = gating_scores + component_scores
@@ -178,25 +208,50 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
     # Expectation-Maximization
     @pass_obs_arg
-    def max_aposteriori(self, obs):
+    def max_aposteriori(self, obs, maxiter=1, progprint=True):
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
         obs = obs if isinstance(obs, list) else [obs]
 
-        # Expectation step
-        scores = [self.scores(_obs) for _obs in obs]
+        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                # Expectation step
+                scores = [self.scores(_obs) for _obs in obs]
 
-        # Maximization step
-        self.ensemble.max_aposteriori(obs, scores)
-        self.gating.max_aposteriori(None, scores)
+                # Maximization step
+                self.ensemble.max_aposteriori(obs, scores)
+                self.gating.max_aposteriori(None, scores)
+
+                pbar.update(1)
 
     # Gibbs sampling
     @pass_obs_and_labels_arg
-    def resample(self, obs=None, labels=None):
-        self._resample_ensemble(obs, labels)
-        self._resample_gating(labels)
-        labels = self._resample_labels(obs)
+    def resample(self, obs=None, labels=None,
+                 maxiter=1, progprint=True):
 
-        if self.has_data():
-            self.labels = labels
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'Gibbs #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
+                self._resample_ensemble(obs, labels)
+                self._resample_gating(labels)
+                labels = self._resample_labels(obs)
+
+                if self.has_data():
+                    self.labels = labels
+
+                pbar.update(1)
 
     def _resample_ensemble(self, obs, labels):
         self.ensemble.resample(data=obs, labels=labels)
@@ -214,7 +269,7 @@ class BayesianMixtureOfTiedGaussians(Distribution):
     # Mean Field
     def expected_scores(self, obs):
         component_scores = self.ensemble.posterior.expected_log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores)
+        component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
             gating_scores = self.gating.posterior.expected_statistics()
@@ -231,17 +286,25 @@ class BayesianMixtureOfTiedGaussians(Distribution):
 
         return r
 
-    def meanfield_coordinate_descent(self, tol=1e-1, maxiter=250, progprint=False):
+    def meanfield_coordinate_descent(self, tol=1e-2, maxiter=250, progprint=True):
         elbo = []
-        step_iterator = range(maxiter) if not progprint else progprint_xrange(maxiter)
-        for _ in step_iterator:
-            elbo.append(self.meanfield_update())
-            if elbo[-1] is not None and len(elbo) > 1:
-                if np.abs(elbo[-1] - elbo[-2]) < tol:
-                    if progprint:
-                        print('\n')
-                    return elbo
-        print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        with tqdm(total=maxiter, desc=f'VI #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                elbo.append(self.meanfield_update())
+                if elbo[-1] is not None and len(elbo) > 1:
+                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                        return elbo
+                pbar.update(1)
+
+        # print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
         return elbo
 
     @pass_obs_arg

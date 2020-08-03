@@ -481,9 +481,8 @@ class LinearGaussianWithMatrixNormalWishart:
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
-    def posterior_predictive_gaussian(self, x):
+    def posterior_predictive_gaussian(self, x, aleatoric_only=False):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -493,20 +492,19 @@ class LinearGaussianWithMatrixNormalWishart:
         df = nu - self.likelihood.drow + 1
         mus = np.einsum('kh,...h->...k', M, x)
 
-        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-        if nb == 1:
-            return mus[0], lmbdas[0]
+        if aleatoric_only:
+            lmbdas = np.tile(psi * df, (len(x), 1, 1))
         else:
-            return mus, lmbdas
+            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        return mus, lmbdas
 
     def log_posterior_predictive_gaussian(self, y, x):
         mus, lmbdas = self.posterior_predictive_gaussian(x)
         return mvn_logpdf(y, mus, lmbdas)
 
-    def posterior_predictive_studentt(self, x):
+    def posterior_predictive_studentt(self, x, aleatoric_only=False):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -516,13 +514,12 @@ class LinearGaussianWithMatrixNormalWishart:
         df = nu - self.likelihood.drow + 1
         mus = np.einsum('kh,...h->...k', M, x)
 
-        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-
-        if nb == 1:
-            return mus[0], lmbdas[0], df
+        if aleatoric_only:
+            lmbdas = np.tile(psi * df, (len(x), 1, 1))
         else:
-            return mus, lmbdas, df
+            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        return mus, lmbdas, df
 
     def log_posterior_predictive_studentt(self, y, x):
         mus, lmbdas, df = self.posterior_predictive_studentt(x)
@@ -595,9 +592,8 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
-    def posterior_predictive_gaussian(self, x):
+    def posterior_predictive_gaussian(self, x, aleatoric_only=False):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -607,20 +603,19 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
         df = nu - self.likelihood.drow + 1
         mus = np.einsum('kh,...h->...k', M, x)
 
-        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-        if nb == 1:
-            return mus[0], lmbdas[0]
+        if aleatoric_only:
+            lmbdas = np.tile(psi * df, (len(x), 1, 1))
         else:
-            return mus, lmbdas
+            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        return mus, lmbdas
 
     def log_posterior_predictive_gaussian(self, y, x):
         mus, lmbdas = self.posterior_predictive_gaussian(x)
         return mvn_logpdf(y, mus, lmbdas)
 
-    def posterior_predictive_studentt(self, x):
+    def posterior_predictive_studentt(self, x, aleatoric_only=False):
         x = np.reshape(x, (-1, self.likelihood.dcol))
-        nb = x.shape[0]
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
@@ -630,13 +625,12 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
         df = nu - self.likelihood.drow + 1
         mus = np.einsum('kh,...h->...k', M, x)
 
-        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-        lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-
-        if nb == 1:
-            return mus[0], lmbdas[0], df
+        if aleatoric_only:
+            lmbdas = np.tile(psi * df, (len(x), 1, 1))
         else:
-            return mus, lmbdas, df
+            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        return mus, lmbdas, df
 
     def log_posterior_predictive_studentt(self, y, x):
         mus, lmbdas, df = self.posterior_predictive_studentt(x)

@@ -18,9 +18,9 @@ from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
@@ -49,7 +49,7 @@ def _job(kwargs):
 
     # initialize Normal
     alpha_ng = 1.
-    beta_ng = 1. / (2. * 1e1)
+    beta_ng = 1. / (2. * 1e2)
     kappas = 1e-2
 
     # initialize Matrix-Normal
@@ -78,7 +78,8 @@ def _job(kwargs):
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -87,41 +88,26 @@ def _job(kwargs):
         gating_prior = Dirichlet(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalGamma(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
+
     dpglm.add_data(target, input, whiten=True,
-                   transform_type='Standard')
+                   labels_from_prior=True)
+
+    # Gibbs sampling
+    dpglm.resample(maxiter=args.gibbs_iters,
+                   progprint=args.verbose)
 
     for _ in range(args.super_iters):
-        # Gibbs sampling
-        if args.verbose:
-            print("Gibbs Sampling")
-
-        gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-            else progprint_xrange(args.gibbs_iters)
-
-        for _ in gibbs_iter:
-            dpglm.resample()
-
         if args.stochastic:
             # Stochastic meanfield VI
-            if args.verbose:
-                print('Stochastic Variational Inference')
-
-            svi_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.svi_iters)
-
-            batch_size = args.svi_batchsize
-            prob = batch_size / float(len(input))
-            for _ in svi_iter:
-                minibatch = npr.permutation(len(input))[:batch_size]
-                dpglm.meanfield_sgdstep(y=target[minibatch, :], x=input[minibatch, :],
-                                        prob=prob, stepsize=args.svi_stepsize)
+            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                               stepsize=args.svi_stepsize,
+                                               batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            if args.verbose:
-                print("Variational Inference")
             dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                maxiter=args.meanfield_iters,
                                                progprint=args.verbose)
@@ -140,7 +126,9 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+    with Pool(processes=min(nb_jobs, nb_cores),
+              initializer=tqdm.set_lock,
+              initargs=(tqdm.get_lock(),)) as p:
         res = p.map(_job, kwargs_list)
 
     return res
@@ -153,7 +141,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -163,7 +151,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
@@ -195,7 +183,7 @@ if __name__ == "__main__":
                                      arguments=args)[0]
 
     # predict on training
-    mu, var, std, nlpd =\
+    mu, var, std, nlpd = \
         dpglm.meanfield_prediction(input, target, prediction=args.prediction)
 
     # metrics
@@ -230,7 +218,6 @@ if __name__ == "__main__":
     axes[1].set_ylabel('p(x)')
 
     activations = dpglm.meanfield_predictive_activation(sorted_input)
-    for i in range(len(dpglm.used_labels)):
-        axes[1].plot(sorted_input, activations[:, i])
+    axes[1].plot(sorted_input, activations)
 
     plt.show()

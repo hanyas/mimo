@@ -7,12 +7,17 @@ from mimo.abstraction import Statistics as Stats
 
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
+
 from mimo.distributions import LinearGaussianWithPrecision
+from mimo.distributions import LinearGaussianWithDiagonalPrecision
+
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
-from mimo.distributions import MatrixNormalWithPrecision
 
-from mimo.util.matrix import invpd
+from mimo.distributions import MatrixNormalWithPrecision
+from mimo.distributions import MatrixNormalWithDiagonalPrecision
+
+from mimo.util.matrix import invpd, blockarray
 from mimo.util.data import extendlists
 
 
@@ -126,20 +131,34 @@ class NormalWishart(Distribution):
                - (np.dot(nat_param[0], stats[0]) + nat_param[1] * stats[1]
                   + np.tensordot(nat_param[2], stats[2]) + nat_param[3] * stats[3])
 
-    def expected_log_likelihood(self, x):
+    # This implementation is valid but terribly slow
+    def _expected_log_likelihood(self, x):
         # Natural parameter of marginal log-distirbution
         # are the expected statsitics of the posterior
         nat_param = self.expected_statistics()
 
         # Data statistics under a Gaussian likelihood
         # log-parition is subsumed into nat*stats
-        liklihood = GaussianWithPrecision(mu=np.empty(x.shape[-1]))
+        liklihood = GaussianWithPrecision(mu=np.empty_like(nat_param[0]))
         stats = liklihood.statistics(x, vectorize=True)
         log_base = liklihood.log_base()
 
         return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
                + nat_param[1] * stats[1] + nat_param[3] * stats[3]\
                + np.einsum('kh,nkh->n', nat_param[2], stats[2])
+
+    def expected_log_likelihood(self, x):
+        _, _, _, _E_logdet_lmbda = self.expected_statistics()
+        E_logdet_lmbda = 2. * _E_logdet_lmbda
+
+        xc = np.einsum('nk,kh,nh->n', x - self.gaussian.mu, self.wishart.psi,
+                       x - self.gaussian.mu, optimize=True)
+
+        # see Eqs. 10.64, 10.67, and 10.71 in Bishop
+        # sneaky gaussian/quadratic identity hidden here
+        return 0.5 * E_logdet_lmbda - 0.5 * self.dim / self.kappa\
+               - 0.5 * self.wishart.nu * xc\
+               - 0.5 * self.dim * np.log(2. * np.pi)
 
 
 class NormalGamma(Distribution):
@@ -248,14 +267,15 @@ class NormalGamma(Distribution):
                - (np.dot(nat_param[0], stats[0]) + np.dot(nat_param[1], stats[1])
                   + np.dot(nat_param[2], stats[2]) + np.dot(nat_param[3], stats[3]))
 
-    def expected_log_likelihood(self, x):
+    # This implementation is valid but terribly slow
+    def _expected_log_likelihood(self, x):
         # Natural parameter of marginal log-distirbution
         # are the expected statsitics of the posterior
         nat_param = self.expected_statistics()
 
         # Data statistics under a Gaussian likelihood
         # log-parition is subsumed into nat*stats
-        liklihood = GaussianWithDiagonalPrecision(mu=np.empty(x.shape[-1]))
+        liklihood = GaussianWithDiagonalPrecision(mu=np.empty_like(nat_param[0]))
         stats = liklihood.statistics(x, vectorize=True)
         log_base = liklihood.log_base()
 
@@ -263,6 +283,12 @@ class NormalGamma(Distribution):
                + np.einsum('k,nk->n', nat_param[1], stats[1])\
                + np.einsum('k,nk->n', nat_param[2], stats[2])\
                + np.einsum('k,nk->n', nat_param[3], stats[3])
+
+    def expected_log_likelihood(self, x):
+        E_x, E_lmbdas_xx, E_log_lmbdas, E_lmbdas = self.expected_statistics()
+        return (x**2).dot(E_lmbdas) + x.dot(E_x)\
+               + E_lmbdas_xx.sum() + E_log_lmbdas.sum()\
+               - 0.5 * self.dim * np.log(2. * np.pi)
 
 
 class TiedNormalWisharts:
@@ -507,14 +533,15 @@ class MatrixNormalWishart(Distribution):
                   + np.tensordot(nat_param[2], stats[2])
                   + nat_param[3] * stats[3])
 
-    def expected_log_likelihood(self, y, x, affine=True):
+    # This implementation is valid but terribly slow
+    def _expected_log_likelihood(self, y, x, affine=True):
         # Natural parameter of marginal log-distirbution
         # are the expected statsitics of the posterior
         nat_param = self.expected_statistics()
 
         # Data statistics under a linear Gaussian likelihood
         # log-parition is subsumed into nat*stats
-        _A = np.empty((y.shape[-1], x.shape[-1]))
+        _A = np.empty_like(nat_param[0])
         liklihood = LinearGaussianWithPrecision(A=_A, affine=affine)
         stats = liklihood.statistics(y, x, vectorize=True)
         log_base = liklihood.log_base()
@@ -523,3 +550,83 @@ class MatrixNormalWishart(Distribution):
                + np.einsum('kh,nkh->n', nat_param[1], stats[1])\
                + np.einsum('kh,nkh->n', nat_param[2], stats[2])\
                + nat_param[3] * stats[3]
+
+    def expected_log_likelihood(self, y, x, affine=True):
+        E_Lmbda_A, _E_AT_Lmbda_A, _E_lmbda, _E_logdet_lmbda = self.expected_statistics()
+        E_AT_Lmbda_A, E_lmbda, E_logdet_lmbda = -2. * _E_AT_Lmbda_A, -2. * _E_lmbda, 2. * _E_logdet_lmbda
+
+        res = 0.
+        if affine:
+            E_Lmbda_A, E_Lmbda_b = E_Lmbda_A[:, :-1], E_Lmbda_A[:, -1]
+            E_AT_Lmbda_A, E_AT_Lmbda_b, E_bT_Lmbda_b = E_AT_Lmbda_A[:-1, :-1],\
+                                                       E_AT_Lmbda_A[:-1, -1],\
+                                                       E_AT_Lmbda_A[-1, -1]
+            res += y.dot(E_Lmbda_b)
+            res -= x.dot(E_AT_Lmbda_b)
+            res -= 1. / 2 * E_bT_Lmbda_b
+
+        parammat = -1. / 2 * blockarray([[E_AT_Lmbda_A, - E_Lmbda_A.T],
+                                         [- E_Lmbda_A,    E_lmbda]])
+
+        xy = np.hstack((x, y))
+
+        res += np.einsum('ni,ni->n', xy.dot(parammat), xy, optimize=True)
+        res += - self.drow / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdet_lmbda
+
+        return res
+
+
+class MatrixNormalGamma(Distribution):
+
+    def __init__(self, M, K, alphas, betas):
+        self.matnorm = MatrixNormalWithDiagonalPrecision(M=M, K=K)
+        self.gamma = Gamma(alphas=alphas, betas=betas)
+
+    @property
+    def dcol(self):
+        return self.matnorm.dcol
+
+    @property
+    def drow(self):
+        return self.matnorm.drow
+
+    @property
+    def params(self):
+        return self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas
+
+    @params.setter
+    def params(self, values):
+        self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas = values
+
+    def rvs(self, size=1):
+        lmbdas = self.gamma.rvs()
+        self.matnorm.vs = lmbdas
+        A = self.matnorm.rvs()
+        return A, lmbdas
+
+    def mean(self):
+        return self.matnorm.mean(), self.gamma.mean()
+
+    def mode(self):
+        return self.matnorm.mode(), self.gamma.mode()
+
+    def log_likelihood(self, x):
+        A, lmbdas = x
+        return MatrixNormalWithDiagonalPrecision(M=self.matnorm.M, vs=lmbdas,
+                                                 K=self.matnorm.K).log_likelihood(A)\
+               + self.gamma.log_likelihood(lmbdas)
+
+    @property
+    def base(self):
+        return self.matnorm.base * self.gamma.base
+
+    def log_base(self):
+        return np.log(self.base)
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)

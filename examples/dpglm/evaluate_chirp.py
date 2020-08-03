@@ -18,7 +18,6 @@ from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
 
@@ -30,25 +29,25 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=25, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=0.9, type=float)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
-    parser.add_argument('--nb_train', help='size of train dataset', default=500, type=int)
-    parser.add_argument('--nb_splits', help='number of dataset splits', default=25, type=int)
+    parser.add_argument('--nb_train', help='size of train dataset', default=1000, type=int)
+    parser.add_argument('--nb_splits', help='number of dataset splits', default=10, type=int)
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
@@ -65,6 +64,7 @@ if __name__ == "__main__":
     data = np.hstack((x, y))
 
     input, target = data[:, :1], data[:, 1:]
+
     # prepare model
     input_dim, target_dim = 1, 1
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e2
+    psi_nw = 1e1
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -100,11 +100,13 @@ if __name__ == "__main__":
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -113,7 +115,8 @@ if __name__ == "__main__":
         gating_prior = Dirichlet(**gating_hypparams)
 
         dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                        for i in range(args.nb_models)],
                                                  models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
                                                          for i in range(args.nb_models)])
 
@@ -130,11 +133,11 @@ if __name__ == "__main__":
     for n in range(args.nb_splits):
         print('Processing data split ' + str(n + 1) + ' out of ' + str(args.nb_splits))
 
-        # # remove old data
-        # try:
-        #     dpglm.clear_data()
-        # except IndexError:
-        #     print('Model has no data')
+        # remove old data
+        try:
+            dpglm.clear_data()
+        except IndexError:
+            print('Model has no data')
 
         _input = input[n * split_size: (n + 1) * split_size, :]
         _target = target[n * split_size: (n + 1) * split_size, :]
@@ -151,48 +154,30 @@ if __name__ == "__main__":
             dpglm.basis[i].prior = copy.deepcopy(dpglm.basis[i].posterior)
             dpglm.models[i].prior = copy.deepcopy(dpglm.models[i].posterior)
 
+        # Gibbs sampling
+        dpglm.resample(maxiter=args.gibbs_iters)
+
         # train model
         for _ in range(args.super_iters):
-            # Gibbs sampling
-            if args.verbose:
-                print("Gibbs Sampling")
-
-            gibbs_iter = range(args.gibbs_iters) if not args.verbose\
-                else progprint_xrange(args.gibbs_iters)
-
-            for _ in gibbs_iter:
-                dpglm.resample()
-
             if args.stochastic:
                 # Stochastic meanfield VI
-                if args.verbose:
-                    print('Stochastic Variational Inference')
-
-                svi_iter = range(args.gibbs_iters) if not args.verbose\
-                    else progprint_xrange(args.svi_iters)
-
-                prob = split_size / float(len(input))
-                dpglm.meanfield_sgdstep(y=_target, x=_input,
-                                        prob=prob, stepsize=args.svi_stepsize)
-
+                dpglm.meanfield_stochastic_descent(stepsize=args.svi_stepsize,
+                                                   batchsize=split_size,
+                                                   maxiter=1)
             if args.deterministic:
                 # Meanfield VI
-                if args.verbose:
-                    print("Variational Inference")
                 dpglm.meanfield_coordinate_descent(tol=args.earlystop,
                                                    maxiter=args.meanfield_iters,
                                                    progprint=args.verbose)
 
-            import copy
+            # empirical Bayes
             dpglm.gating.prior = dpglm.gating.posterior
             for i in range(dpglm.size):
                 dpglm.basis[i].prior = dpglm.basis[i].posterior
                 dpglm.models[i].prior = dpglm.models[i].posterior
 
         # predict on all data
-        sparse = False if (n + 1) < args.nb_splits else True
-        mu, var, std = dpglm.meanfield_prediction(x=input, sparse=False,
-                                                  prediction=args.prediction)
+        mu, var, std = dpglm.meanfield_prediction(x=input, prediction=args.prediction)
 
         mu = np.hstack(mu)
         var = np.hstack(var)
@@ -233,7 +218,7 @@ if __name__ == "__main__":
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
 
-    fps = 10
+    fps = 4
     def make_frame(t):
         idx = int(t * fps)
         return mplfig_to_npimage(anim[idx])
