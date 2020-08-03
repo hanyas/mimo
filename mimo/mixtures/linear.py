@@ -348,6 +348,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         with tqdm(total=maxiter, desc=f'SVI #{pos + 1}',
                   position=pos, disable=not progprint) as pbar:
+            for _ in range(maxiter):
                 for _x, _y in zip(x, y):
                     for batch in batches(batchsize, len(_x)):
                         _mx, _my = _x[batch, :], _y[batch, :]
