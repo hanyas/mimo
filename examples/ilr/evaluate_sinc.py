@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
+
 nb_cores = pathos.multiprocessing.cpu_count()
 
 
@@ -56,7 +57,7 @@ def _job(kwargs):
     K = 1e-3
 
     for n in range(args.nb_models):
-        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+        basis_hypparams = dict(mu=np.zeros((input_dim,)),
                                psi=np.eye(input_dim) * psi_nw,
                                kappa=kappa, nu=input_dim + 1)
 
@@ -72,48 +73,49 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=True)
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
+    ilr.add_data(target, input, whiten=True)
 
     # Gibbs sampling
-    dpglm.resample(maxiter=args.gibbs_iters,
-                   progprint=args.verbose)
+    ilr.resample(maxiter=args.gibbs_iters,
+                 progprint=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
-            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
-                                               stepsize=args.svi_stepsize,
-                                               batchsize=args.svi_batchsize)
+            ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                             stepsize=args.svi_stepsize,
+                                             batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
+            ilr.meanfield_coordinate_descent(tol=args.earlystop,
+                                             maxiter=args.meanfield_iters,
+                                             progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
+        ilr.gating.prior = ilr.gating.posterior
+        for i in range(ilr.size):
+            ilr.basis[i].prior = ilr.basis[i].posterior
+            ilr.models[i].prior = ilr.models[i].posterior
 
-    return dpglm
+    return ilr
 
 
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
@@ -135,7 +137,7 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
+    parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=24, type=int)
@@ -181,10 +183,12 @@ if __name__ == "__main__":
 
     # shuffle data
     from sklearn.utils import shuffle
+
     data = shuffle(data)
 
     # split to nb_seeds train datasets
     from sklearn.model_selection import ShuffleSplit
+
     spliter = ShuffleSplit(n_splits=args.nb_seeds, test_size=0.2)
 
     train_inputs, train_targets = [], []
@@ -193,23 +197,23 @@ if __name__ == "__main__":
         train_targets.append(data[train_index, 1:])
 
     # train
-    dpglms = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      train_input=train_inputs,
-                                      train_target=train_targets,
-                                      arguments=args)
+    ilrs = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                    train_input=train_inputs,
+                                    train_target=train_targets,
+                                    arguments=args)
 
     # Evaluation over multiple seeds to get confidence
-    mu, std,  = [], []
+    mu, std, = [], []
     evar, mse, smse = [], [], []
-    for dpglm in dpglms:
-        _mu, _var, _std = dpglm.meanfield_prediction(input, prediction=args.prediction)
+    for ilr in ilrs:
+        _mu, _var, _std = ilr.meanfield_prediction(input, prediction=args.prediction)
 
         _mse = mean_squared_error(target, _mu)
         _evar = explained_variance_score(target, _mu, multioutput='variance_weighted')
         _smse = 1. - r2_score(target, _mu, multioutput='variance_weighted')
 
         print('EVAR:', _evar, 'MSE:', _mse, 'SMSE:', _smse,
-              'Compnents:', len(dpglm.used_labels))
+              'Compnents:', len(ilr.used_labels))
 
         mu.append(_mu)
         std.append(_std)
@@ -258,6 +262,7 @@ if __name__ == "__main__":
 
     # save figs
     import tikzplotlib
+
     tikzplotlib.save(dataset + '_mean.tex')
     plt.savefig(dataset + '_mean.pdf')
 
@@ -279,11 +284,12 @@ if __name__ == "__main__":
     axes[0].plot(input, mu[choice] - 2 * std[choice], '-b', zorder=5)
 
     # plot gaussian activations
-    activations = dpglms[choice].meanfield_predictive_activation(input)
+    activations = ilrs[choice].meanfield_predictive_activation(input)
     axes[1].plot(input, activations)
 
     # save figs
     import tikzplotlib
+
     tikzplotlib.save(dataset + '_example.tex')
     plt.savefig(dataset + '_example.pdf')
 

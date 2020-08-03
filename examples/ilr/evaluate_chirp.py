@@ -21,10 +21,9 @@ from mimo.mixtures import BayesianMixtureOfLinearGaussians
 
 import matplotlib.pyplot as plt
 
-
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
+    parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
@@ -84,7 +83,7 @@ if __name__ == "__main__":
     K = 1e-2
 
     for n in range(args.nb_models):
-        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+        basis_hypparams = dict(mu=np.zeros((input_dim,)),
                                psi=np.eye(input_dim) * psi_nw,
                                kappa=kappa, nu=input_dim + 1)
 
@@ -104,25 +103,26 @@ if __name__ == "__main__":
                                 deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     anim = []
 
     from sklearn.preprocessing import StandardScaler
+
     input_transform = StandardScaler()
     target_transform = StandardScaler()
 
@@ -135,49 +135,50 @@ if __name__ == "__main__":
 
         # remove old data
         try:
-            dpglm.clear_data()
+            ilr.clear_data()
         except IndexError:
             print('Model has no data')
 
         _input = input[n * split_size: (n + 1) * split_size, :]
         _target = target[n * split_size: (n + 1) * split_size, :]
 
-        dpglm.add_data(y=_target, x=_input,
-                       whiten=True,
-                       input_transform=input_transform,
-                       target_transform=target_transform)
+        ilr.add_data(y=_target, x=_input,
+                     whiten=True,
+                     input_transform=input_transform,
+                     target_transform=target_transform)
 
         # set posterior to prior
         import copy
-        dpglm.gating.prior = copy.deepcopy(dpglm.gating.posterior)
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = copy.deepcopy(dpglm.basis[i].posterior)
-            dpglm.models[i].prior = copy.deepcopy(dpglm.models[i].posterior)
+
+        ilr.gating.prior = copy.deepcopy(ilr.gating.posterior)
+        for i in range(ilr.size):
+            ilr.basis[i].prior = copy.deepcopy(ilr.basis[i].posterior)
+            ilr.models[i].prior = copy.deepcopy(ilr.models[i].posterior)
 
         # Gibbs sampling
-        dpglm.resample(maxiter=args.gibbs_iters)
+        ilr.resample(maxiter=args.gibbs_iters)
 
         # train model
         for _ in range(args.super_iters):
             if args.stochastic:
                 # Stochastic meanfield VI
-                dpglm.meanfield_stochastic_descent(stepsize=args.svi_stepsize,
-                                                   batchsize=split_size,
-                                                   maxiter=1)
+                ilr.meanfield_stochastic_descent(stepsize=args.svi_stepsize,
+                                                 batchsize=split_size,
+                                                 maxiter=1)
             if args.deterministic:
                 # Meanfield VI
-                dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                                   maxiter=args.meanfield_iters,
-                                                   progprint=args.verbose)
+                ilr.meanfield_coordinate_descent(tol=args.earlystop,
+                                                 maxiter=args.meanfield_iters,
+                                                 progprint=args.verbose)
 
             # empirical Bayes
-            dpglm.gating.prior = dpglm.gating.posterior
-            for i in range(dpglm.size):
-                dpglm.basis[i].prior = dpglm.basis[i].posterior
-                dpglm.models[i].prior = dpglm.models[i].posterior
+            ilr.gating.prior = ilr.gating.posterior
+            for i in range(ilr.size):
+                ilr.basis[i].prior = ilr.basis[i].posterior
+                ilr.models[i].prior = ilr.models[i].posterior
 
         # predict on all data
-        mu, var, std = dpglm.meanfield_prediction(x=input, prediction=args.prediction)
+        mu, var, std = ilr.meanfield_prediction(x=input, prediction=args.prediction)
 
         mu = np.hstack(mu)
         var = np.hstack(var)
@@ -186,7 +187,7 @@ if __name__ == "__main__":
         # plot prediction
         fig = plt.figure(figsize=(12, 4))
         plt.scatter(input, target, s=0.75, color='k')
-        plt.axvspan(_input.min(),  _input.max(), facecolor='grey', alpha=0.1)
+        plt.axvspan(_input.min(), _input.max(), facecolor='grey', alpha=0.1)
         plt.plot(input, mu, color='crimson')
 
         for c in [1., 2.]:
@@ -212,6 +213,7 @@ if __name__ == "__main__":
 
         # save tikz and pdf
         import tikzplotlib
+
         tikzplotlib.save(dataset + '_' + str(n) + '.tex')
         plt.savefig(dataset + '_' + str(n) + '.pdf')
 
@@ -219,9 +221,12 @@ if __name__ == "__main__":
     from moviepy.video.io.bindings import mplfig_to_npimage
 
     fps = 4
+
+
     def make_frame(t):
         idx = int(t * fps)
         return mplfig_to_npimage(anim[idx])
+
 
     # set working directory
     os.chdir(args.evalpath)

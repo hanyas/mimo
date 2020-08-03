@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
+
 nb_cores = pathos.multiprocessing.cpu_count()
 
 
@@ -48,7 +49,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e2
+    psi_nw = 1e0
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -56,7 +57,7 @@ def _job(kwargs):
     K = 1e-3
 
     for n in range(args.nb_models):
-        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+        basis_hypparams = dict(mu=np.zeros((input_dim,)),
                                psi=np.eye(input_dim) * psi_nw,
                                kappa=kappa, nu=input_dim + 1)
 
@@ -75,45 +76,41 @@ def _job(kwargs):
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=True)
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine) for i in range(args.nb_models)])
+    ilr.add_data(target, input, whiten=True)
 
     # Gibbs sampling
-    dpglm.resample(maxiter=args.gibbs_iters,
-                   progprint=args.verbose)
+    ilr.resample(maxiter=args.gibbs_iters,
+                 progprint=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
-            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
-                                               stepsize=args.svi_stepsize,
-                                               batchsize=args.svi_batchsize)
+            ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                             stepsize=args.svi_stepsize,
+                                             batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
+            ilr.meanfield_coordinate_descent(tol=args.earlystop,
+                                             maxiter=args.meanfield_iters,
+                                             progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
+        ilr.gating.prior = ilr.gating.posterior
+        for i in range(ilr.size):
+            ilr.basis[i].prior = ilr.basis[i].posterior
+            ilr.models[i].prior = ilr.models[i].posterior
 
-    return dpglm
+    return ilr
 
 
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
@@ -132,13 +129,13 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
+    parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=150, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=10, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
@@ -147,10 +144,10 @@ if __name__ == "__main__":
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=128, type=int)
     parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -162,31 +159,29 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # create data
-    nb_train = 160
+    nb_train = 1200
 
     input, mean = [], []
 
-    input.append(np.linspace(-2., -1, int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(-1., 0, int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(0, 1., int(nb_train / 4)).reshape(int(nb_train / 4), 1))
-    input.append(np.linspace(1, 2., int(nb_train / 4)).reshape(int(nb_train / 4), 1))
+    input.append(np.linspace(-3., 0, int(nb_train / 3)).reshape(int(nb_train / 3), 1))
+    input.append(np.linspace(0., 3., int(nb_train / 3)).reshape(int(nb_train / 3), 1))
+    input.append(np.linspace(3., 6., int(nb_train / 3)).reshape(int(nb_train / 3), 1))
 
-    mean.append(np.ones((int(nb_train / 4), 1)) * 1.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 3.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 0.)
-    mean.append(np.ones((int(nb_train / 4), 1)) * 4.)
+    mean.append(-2 * input[0] ** 3 + 2 * input[0])
+    mean.append(-2 * (input[1] - 3) ** 3 + 2 * (input[1] - 3))
+    mean.append(-2 * (input[2] - 6) ** 3 + 2 * (input[2] - 6))
 
     input, mean = np.vstack(input), np.vstack(mean)
-    noise = 0.1 * npr.randn(nb_train).reshape(nb_train, 1)
+    noise = 3.0 * npr.randn(nb_train).reshape(nb_train, 1)
     target = mean + noise
 
-    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_input=input,
-                                     train_target=target,
-                                     arguments=args)[0]
+    ilr = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                   train_input=input,
+                                   train_target=target,
+                                   arguments=args)[0]
 
     # predict
-    mu, var, std = dpglm.meanfield_prediction(input, prediction=args.prediction)
+    mu, var, std = ilr.meanfield_prediction(input, prediction=args.prediction)
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
@@ -195,7 +190,7 @@ if __name__ == "__main__":
     evar = explained_variance_score(target, mu, multioutput='variance_weighted')
     smse = 1. - r2_score(target, mu, multioutput='variance_weighted')
 
-    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(dpglm.used_labels))
+    print('EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Compnents:', len(ilr.used_labels))
 
     fig, axes = plt.subplots(2, 1)
 
@@ -206,7 +201,7 @@ if __name__ == "__main__":
 
     axes[0].scatter(sorted_input, sorted_target, s=0.75, color='k')
     axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    for c in [1., 2., 3.]:
+    for c in [1., 2.]:
         axes[0].fill_between(sorted_input,
                              sorted_mu - c * sorted_std,
                              sorted_mu + c * sorted_std,
@@ -218,11 +213,11 @@ if __name__ == "__main__":
     axes[1].set_xlabel('x')
     axes[1].set_ylabel('p(x)')
 
-    activations = dpglm.meanfield_predictive_activation(sorted_input)
+    activations = ilr.meanfield_predictive_activation(sorted_input)
     axes[1].plot(sorted_input, activations)
 
     # set working directory
-    dataset = 'step'
+    dataset = 'step_poly'
     try:
         os.chdir(args.evalpath + '/' + dataset)
     except FileNotFoundError:
@@ -231,6 +226,7 @@ if __name__ == "__main__":
 
     # save tikz and pdf
     import tikzplotlib
+
     tikzplotlib.save(dataset + '.tex')
     plt.savefig(dataset + '.pdf')
 

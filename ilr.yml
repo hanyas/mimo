@@ -1,4 +1,4 @@
-name: dpglm
+name: ilr
 channels:
   - defaults
 dependencies:
@@ -84,5 +84,5 @@ dependencies:
     - torchvision==0.5.0+cpu
     - tqdm==4.43.0
     - urllib3==1.25.8
-prefix: /home/hany/.miniconda3/envs/dpglm
+prefix: /home/hany/.miniconda3/envs/ilr
 

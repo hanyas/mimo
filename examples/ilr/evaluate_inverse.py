@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
+
 nb_cores = pathos.multiprocessing.cpu_count()
 
 
@@ -56,7 +57,7 @@ def _job(kwargs):
     K = 1e-3
 
     for n in range(args.nb_models):
-        basis_hypparams = dict(mu=np.zeros((input_dim, )),
+        basis_hypparams = dict(mu=np.zeros((input_dim,)),
                                psi=np.eye(input_dim) * psi_nw,
                                kappa=kappa, nu=input_dim + 1)
 
@@ -75,46 +76,46 @@ def _job(kwargs):
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = StickBreaking(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
-        dpglm = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                        for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
-    dpglm.add_data(target, input, whiten=False,
-                   labels_from_prior=True)
+        ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
+                                               basis=[GaussianWithNormalWishart(basis_prior[i])
+                                                      for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
+    ilr.add_data(target, input, whiten=False,
+                 labels_from_prior=True)
 
     # Gibbs sampling
-    dpglm.resample(maxiter=args.gibbs_iters,
-                   progprint=args.verbose)
+    ilr.resample(maxiter=args.gibbs_iters,
+                 progprint=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
-            dpglm.meanfield_stochastic_descent(maxiter=args.svi_iters,
-                                               stepsize=args.svi_stepsize,
-                                               batchsize=args.svi_batchsize)
+            ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
+                                             stepsize=args.svi_stepsize,
+                                             batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
-            dpglm.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
+            ilr.meanfield_coordinate_descent(tol=args.earlystop,
+                                             maxiter=args.meanfield_iters,
+                                             progprint=args.verbose)
 
-        dpglm.gating.prior = dpglm.gating.posterior
-        for i in range(dpglm.size):
-            dpglm.basis[i].prior = dpglm.basis[i].posterior
-            dpglm.models[i].prior = dpglm.models[i].posterior
+        ilr.gating.prior = ilr.gating.posterior
+        for i in range(ilr.size):
+            ilr.basis[i].prior = ilr.basis[i].posterior
+            ilr.models[i].prior = ilr.models[i].posterior
 
-    return dpglm
+    return ilr
 
 
 def parallel_dpglm_inference(nb_jobs=50, **kwargs):
@@ -133,7 +134,7 @@ def parallel_dpglm_inference(nb_jobs=50, **kwargs):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Evaluate DPGLM with a Stick-breaking prior')
+    parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
     parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
@@ -166,21 +167,22 @@ if __name__ == "__main__":
     target = npr.uniform(0, 1, (200, 1))
     input = target + 0.3 * np.sin(2. * np.pi * target) + noise
 
-    dpglm = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                     train_input=input,
-                                     train_target=target,
-                                     arguments=args)[0]
+    ilr = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+                                   train_input=input,
+                                   train_target=target,
+                                   arguments=args)[0]
 
     # mean prediction
-    mu, _, _ = dpglm.meanfield_prediction(input, prediction='average')
+    mu, _, _ = ilr.meanfield_prediction(input, prediction='average')
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error, r2_score
+
     evar = explained_variance_score(target, mu)
     mse = mean_squared_error(target, mu)
     smse = 1. - r2_score(target, mu)
 
-    print('MEAN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
+    print('MEAN - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(ilr.used_labels))
 
     # creat plot for mean vs mode prediction and gaussian activations
     fig, axes = plt.subplots(2, 1)
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     plt.ylabel('y')
 
     # mean prediction
-    mu, _, _ = dpglm.meanfield_prediction(input, prediction='mode')
+    mu, _, _ = ilr.meanfield_prediction(input, prediction='mode')
 
     # metrics
     from sklearn.metrics import explained_variance_score, mean_squared_error
@@ -199,7 +201,7 @@ if __name__ == "__main__":
     evar = explained_variance_score(target, mu, multioutput='variance_weighted')
     smse = 1. - r2_score(target, mu, multioutput='variance_weighted')
 
-    print('Mode - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(dpglm.used_labels))
+    print('Mode - EVAR:', evar, 'MSE:', mse, 'SMSE:', smse, 'Components:', len(ilr.used_labels))
 
     axes[0].scatter(input, mu, marker='D', facecolors='none', edgecolors='r', linewidth=0.5)
 
@@ -208,10 +210,10 @@ if __name__ == "__main__":
     axes[1].set_ylabel('p(x)')
 
     sorted_input = np.sort(input, axis=0)
-    activations = dpglm.meanfield_predictive_activation(sorted_input)
+    activations = ilr.meanfield_predictive_activation(sorted_input)
 
     colours = ['green', 'orange', 'purple']
-    for k, i in enumerate(dpglm.used_labels):
+    for k, i in enumerate(ilr.used_labels):
         axes[1].plot(sorted_input, activations[:, i], color=colours[k])
 
     # set working directory
@@ -224,14 +226,15 @@ if __name__ == "__main__":
 
     # save tikz and pdf
     import tikzplotlib
+
     tikzplotlib.save(dataset + '_comparison.tex')
     plt.savefig(dataset + '_comparison.pdf')
     plt.show()
 
     # get mean of matrix-normal for plotting experts
     regcoeff = []
-    for idx, m in enumerate(dpglm.models):
-        if idx in dpglm.used_labels:
+    for idx, m in enumerate(ilr.models):
+        if idx in ilr.used_labels:
             M, _, _, _ = m.posterior.params
             regcoeff.append(M)
 
@@ -270,6 +273,7 @@ if __name__ == "__main__":
 
     # save tikz and pdf
     import tikzplotlib
+
     tikzplotlib.save(dataset + '_experts.tex')
     plt.savefig(dataset + '_experts.pdf')
 
