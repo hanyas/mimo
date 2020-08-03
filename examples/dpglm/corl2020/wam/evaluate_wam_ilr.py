@@ -256,30 +256,3 @@ if __name__ == "__main__":
     dt.to_csv('wam_' + str(args.prior) +
               '_alpha_' + str(args.alpha) + '.csv',
               mode='a', index=True)
-
-    # save model
-    model = dpglms[0]
-    model.clear_data()
-
-    import pickle
-    pickle.dump(model, open("wam_invdyn_slow_4.p", "wb"))
-
-    # # load model
-    # loaded = pickle.load(open("wam_invdyn.p", "rb"))
-    #
-    # from mimo.mixtures.linear import CompressedMixtureOfLinearGaussians
-    # compressed = CompressedMixtureOfLinearGaussians(mixture=loaded)
-    #
-    # import time
-    #
-    # start = time.time()
-    # _exp_output = compressed.prediction(x=test_input[0, :])
-    # stop = time.time()
-    # print('time:', stop - start)
-    # print('exp:', _exp_output)
-    #
-    # start = time.time()
-    # _output, _, _ = loaded.meanfield_prediction(x=test_input[0, :])
-    # stop = time.time()
-    # print('time:', stop - start)
-    # print('output:', _output)
