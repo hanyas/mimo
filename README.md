@@ -22,8 +22,8 @@ It started as a mere restructuring of the code but has by now significantly dive
  
  A toy example of fitting a sine wave
  
-    python examples/ilr/evaluate_sine.py
+    python examples/ilr/toy/evaluate_sine.py
     
  A toy example of fitting a step function
  
-    python examples/ilr/evaluate_step.py
+    python examples/ilr/toy/evaluate_step.py
