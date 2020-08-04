@@ -35,7 +35,7 @@ if __name__ == "__main__":
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=50, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
@@ -78,11 +78,11 @@ if __name__ == "__main__":
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e1
+    psi_nw = 1e0
     kappa = 1e-2
 
     # initialize Matrix-Normal
-    psi_mnw = 1e1
+    psi_mnw = 1e0
     K = 1e-2
 
     for n in range(args.nb_models):
@@ -203,8 +203,8 @@ if __name__ == "__main__":
 
         anim.append(fig)
 
-        # plt.show()
-        # plt.pause(1)
+        plt.show()
+        plt.pause(1)
 
         # set working directory
         dataset = 'chirp'
