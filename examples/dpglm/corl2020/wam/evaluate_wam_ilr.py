@@ -53,7 +53,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e0
+    psi_nw = 1e1
     kappa = 1e-2
 
     # initialize Matrix-Normal

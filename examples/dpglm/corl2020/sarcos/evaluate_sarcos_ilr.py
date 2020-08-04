@@ -53,7 +53,7 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e0
+    psi_nw = 1e1
     kappa = 1e-2
 
     # initialize Matrix-Normal
@@ -155,16 +155,15 @@ if __name__ == "__main__":
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=5, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=10, type=int)
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--svi_iters', help='SVI iterations', default=10, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=25, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-1, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=4096, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
-    # parser.add_argument('--output', help='choose output', default=0, type=int)
 
     args = parser.parse_args()
 
@@ -211,16 +210,16 @@ if __name__ == "__main__":
         _nb_models = len(dpglm.used_labels)
         dpglm.clear_data()
 
-        _train_mu, _, _, _train_nlpd = \
-            dpglm.meanfield_prediction(x=train_input,
-                                       y=train_target,
-                                       prediction=args.prediction)
-
-        _train_mse = mean_squared_error(train_target, _train_mu)
-        _train_smse = 1. - r2_score(train_target, _train_mu)
-
-        print('TRAIN - MSE:', _train_mse, 'SMSE:', _train_smse,
-              'NLPD:', _train_nlpd.mean(), 'Compnents:', _nb_models)
+        # _train_mu, _, _, _train_nlpd = \
+        #     dpglm.meanfield_prediction(x=train_input,
+        #                                y=train_target,
+        #                                prediction=args.prediction)
+        #
+        # _train_mse = mean_squared_error(train_target, _train_mu)
+        # _train_smse = 1. - r2_score(train_target, _train_mu)
+        #
+        # print('TRAIN - MSE:', _train_mse, 'SMSE:', _train_smse,
+        #       'NLPD:', _train_nlpd.mean(), 'Compnents:', _nb_models)
 
         _test_mu, _, _, _test_nlpd =\
             dpglm.meanfield_prediction(x=test_input,
