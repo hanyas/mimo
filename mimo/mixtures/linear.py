@@ -19,6 +19,10 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from tqdm import tqdm
 from pathos.helpers import mp
 
+import pathos
+from pathos.pools import ThreadPool as Pool
+nb_cores = pathos.multiprocessing.cpu_count()
+
 eps = np.finfo(np.float64).tiny
 
 
@@ -255,13 +259,25 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return z
 
     # Mean Field
-    def expected_scores(self, y, x):
+    def expected_scores(self, y, x, nb_threads=4):
         N, K = y.shape[0], self.size
 
         component_scores = np.empty((N, K))
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
-            component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, m.likelihood.affine)
+
+        if nb_threads == 1:
+            for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                _affine = m.likelihood.affine
+                component_scores[:, idx] = b.posterior.expected_log_likelihood(x)
+                component_scores[:, idx] += m.posterior.expected_log_likelihood(y, x, _affine)
+        else:
+            def _loop(idx):
+                _affine = self.models[idx].likelihood.affine
+                component_scores[:, idx] = self.basis[idx].posterior.expected_log_likelihood(x)
+                component_scores[:, idx] += self.models[idx].posterior.expected_log_likelihood(y, x, _affine)
+
+            with Pool(threads=nb_threads) as p:
+                p.map(_loop, range(self.size))
+
         component_scores = np.nan_to_num(component_scores, copy=False)
 
         if isinstance(self.gating, CategoricalWithDirichlet):
@@ -326,10 +342,19 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     def _meanfield_update_gating(self, scores):
         self.gating.meanfield_update(None, scores)
 
-    def _meanfield_update_components(self, y, x, scores):
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            b.meanfield_update([_x for _x in x], [_score[:, idx] for _score in scores])
-            m.meanfield_update([_y for _y in y], [_x for _x in x], [_score[:, idx] for _score in scores])
+    def _meanfield_update_components(self, y, x, scores,
+                                     nb_threads=4):
+        if nb_threads == 1:
+            for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                b.meanfield_update(x, [_score[:, idx] for _score in scores])
+                m.meanfield_update(y, x, [_score[:, idx] for _score in scores])
+        else:
+            def _loop(idx):
+                self.basis[idx].meanfield_update(x, [_score[:, idx] for _score in scores])
+                self.models[idx].meanfield_update(y, x, [_score[:, idx] for _score in scores])
+
+            with Pool(threads=nb_threads) as p:
+                p.map(_loop, range(self.size))
 
     # SVI
     def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
@@ -370,12 +395,20 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self._meanfield_sgdstep_components(y, x, scores, prob, stepsize)
         self._meanfield_sgdstep_gating(scores, prob, stepsize)
 
-    def _meanfield_sgdstep_components(self, y, x, scores, prob, stepsize):
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            b.meanfield_sgdstep([_x for _x in x],
-                                [_score[:, idx] for _score in scores], prob, stepsize)
-            m.meanfield_sgdstep([_y for _y in y], [_x for _x in x],
-                                [_score[:, idx] for _score in scores], prob, stepsize)
+    def _meanfield_sgdstep_components(self, y, x, scores, prob,
+                                      stepsize, nb_threads=4):
+
+        if nb_threads == 1:
+            for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                b.meanfield_sgdstep(x, [_score[:, idx] for _score in scores], prob, stepsize)
+                m.meanfield_sgdstep(y, x, [_score[:, idx] for _score in scores], prob, stepsize)
+        else:
+            def _loop(idx):
+                self.basis[idx].meanfield_sgdstep(x, [_score[:, idx] for _score in scores], prob, stepsize)
+                self.models[idx].meanfield_sgdstep(y, x, [_score[:, idx] for _score in scores], prob, stepsize)
+
+            with Pool(threads=nb_threads) as p:
+                p.map(_loop, range(self.size))
 
     def _meanfield_sgdstep_gating(self, scores, prob, stepsize):
         self.gating.meanfield_sgdstep(None, scores, prob, stepsize)
