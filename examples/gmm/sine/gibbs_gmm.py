@@ -44,7 +44,6 @@ gmm.add_data(data, labels_from_prior=True)
 
 gmm.resample(maxiter=2500)
 
-
 plt.figure()
 plt.title('posterior')
 gmm.plot()

@@ -117,14 +117,14 @@ def _job(kwargs):
                                                progprint=args.verbose)
 
         ilr.gating.prior = ilr.gating.posterior
-        for i in range(ilr.size):
+        for i in range(ilr.likelihood.size):
             ilr.basis[i].prior = ilr.basis[i].posterior
             ilr.models[i].prior = ilr.models[i].posterior
 
     return ilr
 
 
-def parallel_dpglm_inference(nb_jobs=50, **kwargs):
+def parallel_ilr_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
         kwargs['seed'] = npr.randint(1337, 6174)
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     input_transform.fit(input_data)
     target_transform.fit(target_data)
 
-    ilrs = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
+    ilrs = parallel_ilr_inference(nb_jobs=args.nb_seeds,
                                       input=train_input,
                                       target=train_target,
                                       input_transform=input_transform,

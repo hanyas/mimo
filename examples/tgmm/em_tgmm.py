@@ -7,9 +7,10 @@ from matplotlib import pyplot as plt
 
 from mimo.distributions import Categorical
 from mimo.distributions import TiedGaussiansWithPrecision
+
 from mimo.mixtures import MixtureOfTiedGaussians
 
-npr.seed(1337)
+# npr.seed(1337)
 
 gating = Categorical(K=2)
 
@@ -30,7 +31,10 @@ ensemble = TiedGaussiansWithPrecision(mus=[npr.randn(2,),
 
 model = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 
-model.max_likelihood(obs, maxiter=500)
+elbo = model.max_likelihood(obs, maxiter=1000)
+
+plt.figure()
+plt.plot(elbo)
 
 plt.figure()
 model.plot(obs)

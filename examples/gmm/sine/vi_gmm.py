@@ -3,6 +3,7 @@ import operator
 
 import numpy as np
 import numpy.random as npr
+
 from matplotlib import pyplot as plt
 
 from mimo.distributions import Dirichlet
@@ -11,8 +12,6 @@ from mimo.distributions import NormalWishart
 from mimo.distributions import GaussianWithNormalWishart
 
 from mimo.mixtures import BayesianMixtureOfGaussians
-
-from mimo.util.text import progprint_xrange
 
 
 npr.seed(1337)
@@ -44,20 +43,15 @@ gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
                                  components=[GaussianWithNormalWishart(components_prior)
                                              for _ in range(nb_models)])
 
-gmm.add_data(data)
+gmm.add_data(data, labels_from_prior=True)
 
 allscores = []
 allmodels = []
 for superitr in range(5):
     # Gibbs sampling to wander around the posterior
-    print('Gibbs Sampling')
-    for _ in progprint_xrange(25):
-        gmm.resample()
-
+    gmm.resample(maxiter=25)
     # mean field to lock onto a mode
-    print('Mean Field')
-    gmm.resample()  # sample once to initialize posterior
-    scores = [gmm.meanfield_update() for _ in progprint_xrange(100)]
+    scores = gmm.meanfield_coordinate_descent(maxiter=100)
 
     allscores.append(scores)
     allmodels.append(copy.deepcopy(gmm))
@@ -72,5 +66,5 @@ models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
 
 plt.figure()
 plt.title('best model')
-gmm.plot()
+models_and_scores[0][0].plot()
 plt.show()

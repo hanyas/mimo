@@ -154,7 +154,7 @@ if __name__ == "__main__":
         import copy
 
         ilr.gating.prior = copy.deepcopy(ilr.gating.posterior)
-        for i in range(ilr.size):
+        for i in range(ilr.likelihood.size):
             ilr.basis[i].prior = copy.deepcopy(ilr.basis[i].posterior)
             ilr.models[i].prior = copy.deepcopy(ilr.models[i].posterior)
 
@@ -176,7 +176,7 @@ if __name__ == "__main__":
 
             # empirical Bayes
             ilr.gating.prior = ilr.gating.posterior
-            for i in range(ilr.size):
+            for i in range(ilr.likelihood.size):
                 ilr.basis[i].prior = ilr.basis[i].posterior
                 ilr.models[i].prior = ilr.models[i].posterior
 

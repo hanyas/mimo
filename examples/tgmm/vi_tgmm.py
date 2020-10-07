@@ -29,7 +29,7 @@ gmm = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
 obs = [gmm.rvs(100)[0] for _ in range(5)]
 gmm.plot(obs)
 
-gating_hypparams = dict(K=2, alphas=2 * np.ones((2, )))
+gating_hypparams = dict(K=2, alphas=np.ones((2, )))
 gating_prior = Dirichlet(**gating_hypparams)
 
 ensemble_hypparams = dict(mus=[np.zeros((2, )) for _ in range(2)],
