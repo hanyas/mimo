@@ -40,8 +40,7 @@ class MixtureOfTiedGaussians(MixtureOfGaussians):
     def mus(self):
         return self.ensemble.mus
 
-    def max_likelihood(self, obs, hypweights=None,
-                       maxiter=1, progprint=True):
+    def max_likelihood(self, obs, maxiter=1, progprint=True):
 
         current = mp.current_process()
         if len(current._identity) > 0:
@@ -57,11 +56,6 @@ class MixtureOfTiedGaussians(MixtureOfGaussians):
             for _ in range(maxiter):
                 # Expectation step
                 scores = [self.scores(_obs) for _obs in obs]
-
-                if hypweights is not None:
-                    assert len(hypweights) == len(scores)
-                    for i, (_score, _weight) in enumerate(zip(scores, hypweights)):
-                        scores[i] = _score * _weight[:, None]
 
                 # Maximization step
                 self.ensemble.max_likelihood(obs, scores)
@@ -146,8 +140,7 @@ class BayesianMixtureOfTiedGaussians(BayesianMixtureDistribution):
 
     # Expectation-Maximization
     @pass_obs_arg
-    def max_aposteriori(self, obs, hypweights=None,
-                        maxiter=1, progprint=True):
+    def max_aposteriori(self, obs, maxiter=1, progprint=True):
 
         current = mp.current_process()
         if len(current._identity) > 0:
@@ -162,11 +155,6 @@ class BayesianMixtureOfTiedGaussians(BayesianMixtureDistribution):
             for i in range(maxiter):
                 # Expectation step
                 scores = [self.likelihood.scores(_obs) for _obs in obs]
-
-                if hypweights is not None:
-                    assert len(hypweights) == len(scores)
-                    for i, (_score, _weight) in enumerate(zip(scores, hypweights)):
-                        scores[i] = _score * _weight[:, None]
 
                 # Maximization step
                 self.ensemble.max_aposteriori(obs, scores)
