@@ -55,7 +55,7 @@ class NormalWishart(Distribution):
     def log_likelihood(self, x):
         mu, lmbda = x
         return GaussianWithPrecision(mu=self.gaussian.mu,
-                                     lmbda=self.kappa * np.eye(self.dim)).log_likelihood(mu) \
+                                     lmbda=self.kappa * lmbda).log_likelihood(mu) \
                + self.wishart.log_likelihood(lmbda)
 
     @property
