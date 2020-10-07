@@ -42,7 +42,8 @@ class Categorical(Distribution):
         bads = np.isnan(x)
         log_lik = np.zeros_like(x, dtype=np.double)
         err = np.seterr(invalid='ignore', divide='ignore')
-        log_lik[~bads] = np.log(self.probs)[list(x[~bads])]  # log(0) can happen, no warning
+        # log(0) can happen, no warning
+        log_lik[~bads] = np.log(self.probs)[list(x[~bads])]
         np.seterr(**err)
         return log_lik
 
@@ -53,31 +54,21 @@ class Categorical(Distribution):
         raise NotImplementedError
 
     def statistics(self, data):
-        # Stats are reduced
         if isinstance(data, np.ndarray):
             return np.bincount(data, minlength=self.K)
         else:
             return sum(list(map(self.statistics, data)))
 
     def weighted_statistics(self, data, weights):
-        # Stats are reduced
         if isinstance(weights, np.ndarray):
             assert weights.ndim in (1, 2)
             if data is None or weights.ndim == 2:
-                # when weights is 2D or data is None, the weights are expected
-                # indicators and data is just a placeholder; nominally data
-                # should be np.arange(K)[None, :].repeat(N,axis=0)
                 return np.sum(np.atleast_2d(weights), axis=0)
             else:
-                # when weights is 1D, data is indices and we do a weighted
-                # bincount
                 return np.bincount(data, weights, minlength=self.K)
         else:
-            if len(weights) == 0:
-                return np.zeros(self.K, dtype=int)
-            else:
-                data = data if data else [None] * len(weights)
-                return sum(list(map(self.weighted_statistics, data, weights)))
+            data = data if data else [None] * len(weights)
+            return sum(list(map(self.weighted_statistics, data, weights)))
 
     # Max likelihood
     def max_likelihood(self, data, weights=None):
