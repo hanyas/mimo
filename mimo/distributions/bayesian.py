@@ -3,10 +3,13 @@ import copy
 import numpy as np
 
 from mimo.distributions import Categorical
-from mimo.distributions import GaussianWithDiagonalPrecision
+
 from mimo.distributions import GaussianWithPrecision
+from mimo.distributions import GaussianWithDiagonalPrecision
+
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import LinearGaussianWithDiagonalPrecision
+
 from mimo.distributions import TiedGaussiansWithPrecision
 
 from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
