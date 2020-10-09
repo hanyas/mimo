@@ -81,7 +81,7 @@ class LinearGaussianWithPrecision(Conditional):
     def sigma(self):
         return self.lmbda_chol_inv @ self.lmbda_chol_inv.T
 
-    def rvs(self, x=None):
+    def rvs(self, x=None, size=None):
         assert x is not None
         size = 1 if x.ndim == 1 else x.shape[0]
 
@@ -116,11 +116,10 @@ class LinearGaussianWithPrecision(Conditional):
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
                   - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
-        return - self.log_partition() + self.log_base() + log_lik
+        return - self.log_partition(x) + self.log_base() + log_lik
 
     def statistics(self, y, x, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
@@ -181,10 +180,12 @@ class LinearGaussianWithPrecision(Conditional):
     def log_base(self):
         return np.log(self.base)
 
-    def log_partition(self):
-        return - np.sum(np.log(np.diag(self.lmbda_chol)))
+    def log_partition(self, x):
+        mu = self.predict(x)
+        return 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
-    def entropy(self):
+    def entropy(self, x):
         raise NotImplementedError
 
     # Max likelihood
@@ -278,7 +279,7 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def sigmas(self):
         return 1. / self.lmbdas
 
-    def rvs(self, x=None):
+    def rvs(self, x=None, size=None):
         assert x is not None
         size = 1 if x.ndim == 1 else x.shape[0]
 
@@ -313,11 +314,10 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
                   - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
-        return - self.log_partition() + self.log_base() + log_lik
+        return - self.log_partition(x) + self.log_base() + log_lik
 
     def statistics(self, y, x, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
@@ -378,10 +378,12 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def log_base(self):
         return np.log(self.base)
 
-    def log_partition(self):
-        return - 0.5 * np.sum(np.log(np.diag(self.lmbdas)))
+    def log_partition(self, x):
+        mu = self.predict(x)
+        return 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
-    def entropy(self):
+    def entropy(self, x):
         raise NotImplementedError
 
     # Max likelihood
