@@ -458,7 +458,7 @@ class MatrixNormalWishart(Distribution):
 
     def statistics(self, A, lmbda):
         # Stats corresponding to a diagonal Gamma prior on K
-        a = 0.5 * A.shape[0] * np.ones((A.shape[-1]))
+        a = 0.5 * self.drow * np.ones((self.dcol, ))
         b = - 0.5 * np.einsum('kh,km,mh->h', A - self.matnorm.M,
                               lmbda, A - self.matnorm.M)
         return Stats([a, b])

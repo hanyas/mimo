@@ -530,8 +530,6 @@ class LinearGaussianWithMatrixNormalWishart:
 
 
 class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
-    # This class is not really done
-    # ARD is implemented only for Gibbs sampling
 
     def __init__(self, prior, hypprior, likelihood=None, affine=True):
         # Matrix-Normal-Wishart prior
@@ -573,27 +571,31 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
         return self
 
     # Mean field
-    def meanfield_update(self, y, x, weights=None):
-        stats = self.likelihood.statistics(y, x) if weights is None\
-            else self.likelihood.weighted_statistics(y, x, weights)
-        self.posterior.nat_param = self.prior.nat_param + stats
+    def meanfield_update(self, y, x, weights=None, nb_iter=25):
+        for _ in range(nb_iter):
+            A = self.posterior.matnorm.M
+            lmbda = self.posterior.wishart.nu * self.posterior.wishart.psi
+            hyperstats = self.prior.statistics(A, lmbda)
+            self.hypposterior.nat_param = self.hypprior.nat_param + hyperstats
 
-        self.likelihood.params = self.posterior.rvs()
+            self.prior.matnorm.K = np.diag(self.hypposterior.mean())
+
+            stats = self.likelihood.statistics(y, x) if weights is None\
+                else self.likelihood.weighted_statistics(y, x, weights)
+            self.posterior.nat_param = self.prior.nat_param + stats
+
+            self.likelihood.params = self.posterior.rvs()
         return self
 
     def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
-        stats = self.likelihood.statistics(y, x) if weights is None\
-            else self.likelihood.weighted_statistics(y, x, weights)
-        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
-
-        self.likelihood.params = self.posterior.rvs()
-        return self
+        raise NotImplementedError
 
     def variational_lowerbound(self):
+        hyper_entropy = self.hypposterior.entropy()
+        hyper_cross_entropy = self.hypposterior.cross_entropy(self.hypprior)
         q_entropy = self.posterior.entropy()
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
-        return q_entropy - qp_cross_entropy
+        return hyper_entropy + q_entropy - hyper_cross_entropy - qp_cross_entropy
 
     def posterior_predictive_gaussian(self, x, aleatoric_only=False):
         x = np.reshape(x, (-1, self.likelihood.dcol))

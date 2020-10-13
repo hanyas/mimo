@@ -11,6 +11,7 @@ from mimo.distributions import NormalGamma
 from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalGamma
 from mimo.distributions import LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance
+
 from mimo.distributions import Gamma
 
 from mimo.distributions import StickBreaking
@@ -19,9 +20,9 @@ from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
-from mimo.util.text import progprint_xrange
 
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import pathos
 from pathos.pools import _ProcessPool as Pool
@@ -52,7 +53,7 @@ def _job(kwargs):
 
     # initialize Normal
     alpha_ng = 1.
-    beta_ng = 1. / (2. * 1e1)
+    beta_ng = 1. / (2. * 1e2)
     kappas = 1e-2
 
     # initialize Matrix-Normal
@@ -60,8 +61,8 @@ def _job(kwargs):
     K = 1e0
 
     # initialize ard-Gamma
-    alphas_ard = 2.
-    betas_ard = 1. / (1. * 1e2)
+    alphas_ard = 1.
+    betas_ard = 1. / (2. * 1e2)
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim,)),
@@ -92,24 +93,25 @@ def _job(kwargs):
         gating_prior = StickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                               basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                               basis=[GaussianWithNormalGamma(basis_prior[i])
+                                                      for i in range(args.nb_models)],
                                                models=[LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance(models_prior[i],
                                                                                                                   models_hypprior[i],
                                                                                                                   affine=args.affine)
                                                        for i in range(args.nb_models)])
-
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                               basis=[GaussianWithNormalGamma(basis_prior[i]) for i in range(args.nb_models)],
+                                               basis=[GaussianWithNormalGamma(basis_prior[i])
+                                                      for i in range(args.nb_models)],
                                                models=[LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance(models_prior[i],
                                                                                                                   models_hypprior[i],
                                                                                                                   affine=args.affine)
                                                        for i in range(args.nb_models)])
-    ilr.add_data(target, input, whiten=True,
-                 transform_type='Standard')
+    ilr.add_data(target, input, whiten=False,
+                 labels_from_prior=True)
 
     # Gibbs sampling
     ilr.resample(maxiter=args.gibbs_iters,
@@ -141,7 +143,9 @@ def parallel_ilr_inference(nb_jobs=50, **kwargs):
         kwargs['seed'] = n
         kwargs_list.append(kwargs.copy())
 
-    with Pool(processes=min(nb_jobs, nb_cores)) as p:
+    with Pool(processes=min(nb_jobs, nb_cores),
+              initializer=tqdm.set_lock,
+              initargs=(tqdm.get_lock(),)) as p:
         res = p.map(_job, kwargs_list)
 
     return res
@@ -154,17 +158,17 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=100, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=1000, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=100, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-4, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
@@ -177,7 +181,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    np.random.seed(args.seed)
+    # np.random.seed(args.seed)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
     data = np.loadtxt(args.datapath + '/cmb.csv', delimiter=",", skiprows=1)
@@ -190,7 +194,7 @@ if __name__ == "__main__":
     # training data
     nb_train = args.nb_train
     input, target = data[:nb_train, :1], data[:nb_train, 1:]
-    noise = npr.randn(len(input), 2) * 1e6
+    noise = npr.randn(len(input), 2) * 1e3
     input = np.hstack((input, noise))
 
     ilr = parallel_ilr_inference(nb_jobs=args.nb_seeds,
@@ -228,5 +232,4 @@ if __name__ == "__main__":
                           edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes.set_ylabel('y')
-
     plt.show()
