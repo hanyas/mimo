@@ -339,7 +339,10 @@ class BayesianMixtureOfGaussians(BayesianMixtureDistribution):
             for i in range(maxiter):
                 elbo.append(self.meanfield_update())
                 if elbo[-1] is not None and len(elbo) > 1:
-                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                    if elbo[-1] < elbo[-2]:
+                        print('WARNING: ELBO should always increase')
+                        return elbo
+                    if (elbo[-1] - elbo[-2]) < tol:
                         return elbo
                 pbar.update(1)
 

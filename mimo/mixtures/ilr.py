@@ -355,7 +355,10 @@ class BayesianMixtureOfLinearGaussians(BayesianConditionalMixtureDistribution):
             for i in range(maxiter):
                 elbo.append(self.meanfield_update())
                 if elbo[-1] is not None and len(elbo) > 1:
-                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                    if elbo[-1] < elbo[-2]:
+                        print('WARNING: ELBO should always increase')
+                        return elbo
+                    if (elbo[-1] - elbo[-2]) < tol:
                         return elbo
                 pbar.update(1)
 
@@ -367,7 +370,7 @@ class BayesianMixtureOfLinearGaussians(BayesianConditionalMixtureDistribution):
         scores, z = self._meanfield_update_sweep(y, x)
         if self.has_data():
             self.labels = z
-        # return self.variational_lowerbound(y, x, scores)
+        return self.variational_lowerbound(y, x, scores)
 
     def _meanfield_update_sweep(self, y, x):
         scores, z = self._meanfield_update_labels(y, x)
