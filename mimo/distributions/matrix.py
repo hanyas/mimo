@@ -139,19 +139,6 @@ class MatrixNormalWithPrecision(Distribution):
     def log_base(self):
         return np.log(self.base)
 
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @staticmethod
-    def std_to_nat(params):
-        _M = np.reshape(params[0], (params[0].shape[0] * params[0].shape[1]), order='F')
-        _L = np.kron(params[2], params[1])
-
-        mu = _L @ _M
-        lmbda = - 0.5 * _L
-        return Stats([mu, lmbda])
-
     def log_partition(self):
         mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
         return 0.5 * np.einsum('k,kh,h->', mu, self.lmbda, mu)\
@@ -159,7 +146,6 @@ class MatrixNormalWithPrecision(Distribution):
 
     def expected_statistics(self):
         mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
-
         E_x = mu
         E_xxT = np.outer(mu, mu) + self.sigma
         return E_x, E_xxT
