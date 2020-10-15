@@ -9,8 +9,12 @@ from mimo.distributions import GaussianWithDiagonalPrecision
 
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import LinearGaussianWithDiagonalPrecision
+from mimo.distributions import LinearGaussianWithFixedPrecision
 
 from mimo.distributions import TiedGaussiansWithPrecision
+
+from mimo.distributions import MatrixNormalWithFixedPrecision
+from mimo.distributions import HierarchicalLinearGaussianWithPrecision
 
 from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
 from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
@@ -641,3 +645,126 @@ class LinearGaussianWithMatrixNormalWishartAndAutomaticRelevance:
         mus, lmbdas, df = self.posterior_predictive_studentt(x)
         return mvt_logpdf(y, mu=mus, lmbda=lmbdas, df=df)
 
+
+class LinearGaussianWithMatrixNormal:
+    """
+    Multivariate Gaussian distribution with a linear mean function.
+    Uses a conjugate Matrix-Normal prior and assumes a shared
+    precision matrix between likelihood and prior.
+    Parameters are linear transf. and precision matrix:
+        A, lmbda
+    """
+
+    def __init__(self, prior, likelihood=None, affine=True):
+        # Matrix-Normal prior with fixed precision
+        self.prior = prior
+
+        # Matrix-Normal posterior with fixed precision
+        self.posterior = copy.deepcopy(prior)
+
+        # Linear Gaussian likelihood with fixed precision
+        if likelihood is not None:
+            self.likelihood = likelihood
+        else:
+            A, lmbda = self.prior.rvs(), self.prior.V
+            self.likelihood = LinearGaussianWithFixedPrecision(A=A, lmbda=lmbda,
+                                                               affine=affine)
+
+    def empirical_bayes(self, y, x):
+        self.prior.nat_param = self.likelihood.statistics(y, x)
+        self.likelihood.params = self.prior.rvs()
+        return self
+
+    # Max a posteriori
+    def max_aposteriori(self, y, x, weights=None):
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.mode()
+        return self
+
+    # Gibbs sampling
+    def resample(self, y=[], x=[]):
+        stats = self.likelihood.statistics(y, x)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    # Mean field
+    def meanfield_update(self, y, x, weights=None):
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
+        stats = self.likelihood.statistics(y, x) if weights is None\
+            else self.likelihood.weighted_statistics(y, x, weights)
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+
+        self.likelihood.params = self.posterior.rvs()
+        return self
+
+    def variational_lowerbound(self):
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
+
+
+class HierarchicalLinearGaussianWithMatrixNormalWishart:
+
+    def __init__(self, prior, likelihood):
+        assert likelihood is not None
+        assert likelihood.matnorm.K is not None
+
+        # Hierarchical Linear Gaussian likelihood
+        self.likelihood = likelihood
+        self.affine = self.likelihood.affine
+
+        # Matrix-Normal-Wishart prior
+        self.prior = prior
+
+        # Matrix-Normal-Wishart posterior
+        self.posterior = copy.deepcopy(prior)
+
+        # Hierarchical Linear Gaussian likelihood
+        if (likelihood.matnorm.M and likelihood.matnorm.V) is not None:
+            M, V = self.prior.rvs()
+            self.likelihood.matnorm.M = M
+            self.likelihood.matnorm.V = V
+
+    def empirical_bayes(self, y, x):
+        raise NotImplementedError
+
+    def resample(self, y=[], x=[]):
+        raise NotImplementedError
+
+    def meanfield_update(self, y, x, nb_iter=10):
+        y = y if isinstance(y, list) else [y]
+        x = x if isinstance(x, list) else [x]
+
+        for n in range(nb_iter):
+            # Expectation Step
+            posteriors = []
+            for _y, _x in zip(y, x):
+                prior = MatrixNormalWithFixedPrecision(M=self.posterior.matnorm.M,
+                                                       K=self.likelihood.matnorm.K,
+                                                       V=self.posterior.wishart.mean())
+
+                likelihood = LinearGaussianWithFixedPrecision(lmbda=self.posterior.wishart.mean(),
+                                                              affine=self.likelihood.affine)
+
+                weights = LinearGaussianWithMatrixNormal(prior=prior, likelihood=likelihood)
+                weights.meanfield_update(_y, _x)
+                posteriors.append(weights.posterior)
+
+            # Maximization Step
+            stats = self.likelihood.weighted_statistics(y, x, posteriors)
+            self.posterior.nat_param = self.prior.nat_param + stats
+
+        return self

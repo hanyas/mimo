@@ -15,7 +15,7 @@ from mimo.util.matrix import invpd, symmetrize
 class LinearGaussianWithPrecision(Conditional):
     """
     Multivariate Gaussian distribution with a linear mean function.
-    Parameters are linear transf. and covariance matrix:
+    Parameters are linear transf. and precision matrix:
         A, lmbda
     """
 
@@ -210,7 +210,7 @@ class LinearGaussianWithPrecision(Conditional):
 class LinearGaussianWithDiagonalPrecision(Conditional):
     """
     Multivariate Gaussian distribution with a linear mean function.
-    Parameters are linear transf. and diagonal covariance matrix:
+    Parameters are linear transf. and diagonal precision matrix:
         A, lmbdas
     """
 
@@ -397,3 +397,72 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         self.lmbdas = 1. / _sigmas
 
         return self
+
+
+class LinearGaussianWithFixedPrecision(LinearGaussianWithPrecision):
+    """
+    Multivariate Gaussian distribution with a linear mean function
+    and a fixed precision matrix.
+    Parameters are linear transf. and precision matrix:
+        A, lmbda
+    """
+
+    def __init__(self, A=None, lmbda=None, affine=True):
+        super(LinearGaussianWithFixedPrecision, self).__init__(A=A, lmbda=lmbda, affine=affine)
+
+    @property
+    def params(self):
+        return self.A
+
+    @params.setter
+    def params(self, values):
+        self.A = values
+
+    def statistics(self, y, x, vectorize=False):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x = y[idx], x[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            if vectorize:
+                c0, c1 = 'nk,nh->nkh', 'nk,nk->nk'
+            else:
+                c0, c1 = 'nk,nh->kh', 'nk,nk->k'
+
+            yxT = np.einsum(c0, y, x, optimize=True)
+            xxT = np.einsum(c0, x, x, optimize=True)
+
+            return Stats([yxT, xxT])
+        else:
+            func = partial(self.statistics, vectorize=vectorize)
+            stats = list(map(func, y, x))
+            return stats if vectorize else reduce(add, stats)
+
+    def weighted_statistics(self, y, x, weights, vectorize=False):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x, weights = y[idx], x[idx], weights[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            if vectorize:
+                c0, c1 = 'nk,n,nh->nkh', 'nk,n,nk->nk'
+            else:
+                c0, c1 = 'nk,n,nh->kh', 'nk,n,nk->k'
+
+            yxT = np.einsum(c0, y, weights, x, optimize=True)
+            xxT = np.einsum(c0, x, weights, x, optimize=True)
+
+            return Stats([yxT, xxT])
+        else:
+            func = partial(self.weighted_statistics, vectorize=vectorize)
+            stats = list(map(func, y, x, weights))
+            return stats if vectorize else reduce(add, stats)
+
+    def max_likelihood(self, y, x, weights=None):
+        raise NotImplementedError

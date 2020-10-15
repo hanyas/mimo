@@ -3,7 +3,6 @@ import numpy.random as npr
 
 import scipy as sc
 from scipy import linalg
-from scipy.special import digamma
 
 from mimo.abstraction import Distribution
 from mimo.abstraction import Statistics as Stats
@@ -303,3 +302,37 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
 
     def entropy(self):
         raise NotImplementedError
+
+
+class MatrixNormalWithFixedPrecision(MatrixNormalWithPrecision):
+
+    def __init__(self, M=None, V=None, K=None):
+        super(MatrixNormalWithFixedPrecision, self).__init__(M=M, V=V, K=K)
+
+    @property
+    def params(self):
+        return self.M, self.K
+
+    @params.setter
+    def params(self, values):
+        self.M, self.K = values
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        M = params[0].dot(params[1])
+        K = params[1]
+        return Stats([M, K])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        M = np.linalg.solve(natparam[1], natparam[0].T).T
+        K = natparam[1]
+        return M, K
