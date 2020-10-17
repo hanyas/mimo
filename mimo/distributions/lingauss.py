@@ -399,7 +399,7 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         return self
 
 
-class LinearGaussianWithFixedPrecision(LinearGaussianWithPrecision):
+class LinearGaussianWithKnownPrecision(LinearGaussianWithPrecision):
     """
     Multivariate Gaussian distribution with a linear mean function
     and a fixed precision matrix.
@@ -408,7 +408,7 @@ class LinearGaussianWithFixedPrecision(LinearGaussianWithPrecision):
     """
 
     def __init__(self, A=None, lmbda=None, affine=True):
-        super(LinearGaussianWithFixedPrecision, self).__init__(A=A, lmbda=lmbda, affine=affine)
+        super(LinearGaussianWithKnownPrecision, self).__init__(A=A, lmbda=lmbda, affine=affine)
 
     @property
     def params(self):

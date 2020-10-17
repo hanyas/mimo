@@ -9,15 +9,18 @@ from mimo.distributions import GaussianWithDiagonalPrecision
 
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import LinearGaussianWithDiagonalPrecision
-from mimo.distributions import LinearGaussianWithFixedPrecision
+from mimo.distributions import LinearGaussianWithKnownPrecision
 
 from mimo.distributions import TiedGaussiansWithPrecision
 
-from mimo.distributions import MatrixNormalWithFixedPrecision
-from mimo.distributions import HierarchicalLinearGaussianWithPrecision
+from mimo.distributions import MatrixNormalWithKnownPrecision
+from mimo.distributions import HierarchicalLinearGaussianWithSharedPrecision
 
 from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
 from mimo.util.stats import multivariate_studentt_loglik as mvt_logpdf
+
+from operator import add
+from functools import reduce
 
 
 class CategoricalWithDirichlet:
@@ -667,7 +670,7 @@ class LinearGaussianWithMatrixNormal:
             self.likelihood = likelihood
         else:
             A, lmbda = self.prior.rvs(), self.prior.V
-            self.likelihood = LinearGaussianWithFixedPrecision(A=A, lmbda=lmbda,
+            self.likelihood = LinearGaussianWithKnownPrecision(A=A, lmbda=lmbda,
                                                                affine=affine)
 
     def empirical_bayes(self, y, x):
@@ -724,7 +727,6 @@ class HierarchicalLinearGaussianWithMatrixNormalWishart:
 
         # Hierarchical Linear Gaussian likelihood
         self.likelihood = likelihood
-        self.affine = self.likelihood.affine
 
         # Matrix-Normal-Wishart prior
         self.prior = prior
@@ -732,39 +734,67 @@ class HierarchicalLinearGaussianWithMatrixNormalWishart:
         # Matrix-Normal-Wishart posterior
         self.posterior = copy.deepcopy(prior)
 
-        # Hierarchical Linear Gaussian likelihood
         if (likelihood.matnorm.M and likelihood.matnorm.V) is not None:
             M, V = self.prior.rvs()
             self.likelihood.matnorm.M = M
             self.likelihood.matnorm.V = V
+            self.likelihood.lingauss.V = V
 
     def empirical_bayes(self, y, x):
         raise NotImplementedError
 
-    def resample(self, y=[], x=[]):
-        raise NotImplementedError
+    def resample(self, y=[], x=[], nb_iter=25):
+        y = y if isinstance(y, list) else [y]
+        x = x if isinstance(x, list) else [x]
+
+        assert len(x) == len(y)
+        size = len(y)
+
+        for n in range(nb_iter):
+            likelihood_stats = []
+            for _y, _x in zip(y, x):
+                # construct a temporary weight posterior dist.
+                weights = MatrixNormalWithKnownPrecision(V=self.likelihood.matnorm.V)
+
+                # update weight posterior for current data slice
+                lingauss_stats = self.likelihood.lingauss.statistics(_y, _x)
+                weights.nat_param = self.likelihood.matnorm.nat_param + lingauss_stats
+
+                # sample a weight matrix from the weight posterior
+                self.likelihood.lingauss.A = weights.rvs()
+
+                likelihood_stats.append(self.likelihood.statistics(_y, _x))
+
+            # updating and sampling from Matrix-Normal-Wishart
+            stats = map(lambda x: x / size, reduce(add, likelihood_stats))
+            self.posterior.nat_param = self.prior.nat_param + stats
+
+            self.likelihood.params = self.posterior.rvs()
 
     def meanfield_update(self, y, x, nb_iter=10):
         y = y if isinstance(y, list) else [y]
         x = x if isinstance(x, list) else [x]
 
+        assert len(x) == len(y)
+        size = len(y)
+
         for n in range(nb_iter):
             # Expectation Step
-            posteriors = []
+            likelihood_stats = []
             for _y, _x in zip(y, x):
-                prior = MatrixNormalWithFixedPrecision(M=self.posterior.matnorm.M,
-                                                       K=self.likelihood.matnorm.K,
-                                                       V=self.posterior.wishart.mean())
+                # construct a temporary expected weight posterior dist.
+                weights = MatrixNormalWithKnownPrecision(M=self.posterior.matnorm.M,
+                                                         K=self.likelihood.matnorm.K,
+                                                         V=self.posterior.wishart.mean())
 
-                likelihood = LinearGaussianWithFixedPrecision(lmbda=self.posterior.wishart.mean(),
-                                                              affine=self.likelihood.affine)
+                # update weight posterior for current data slice
+                lingauss_stats = self.likelihood.lingauss.statistics(_y, _x)
+                weights.nat_param = weights.nat_param + lingauss_stats
 
-                weights = LinearGaussianWithMatrixNormal(prior=prior, likelihood=likelihood)
-                weights.meanfield_update(_y, _x)
-                posteriors.append(weights.posterior)
+                likelihood_stats.append(self.likelihood.weighted_statistics(_y, _x, weights))
 
             # Maximization Step
-            stats = self.likelihood.weighted_statistics(y, x, posteriors)
+            stats = map(lambda x: x / size, reduce(add, likelihood_stats))
             self.posterior.nat_param = self.prior.nat_param + stats
 
         return self

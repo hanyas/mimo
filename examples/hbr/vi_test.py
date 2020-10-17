@@ -143,26 +143,33 @@ warn = np.diff(vlb)
 if np.any(warn) < 0.:
     print('Something is wrong, ELBO decreased')
 
+plt.figure()
+plt.plot(vlb)
+plt.show()
+
 # Test implementation
 from mimo.distributions import HierarchicalLinearGaussianWithMatrixNormalWishart
-from mimo.distributions import HierarchicalLinearGaussianWithPrecision
+from mimo.distributions import HierarchicalLinearGaussianWithSharedPrecision
 
-likelihood = HierarchicalLinearGaussianWithPrecision(M=None, V=None,
-                                                     K=1e0 * np.eye(m),
-                                                     affine=False)
+YT = [_y.T for _y in Y]
+XT = [_x.T for _x in X]
 
+likelihood = HierarchicalLinearGaussianWithSharedPrecision(M=np.zeros((d, m)),
+                                                           K=1e0 * np.eye(m),
+                                                           V=np.eye(d),
+                                                           affine=False)
 prior = MatrixNormalWishart(M=np.zeros((d, m)),
                             K=1e-2 * np.eye(m),
                             psi=np.eye(d), nu=2)
 
-model = HierarchicalLinearGaussianWithMatrixNormalWishart(prior=prior,
+gibbs = HierarchicalLinearGaussianWithMatrixNormalWishart(prior=prior,
                                                           likelihood=likelihood)
+gibbs.resample(YT, XT)
 
 
-YT = [_y.T for _y in Y]
-XT = [_x.T for _x in X]
-model.meanfield_update(YT, XT)
-
+vi = HierarchicalLinearGaussianWithMatrixNormalWishart(prior=prior,
+                                                       likelihood=likelihood)
+vi.meanfield_update(YT, XT)
 
 print('True Mean:', M)
 print('True Precision:', V)
@@ -170,9 +177,8 @@ print('True Precision:', V)
 print('Mean of Matrix Normal:', param_posterior.matnorm.mean())
 print('Mean of Wishart:', param_posterior.wishart.mean())
 
-print('Mean of Matrix Normal:', model.posterior.matnorm.mean())
-print('Mean of Wishart:', model.posterior.wishart.mean())
+print('Gibbs: Mean of Matrix Normal:', gibbs.posterior.matnorm.mean())
+print('Gibbs: Mean of Wishart:', gibbs.posterior.wishart.mean())
 
-plt.figure()
-plt.plot(vlb)
-plt.show()
+print('VI: Mean of Matrix Normal:', vi.posterior.matnorm.mean())
+print('VI: Mean of Wishart:', vi.posterior.wishart.mean())

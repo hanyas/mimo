@@ -10,12 +10,14 @@ from mimo.distributions import GaussianWithDiagonalPrecision
 
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import LinearGaussianWithDiagonalPrecision
+from mimo.distributions import LinearGaussianWithKnownPrecision
 
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 
 from mimo.distributions import MatrixNormalWithPrecision
 from mimo.distributions import MatrixNormalWithDiagonalPrecision
+from mimo.distributions import MatrixNormalWithKnownPrecision
 
 from operator import add
 from functools import reduce, partial
@@ -24,6 +26,8 @@ from mimo.util.matrix import invpd, blockarray
 from mimo.util.data import extendlists
 
 from mimo.util.stats import multivariate_gaussian_loglik
+
+import copy
 
 
 class NormalWishart(Distribution):
@@ -636,14 +640,23 @@ class MatrixNormalGamma(Distribution):
         self.params = self.nat_to_std(natparam)
 
 
-class HierarchicalLinearGaussianWithPrecision:
+class HierarchicalLinearGaussianWithSharedPrecision:
 
     def __init__(self, M, V, K, affine=True):
         self.affine = affine
 
-        self.matnorm = MatrixNormalWithPrecision(M=M, V=V, K=K)
+        self.matnorm = MatrixNormalWithKnownPrecision(M=M, V=V, K=K)
         self.lingauss = LinearGaussianWithPrecision(A=M, lmbda=V,
                                                     affine=affine)
+
+    @property
+    def params(self):
+        return self.matnorm.M, self.lingauss.V
+
+    @params.setter
+    def params(self, values):
+        self.matnorm.M, self.matnorm.V = values
+        self.lingauss.V = copy.deepcopy(self.matnorm.V)
 
     @property
     def dcol(self):
@@ -652,14 +665,6 @@ class HierarchicalLinearGaussianWithPrecision:
     @property
     def drow(self):
         return self.matnorm.drow
-
-    @property
-    def params(self):
-        return self.matnorm.params
-
-    @params.setter
-    def params(self, values):
-        self.matnorm.params = values
 
     def rvs(self, x, size=1):
         W = self.matnorm.rvs()
@@ -672,6 +677,37 @@ class HierarchicalLinearGaussianWithPrecision:
 
     def mode(self, x):
         return self.marginal_likelihood(x)[0]
+
+    def statistics(self, y, x):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x = y[idx], x[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            yyT = y.T @ y
+            xxT = x.T @ x
+            xyT = x.T @ y
+
+            matnorm_stats = np.array([
+                self.lingauss.A @ self.matnorm.K,
+                self.matnorm.K,
+                self.lingauss.A @ self.matnorm.K @ self.lingauss.A.T,
+                x.shape[1]
+            ])
+
+            lingauss_stats = np.array([
+                0.,
+                0.,
+                yyT - 2. * self.lingauss.A @ xyT
+                + self.lingauss.A @ xxT @ self.lingauss.A.T,
+                x.shape[0]
+            ])
+
+            stats = matnorm_stats + lingauss_stats
+            return Stats(stats)
 
     def weighted_statistics(self, y, x, posterior):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray)\
@@ -706,10 +742,6 @@ class HierarchicalLinearGaussianWithPrecision:
 
             stats = matnorm_stats + lingauss_stats
             return Stats(stats)
-        else:
-            func = partial(self.weighted_statistics)
-            stats = list(map(func, y, x, posterior))
-            return map(lambda x: x / len(posterior), reduce(add, stats))
 
     def marginal_likelihood(self, x):
         x = np.reshape(x, (-1, self.dcol))

@@ -304,10 +304,10 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
         raise NotImplementedError
 
 
-class MatrixNormalWithFixedPrecision(MatrixNormalWithPrecision):
+class MatrixNormalWithKnownPrecision(MatrixNormalWithPrecision):
 
     def __init__(self, M=None, V=None, K=None):
-        super(MatrixNormalWithFixedPrecision, self).__init__(M=M, V=V, K=K)
+        super(MatrixNormalWithKnownPrecision, self).__init__(M=M, V=V, K=K)
 
     @property
     def params(self):
