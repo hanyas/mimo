@@ -12,7 +12,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
@@ -73,8 +73,9 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                basis=[GaussianWithNormalWishart(basis_prior[i])
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=150, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=10, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -182,9 +183,9 @@ if __name__ == "__main__":
     target = mean + noise
 
     ilr = parallel_ilr_inference(nb_jobs=args.nb_seeds,
-                                   train_input=input,
-                                   train_target=target,
-                                   arguments=args)[0]
+                                 train_input=input,
+                                 train_target=target,
+                                 arguments=args)[0]
 
     # predict
     mu, var, std = ilr.meanfield_prediction(input, prediction=args.prediction)

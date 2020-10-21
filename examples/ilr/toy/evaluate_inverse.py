@@ -12,7 +12,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
@@ -73,8 +73,9 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                basis=[GaussianWithNormalWishart(basis_prior[i])
@@ -168,9 +169,9 @@ if __name__ == "__main__":
     input = target + 0.3 * np.sin(2. * np.pi * target) + noise
 
     ilr = parallel_ilr_inference(nb_jobs=args.nb_seeds,
-                                   train_input=input,
-                                   train_target=target,
-                                   arguments=args)[0]
+                                 train_input=input,
+                                 train_target=target,
+                                 arguments=args)[0]
 
     # mean prediction
     mu, _, _ = ilr.meanfield_prediction(input, prediction='average')

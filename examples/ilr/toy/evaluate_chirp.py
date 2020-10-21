@@ -15,7 +15,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     if args.prior == 'stick-breaking':
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
                                 deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                basis=[GaussianWithNormalWishart(basis_prior[i])

@@ -99,10 +99,10 @@ class CategoricalWithStickBreaking:
     """
 
     def __init__(self, prior, likelihood=None):
-        # stick-breaking prior
+        # truncated stick-breaking prior
         self.prior = prior
 
-        # stick-breaking posterior
+        # truncated stick-breaking posterior
         self.posterior = copy.deepcopy(prior)
 
         # Categorical likelihood

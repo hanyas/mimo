@@ -14,7 +14,7 @@ from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.distributions import Dirichlet
@@ -79,42 +79,42 @@ def _job(kwargs):
     if args.prior == 'stick-breaking':
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
                                 deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     ilr.add_data(target, input, whiten=True,
-                   transform_type='PCA',
-                   target_transform=target_transform,
-                   input_transform=input_transform)
+                 transform_type='PCA',
+                 target_transform=target_transform,
+                 input_transform=input_transform)
 
     # Gibbs sampling
     ilr.resample(maxiter=args.gibbs_iters,
-                   progprint=args.verbose)
+                 progprint=args.verbose)
 
     for i in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
-                                               stepsize=args.svi_stepsize,
-                                               batchsize=args.svi_batchsize)
+                                             stepsize=args.svi_stepsize,
+                                             batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
             ilr.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
+                                             maxiter=args.meanfield_iters,
+                                             progprint=args.verbose)
 
         if args.super_iters > 1 and i + 1 < args.super_iters:
             ilr.gating.prior = ilr.gating.posterior
@@ -191,11 +191,11 @@ if __name__ == "__main__":
     target_transform.fit(target_data)
 
     ilrs = parallel_ilr_inference(nb_jobs=args.nb_seeds,
-                                      input=train_input,
-                                      target=train_target,
-                                      input_transform=input_transform,
-                                      target_transform=target_transform,
-                                      arguments=args)
+                                  input=train_input,
+                                  target=train_target,
+                                  input_transform=input_transform,
+                                  target_transform=target_transform,
+                                  arguments=args)
 
     from sklearn.metrics import mean_squared_error, r2_score
 
