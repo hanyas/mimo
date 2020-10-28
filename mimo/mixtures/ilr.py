@@ -370,7 +370,7 @@ class BayesianMixtureOfLinearGaussians(BayesianConditionalMixtureDistribution):
         scores, z = self._meanfield_update_sweep(y, x)
         if self.has_data():
             self.labels = z
-        return self.variational_lowerbound(y, x, scores)
+        # return self.variational_lowerbound(y, x, scores)
 
     def _meanfield_update_sweep(self, y, x):
         scores, z = self._meanfield_update_labels(y, x)
@@ -663,13 +663,16 @@ class CompressedMixtureOfLinearGaussians:
     # This class compresses the above mixture
     # for speed at prediction/deployment time
 
-    def __init__(self, mixture):
+    def __init__(self, mixture, size=1000):
         self.mixture = mixture
 
         self.input_transform = self.mixture.input_transform
         self.target_transform = self.mixture.target_transform
 
-        self.gating = {'weights': self.mixture.gating.posterior.mean()}
+        weights = self.mixture.gating.posterior.mean()
+        idx = weights.argsort()[-size:][::-1]
+
+        self.gating = {'weights': weights[idx]}
 
         _basis_mus = np.vstack([b.posterior_predictive_gaussian()[0]
                                     for b in self.mixture.basis])
@@ -677,12 +680,12 @@ class CompressedMixtureOfLinearGaussians:
                                   for b in self.mixture.basis], axis=0)
         _basis_logdet_lmbdas = np.linalg.slogdet(_basis_lmbdas)[1]
 
-        self.basis = {'mus': _basis_mus,
-                      'lmbdas': _basis_lmbdas,
-                      'logdet_lmbdas': _basis_logdet_lmbdas}
+        self.basis = {'mus': _basis_mus[idx, ...],
+                      'lmbdas': _basis_lmbdas[idx, ...],
+                      'logdet_lmbdas': _basis_logdet_lmbdas[idx, ...]}
 
         _models_mus = np.stack([m.posterior.matnorm.M for m in self.mixture.models], axis=0)
-        self.models = {'Ms': _models_mus}
+        self.models = {'Ms': _models_mus[idx, ...]}
 
     def log_basis_predictive(self, x):
         from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
