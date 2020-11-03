@@ -50,7 +50,7 @@ def _job(kwargs):
 
     # initialize Normal
     alpha_ng = 1.
-    beta_ng = 1. / (1 * 1e2)
+    beta_ng = 1. / (2 * 1e2)
     kappas = 1e-2
 
     # initialize Matrix-Normal
@@ -142,11 +142,11 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=5, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
@@ -220,14 +220,14 @@ if __name__ == "__main__":
     axes[0].plot(true_input, true_target, '--k')
     axes[0].scatter(train_input, train_target, marker='+', s=1.25, color='k')
     axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    for c in [1., 2., 3.]:
+    for c in [1., 2.]:
         axes[0].fill_between(sorted_input,
                              sorted_mu - c * sorted_std,
                              sorted_mu + c * sorted_std,
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes[0].set_ylabel('y')
-    axes[0].set_ylim(-15., 15.)
+    axes[0].set_ylim(-7.5, 7.5)
 
     # plot gaussian activations
     axes[1].set_xlabel('x')

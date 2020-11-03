@@ -53,11 +53,11 @@ def _job(kwargs):
     models_prior = []
 
     # initialize Normal
-    psi_nw = 1e1
+    psi_nw = 5e-3
     kappa = 1e-2
 
     # initialize Matrix-Normal
-    psi_mnw = 1e2
+    psi_mnw = 5e-3
     K = 1e-2
 
     for n in range(args.nb_models):
@@ -96,7 +96,7 @@ def _job(kwargs):
                                                        for i in range(args.nb_models)])
 
     ilr.add_data(target, input, whiten=True,
-                 transform_type='PCA',
+                 transform_type='Standard',
                  target_transform=target_transform,
                  input_transform=input_transform)
 
@@ -104,7 +104,7 @@ def _job(kwargs):
     ilr.resample(maxiter=args.gibbs_iters,
                  progprint=args.verbose)
 
-    for i in range(args.super_iters):
+    for k in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
@@ -115,12 +115,6 @@ def _job(kwargs):
             ilr.meanfield_coordinate_descent(tol=args.earlystop,
                                              maxiter=args.meanfield_iters,
                                              progprint=args.verbose)
-
-        if args.super_iters > 1 and i + 1 < args.super_iters:
-            ilr.gating.prior = ilr.gating.posterior
-            for i in range(ilr.likelihood.size):
-                ilr.basis[i].prior = ilr.basis[i].posterior
-                ilr.models[i].prior = ilr.models[i].posterior
 
     return ilr
 
@@ -146,19 +140,19 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/robot'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=1000, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=500, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=1000, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--meanfield_iters', help='max VI iterations', default=10, type=int)
+    parser.add_argument('--meanfield_iters', help='max VI iterations', default=25, type=int)
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
-    parser.add_argument('--svi_iters', help='SVI iterations', default=1000, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=10, type=int)
     parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-3, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=1024, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
@@ -173,19 +167,29 @@ if __name__ == "__main__":
 
     np.random.seed(args.seed)
 
-    train_input = np.load(args.datapath + '/ourwam4dof/wam_inv_train.npz')['input']
-    train_target = np.load(args.datapath + '/ourwam4dof/wam_inv_train.npz')['target']
+    train_input = np.load(args.datapath + '/ourwam4dof/icra2021/invdyn/wam_invdyn_train.npz')['input']
+    train_target = np.load(args.datapath + '/ourwam4dof/icra2021/invdyn/wam_invdyn_train.npz')['target']
 
-    test_input = np.load(args.datapath + '/ourwam4dof/wam_inv_test.npz')['input']
-    test_target = np.load(args.datapath + '/ourwam4dof/wam_inv_test.npz')['target']
+    test_input = np.load(args.datapath + '/ourwam4dof/icra2021/invdyn/wam_invdyn_test.npz')['input']
+    test_target = np.load(args.datapath + '/ourwam4dof/icra2021/invdyn/wam_invdyn_test.npz')['target']
+
+    # train_input = np.load(args.datapath + '/ourwam4dof/icra2021/eight/wam_eight_train.npz')['input']
+    # train_target = np.load(args.datapath + '/ourwam4dof/icra2021/eight/wam_eight_train.npz')['target']
+    #
+    # test_input = np.load(args.datapath + '/ourwam4dof/icra2021/eight/wam_eight_test.npz')['input']
+    # test_target = np.load(args.datapath + '/ourwam4dof/icra2021/eight/wam_eight_test.npz')['target']
 
     input_data = np.vstack((train_input, test_input))
     target_data = np.vstack((train_target, test_target))
 
-    # scale data
-    from sklearn.decomposition import PCA
-    input_transform = PCA(n_components=12, whiten=True)
-    target_transform = PCA(n_components=4, whiten=True)
+    # # scale data
+    # from sklearn.decomposition import PCA
+    # input_transform = PCA(n_components=12, whiten=True)
+    # target_transform = PCA(n_components=4, whiten=True)
+
+    from sklearn.preprocessing import StandardScaler
+    input_transform = StandardScaler()
+    target_transform = StandardScaler()
 
     input_transform.fit(input_data)
     target_transform.fit(target_data)
@@ -203,21 +207,21 @@ if __name__ == "__main__":
     for ilr in ilrs:
         _nb_models = len(ilr.used_labels)
 
-        _train_mu, _, _, _train_nlpd = \
-            ilr.meanfield_prediction(x=train_input,
-                                       y=train_target,
-                                       prediction=args.prediction)
-
-        _train_mse = mean_squared_error(train_target, _train_mu)
-        _train_smse = 1. - r2_score(train_target, _train_mu)
-
-        print('TRAIN - MSE:', _train_mse, 'SMSE:', _train_smse,
-              'NLPD:', _train_nlpd.mean(), 'Compnents:', _nb_models)
+        # _train_mu, _, _, _train_nlpd = \
+        #     ilr.meanfield_prediction(x=train_input,often, you
+        #                              y=train_target,
+        #                              prediction=args.prediction)
+        #
+        # _train_mse = mean_squared_error(train_target, _train_mu)
+        # _train_smse = 1. - r2_score(train_target, _train_mu)
+        #
+        # print('TRAIN - MSE:', _train_mse, 'SMSE:', _train_smse,
+        #       'NLPD:', _train_nlpd.mean(), 'Compnents:', _nb_models)
 
         _test_mu, _, _, _test_nlpd =\
             ilr.meanfield_prediction(x=test_input,
-                                       y=test_target,
-                                       prediction=args.prediction)
+                                     y=test_target,
+                                     prediction=args.prediction)
 
         _test_mse = mean_squared_error(test_target, _test_mu)
         _test_smse = 1. - r2_score(test_target, _test_mu)
@@ -247,12 +251,18 @@ if __name__ == "__main__":
                     mean_nlpd, std_nlpd,
                     mean_nb_models, std_nb_models])
 
-    import pandas as pd
-    dt = pd.DataFrame(data=arr, index=['mse_avg', 'mse_std',
-                                       'smse_avg', 'smse_std',
-                                       'nlpd_avg', 'nlpd_std',
-                                       'models_avg', 'models_std'])
+    # import pandas as pd
+    # dt = pd.DataFrame(data=arr, index=['mse_avg', 'mse_std',
+    #                                    'smse_avg', 'smse_std',
+    #                                    'nlpd_avg', 'nlpd_std',
+    #                                    'models_avg', 'models_std'])
+    #
+    # dt.to_csv('wam_' + str(args.prior) +
+    #           '_alpha_' + str(args.alpha) + '.csv',
+    #           mode='a', index=True)
 
-    dt.to_csv('wam_' + str(args.prior) +
-              '_alpha_' + str(args.alpha) + '.csv',
-              mode='a', index=True)
+    # # # save model
+    # ilrs[0].clear_data()
+    #
+    # import pickle
+    # pickle.dump(ilrs[0], open("wam_invdyn_0.p", "wb"))

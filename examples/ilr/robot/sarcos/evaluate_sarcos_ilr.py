@@ -116,12 +116,6 @@ def _job(kwargs):
                                              maxiter=args.meanfield_iters,
                                              progprint=args.verbose)
 
-        if args.super_iters > 1 and i + 1 < args.super_iters:
-            ilr.gating.prior = ilr.gating.posterior
-            for i in range(ilr.likelihood.size):
-                ilr.basis[i].prior = ilr.basis[i].posterior
-                ilr.models[i].prior = ilr.models[i].posterior
-
     return ilr
 
 
@@ -177,7 +171,7 @@ if __name__ == "__main__":
     from scipy import io
 
     # load all available data
-    train_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv.mat')['sarcos_inv']
+    train_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv_train.mat')['sarcos_inv']
     test_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
     train_input = train_data[:, :21]
@@ -213,8 +207,8 @@ if __name__ == "__main__":
 
         # _train_mu, _, _, _train_nlpd = \
         #     ilr.meanfield_prediction(x=train_input,
-        #                                y=train_target,
-        #                                prediction=args.prediction)
+        #                              y=train_target,
+        #                              prediction=args.prediction)
         #
         # _train_mse = mean_squared_error(train_target, _train_mu)
         # _train_smse = 1. - r2_score(train_target, _train_mu)
@@ -224,8 +218,8 @@ if __name__ == "__main__":
 
         _test_mu, _, _, _test_nlpd =\
             ilr.meanfield_prediction(x=test_input,
-                                       y=test_target,
-                                       prediction=args.prediction)
+                                     y=test_target,
+                                     prediction=args.prediction)
 
         _test_mse = mean_squared_error(test_target, _test_mu)
         _test_smse = 1. - r2_score(test_target, _test_mu)
