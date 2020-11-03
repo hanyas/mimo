@@ -26,7 +26,7 @@ def multivariate_gaussian_loglik(xs, mu, lmbda, logdet_lmbda=None):
     d = mu.shape[-1]
 
     xc = np.nan_to_num(xs, copy=False) - mu
-    log_exp = - 0.5 * np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
+    log_exp = - 0.5 * np.einsum('...k,...kh,...h->...', xc, lmbda, xc, optimize=True)
     log_norm = - 0.5 * d * np.log(2. * np.pi)
 
     if logdet_lmbda is not None:

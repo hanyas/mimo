@@ -14,7 +14,7 @@ from mimo.distributions import GaussianWithNormalWishart
 from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.distributions import Dirichlet
@@ -79,52 +79,47 @@ def _job(kwargs):
     if args.prior == 'stick-breaking':
         gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
                                 deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     else:
         gating_hypparams = dict(K=args.nb_models, alphas=np.ones((args.nb_models,)) * args.alpha)
         gating_prior = Dirichlet(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                                 basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
-                                                 models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                         for i in range(args.nb_models)])
+                                               basis=[GaussianWithNormalWishart(basis_prior[i]) for i in range(args.nb_models)],
+                                               models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
+                                                       for i in range(args.nb_models)])
 
     ilr.add_data(target, input, whiten=True,
-                   transform_type='PCA',
-                   target_transform=target_transform,
-                   input_transform=input_transform)
+                 transform_type='PCA',
+                 target_transform=target_transform,
+                 input_transform=input_transform)
 
     # Gibbs sampling
     ilr.resample(maxiter=args.gibbs_iters,
-                   progprint=args.verbose)
+                 progprint=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             ilr.meanfield_stochastic_descent(maxiter=args.svi_iters,
-                                               stepsize=args.svi_stepsize,
-                                               batchsize=args.svi_batchsize)
+                                             stepsize=args.svi_stepsize,
+                                             batchsize=args.svi_batchsize)
         if args.deterministic:
             # Meanfield VI
             ilr.meanfield_coordinate_descent(tol=args.earlystop,
-                                               maxiter=args.meanfield_iters,
-                                               progprint=args.verbose)
-
-        ilr.gating.prior = ilr.gating.posterior
-        for i in range(ilr.size):
-            ilr.basis[i].prior = ilr.basis[i].posterior
-            ilr.models[i].prior = ilr.models[i].posterior
+                                             maxiter=args.meanfield_iters,
+                                             progprint=args.verbose)
 
     return ilr
 
 
-def parallel_dpglm_inference(nb_jobs=50, **kwargs):
+def parallel_ilr_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
         kwargs['seed'] = npr.randint(1337, 6174)
@@ -176,7 +171,7 @@ if __name__ == "__main__":
     from scipy import io
 
     # load all available data
-    train_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv.mat')['sarcos_inv']
+    train_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv_train.mat')['sarcos_inv']
     test_data = sc.io.loadmat(args.datapath + '/sarcos/sarcos_inv_test.mat')['sarcos_inv_test']
 
     train_input = train_data[:, :21]
@@ -196,12 +191,12 @@ if __name__ == "__main__":
     input_transform.fit(input_data)
     target_transform.fit(target_data)
 
-    ilrs = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                      input=train_input,
-                                      target=train_target,
-                                      input_transform=input_transform,
-                                      target_transform=target_transform,
-                                      arguments=args)
+    ilrs = parallel_ilr_inference(nb_jobs=args.nb_seeds,
+                                  input=train_input,
+                                  target=train_target,
+                                  input_transform=input_transform,
+                                  target_transform=target_transform,
+                                  arguments=args)
 
     from sklearn.metrics import mean_squared_error, r2_score
 
@@ -212,8 +207,8 @@ if __name__ == "__main__":
 
         # _train_mu, _, _, _train_nlpd = \
         #     ilr.meanfield_prediction(x=train_input,
-        #                                y=train_target,
-        #                                prediction=args.prediction)
+        #                              y=train_target,
+        #                              prediction=args.prediction)
         #
         # _train_mse = mean_squared_error(train_target, _train_mu)
         # _train_smse = 1. - r2_score(train_target, _train_mu)
@@ -223,8 +218,8 @@ if __name__ == "__main__":
 
         _test_mu, _, _, _test_nlpd =\
             ilr.meanfield_prediction(x=test_input,
-                                       y=test_target,
-                                       prediction=args.prediction)
+                                     y=test_target,
+                                     prediction=args.prediction)
 
         _test_mse = mean_squared_error(test_target, _test_mu)
         _test_smse = 1. - r2_score(test_target, _test_mu)

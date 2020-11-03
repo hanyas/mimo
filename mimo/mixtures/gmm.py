@@ -2,7 +2,8 @@ import numpy as np
 from scipy import special as special
 from scipy.special import logsumexp
 
-from mimo.abstraction import Distribution
+from mimo.abstraction import MixtureDistribution
+from mimo.abstraction import BayesianMixtureDistribution
 
 from mimo.distributions.bayesian import CategoricalWithDirichlet
 from mimo.distributions.bayesian import CategoricalWithStickBreaking
@@ -18,7 +19,7 @@ from tqdm import tqdm
 from pathos.helpers import mp
 
 
-class MixtureOfGaussians(Distribution):
+class MixtureOfGaussians(MixtureDistribution):
     """
     This class is for mixtures of Gaussians.
     """
@@ -29,6 +30,10 @@ class MixtureOfGaussians(Distribution):
 
         self.gating = gating
         self.components = components
+
+    @property
+    def params(self):
+        raise NotImplementedError
 
     @property
     def nb_params(self):
@@ -58,22 +63,10 @@ class MixtureOfGaussians(Distribution):
     def log_likelihood(self, obs):
         assert isinstance(obs, (np.ndarray, list))
         if isinstance(obs, list):
-            return sum(self.log_likelihood(_obs) for _obs in obs)
+            return [self.log_likelihood(_obs) for _obs in obs]
         else:
             scores = self.log_scores(obs)
-            return np.sum(logsumexp(scores[~np.isnan(obs).any(axis=1)], axis=1))
-
-    def mean(self):
-        raise NotImplementedError
-
-    def mode(self):
-        raise NotImplementedError
-
-    def log_partition(self):
-        raise NotImplementedError
-
-    def entropy(self):
-        raise NotImplementedError
+            return logsumexp(scores[~np.isnan(obs).any(axis=1)], axis=1)
 
     # Expectation-Maximization
     def log_scores(self, obs):
@@ -105,13 +98,12 @@ class MixtureOfGaussians(Distribution):
 
         obs = obs if isinstance(obs, list) else [obs]
 
+        elbo = []
         with tqdm(total=maxiter, desc=f'EM #{pos + 1}',
                   position=pos, disable=not progprint) as pbar:
             for _ in range(maxiter):
                 # Expectation step
-                scores = []
-                for _obs in obs:
-                    scores.append(self.scores(_obs))
+                scores = [self.scores(_obs) for _obs in obs]
 
                 # Maximization step
                 for idx, c in enumerate(self.components):
@@ -121,7 +113,10 @@ class MixtureOfGaussians(Distribution):
                 # mixture weights
                 self.gating.max_likelihood(None, scores)
 
+                elbo.append(np.sum(self.log_likelihood(obs)))
                 pbar.update(1)
+
+        return elbo
 
     def plot(self, obs=None, color=None, legend=False, alpha=None):
         obs = obs if isinstance(obs, list) else [obs]
@@ -166,7 +161,7 @@ class MixtureOfGaussians(Distribution):
         return artists
 
 
-class BayesianMixtureOfGaussians(Distribution):
+class BayesianMixtureOfGaussians(BayesianMixtureDistribution):
     """
     This class is for a Bayesian mixtures of Gaussians.
     """
@@ -177,6 +172,9 @@ class BayesianMixtureOfGaussians(Distribution):
         self.gating = gating
         self.components = components
 
+        self.likelihood = MixtureOfGaussians(gating=self.gating.likelihood,
+                                             components=[c.likelihood for c in self.components])
+
         self.obs = []
         self.labels = []
 
@@ -184,22 +182,9 @@ class BayesianMixtureOfGaussians(Distribution):
         self.transform = None
 
     @property
-    def nb_params(self):
-        return self.gating.likelihood.nb_params\
-               + sum(c.likelihood.nb_params for c in self.components)
-
-    @property
-    def size(self):
-        return len(self.components)
-
-    @property
-    def dim(self):
-        return self.components[0].likelihood.dim
-
-    @property
     def used_labels(self):
         assert self.has_data()
-        label_usages = sum(np.bincount(_label, minlength=self.size)
+        label_usages = sum(np.bincount(_label, minlength=self.likelihood.size)
                            for _label in self.labels)
         used_labels, = np.where(label_usages > 0)
         return used_labels
@@ -232,7 +217,7 @@ class BayesianMixtureOfGaussians(Distribution):
 
         if labels_from_prior:
             for _obs in self.obs:
-                self.labels.append(self.gating.likelihood.rvs(len(_obs)))
+                self.labels.append(self.likelihood.gating.rvs(len(_obs)))
         else:
             self.labels = self._resample_labels(self.obs)
 
@@ -246,58 +231,6 @@ class BayesianMixtureOfGaussians(Distribution):
 
     def has_data(self):
         return len(self.obs) > 0
-
-    def rvs(self, size=1):
-        labels = self.gating.likelihood.rvs(size)
-        counts = np.bincount(labels, minlength=self.size)
-
-        obs = np.empty((size, self.dim))
-        for idx, (c, count) in enumerate(zip(self.components, counts)):
-            obs[labels == idx, ...] = c.likelihood.rvs(count)
-
-        perm = np.random.permutation(size)
-        obs, z = obs[perm], labels[perm]
-
-        return obs, labels
-
-    def log_likelihood(self, obs):
-        assert isinstance(obs, (np.ndarray, list))
-        if isinstance(obs, list):
-            return sum(self.log_likelihood(_obs) for _obs in obs)
-        else:
-            scores = self.log_scores(obs)
-            return np.sum(logsumexp(scores[~np.isnan(obs).any(axis=1)], axis=1))
-
-    def mean(self):
-        raise NotImplementedError
-
-    def mode(self):
-        raise NotImplementedError
-
-    def log_partition(self):
-        raise NotImplementedError
-
-    def entropy(self):
-        raise NotImplementedError
-
-    def log_scores(self, obs):
-        N, K = obs.shape[0], self.size
-
-        # update, see Eq. 10.67 in Bishop
-        component_scores = np.empty((N, K))
-        for idx, c in enumerate(self.components):
-            component_scores[:, idx] = c.likelihood.log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores, copy=False)
-
-        gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
-        score = gating_scores + component_scores
-        return score
-
-    def scores(self, obs):
-        logr = self.log_scores(obs)
-        score = np.exp(logr - np.max(logr, axis=1, keepdims=True))
-        score /= np.sum(score, axis=1, keepdims=True)
-        return score
 
     # Expectation-Maximization
     @pass_obs_arg
@@ -317,7 +250,7 @@ class BayesianMixtureOfGaussians(Distribution):
                 # Expectation step
                 scores = []
                 for _obs in obs:
-                    scores.append(self.scores(_obs))
+                    scores.append(self.likelihood.scores(_obs))
 
                 # Maximization step
                 for idx, c in enumerate(self.components):
@@ -363,13 +296,13 @@ class BayesianMixtureOfGaussians(Distribution):
     def _resample_labels(self, obs):
         labels = []
         for _obs in obs:
-            score = self.log_scores(_obs)
+            score = self.likelihood.log_scores(_obs)
             labels.append(sample_discrete_from_log(score, axis=1))
         return labels
 
     # Mean Field
     def expected_scores(self, obs):
-        N, K = obs.shape[0], self.size
+        N, K = obs.shape[0], self.likelihood.size
 
         # update, see Eq. 10.67 in Bishop
         component_scores = np.empty((N, K))
@@ -406,7 +339,10 @@ class BayesianMixtureOfGaussians(Distribution):
             for i in range(maxiter):
                 elbo.append(self.meanfield_update())
                 if elbo[-1] is not None and len(elbo) > 1:
-                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                    if elbo[-1] < elbo[-2]:
+                        print('WARNING: ELBO should always increase')
+                        return elbo
+                    if (elbo[-1] - elbo[-2]) < tol:
                         return elbo
                 pbar.update(1)
 
@@ -519,19 +455,20 @@ class BayesianMixtureOfGaussians(Distribution):
 
         # add in symmetry factor (if we're actually symmetric)
         if len(set(type(c) for c in self.components)) == 1:
-            vlb += special.gammaln(self.size + 1)
+            vlb += special.gammaln(self.likelihood.size + 1)
 
         return vlb
 
     # Misc
     def bic(self, obs=None):
         assert obs is not None
-        return - 2. * self.log_likelihood(obs) + self.nb_params\
+        return - 2. * np.sum(self.likelihood.log_likelihood(obs)) + self.likelihood.nb_params\
                * np.log(sum([_obs.shape[0] for _obs in obs]))
 
     def aic(self):
         assert self.has_data()
-        return 2. * self.nb_params - 2. * sum(self.log_likelihood(_obs) for _obs in self.obs)
+        return 2. * self.likelihood.nb_params - 2. * sum(np.sum(self.likelihood.log_likelihood(_obs))
+                                                         for _obs in self.obs)
 
     @pass_obs_arg
     def plot(self, obs=None, color=None, legend=False, alpha=None):
@@ -539,41 +476,5 @@ class BayesianMixtureOfGaussians(Distribution):
         # for whitend data, it's a hassle :D
         assert self.whitend is False
 
-        import matplotlib.pyplot as plt
-        from matplotlib import cm
-
-        artists = []
-
-        # get colors
-        cmap = cm.get_cmap('RdBu')
-        if color is None:
-            label_colors = dict((idx, cmap(v)) for idx, v in
-                                enumerate(np.linspace(0, 1, self.size, endpoint=True)))
-        else:
-            label_colors = dict((idx, color) for idx in range(self.size))
-
-        labels = []
-        for _obs in obs:
-            labels.append(np.argmax(self.scores(_obs), axis=1))
-
-        # plot data scatter
-        for _obs, _label in zip(obs, labels):
-            colorseq = [label_colors[l] for l in _label]
-            artists.append(plt.scatter(_obs[:, 0], _obs[:, 1], c=colorseq, marker='+'))
-
-        # plot parameters
-        axis = plt.axis()
-        for label, (c, w) in enumerate(zip(self.components, self.gating.likelihood.probs)):
-            artists.extend(c.likelihood.plot(color=label_colors[label], label='%d' % label,
-                                             alpha=min(0.25, 1. - (1. - w) ** 2) / 0.25
-                                             if alpha is None else alpha))
-        plt.axis(axis)
-
-        # add legend
-        if legend and color is None:
-            plt.legend([plt.Rectangle((0, 0), 1, 1, fc=c)
-                        for i, c in label_colors.items() if i in self.used_labels],
-                       [i for i in label_colors if i in self.used_labels], loc='best', ncol=2)
-        plt.show()
-
+        artists = self.likelihood.plot(obs, color, legend, alpha)
         return artists

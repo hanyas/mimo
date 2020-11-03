@@ -1,3 +1,3 @@
-from .full import *
-from .tied import *
-from .linear import *
+from .gmm import *
+from .tgmm import *
+from .ilr import *

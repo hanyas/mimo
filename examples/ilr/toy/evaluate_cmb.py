@@ -12,7 +12,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalGamma
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
@@ -75,8 +75,9 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                basis=[GaussianWithNormalGamma(basis_prior[i])
@@ -114,14 +115,14 @@ def _job(kwargs):
                                              progprint=args.verbose)
 
         ilr.gating.prior = ilr.gating.posterior
-        for i in range(ilr.size):
+        for i in range(ilr.likelihood.size):
             ilr.basis[i].prior = ilr.basis[i].posterior
             ilr.models[i].prior = ilr.models[i].posterior
 
     return ilr
 
 
-def parallel_dpglm_inference(nb_jobs=50, **kwargs):
+def parallel_ilr_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
         kwargs['seed'] = n
@@ -179,10 +180,10 @@ if __name__ == "__main__":
     nb_train = args.nb_train
     input, target = data[:nb_train, :1], data[:nb_train, 1:]
 
-    ilr = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                   train_input=input,
-                                   train_target=target,
-                                   arguments=args)[0]
+    ilr = parallel_ilr_inference(nb_jobs=args.nb_seeds,
+                                 train_input=input,
+                                 train_target=target,
+                                 arguments=args)[0]
 
     # predict on training
     mu, var, std, nlpd = \

@@ -15,7 +15,7 @@ from mimo.util.matrix import invpd, symmetrize
 class LinearGaussianWithPrecision(Conditional):
     """
     Multivariate Gaussian distribution with a linear mean function.
-    Parameters are linear transf. and covariance matrix:
+    Parameters are linear transf. and precision matrix:
         A, lmbda
     """
 
@@ -81,7 +81,7 @@ class LinearGaussianWithPrecision(Conditional):
     def sigma(self):
         return self.lmbda_chol_inv @ self.lmbda_chol_inv.T
 
-    def rvs(self, x=None):
+    def rvs(self, x=None, size=None):
         assert x is not None
         size = 1 if x.ndim == 1 else x.shape[0]
 
@@ -116,11 +116,10 @@ class LinearGaussianWithPrecision(Conditional):
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
                   - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
-        return - self.log_partition() + self.log_base() + log_lik
+        return - self.log_partition(x) + self.log_base() + log_lik
 
     def statistics(self, y, x, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
@@ -181,10 +180,12 @@ class LinearGaussianWithPrecision(Conditional):
     def log_base(self):
         return np.log(self.base)
 
-    def log_partition(self):
-        return - np.sum(np.log(np.diag(self.lmbda_chol)))
+    def log_partition(self, x):
+        mu = self.predict(x)
+        return 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
-    def entropy(self):
+    def entropy(self, x):
         raise NotImplementedError
 
     # Max likelihood
@@ -209,7 +210,7 @@ class LinearGaussianWithPrecision(Conditional):
 class LinearGaussianWithDiagonalPrecision(Conditional):
     """
     Multivariate Gaussian distribution with a linear mean function.
-    Parameters are linear transf. and diagonal covariance matrix:
+    Parameters are linear transf. and diagonal precision matrix:
         A, lmbdas
     """
 
@@ -278,7 +279,7 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def sigmas(self):
         return 1. / self.lmbdas
 
-    def rvs(self, x=None):
+    def rvs(self, x=None, size=None):
         assert x is not None
         size = 1 if x.ndim == 1 else x.shape[0]
 
@@ -313,11 +314,10 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
 
         mu = self.mean(x)
         log_lik = np.einsum('nk,kh,nh->n', mu, self.lmbda, y, optimize=True)\
-                  - 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
                   - 0.5 * np.einsum('nk,kh,nh->n', y, self.lmbda, y, optimize=True)
 
         log_lik[bads] = 0
-        return - self.log_partition() + self.log_base() + log_lik
+        return - self.log_partition(x) + self.log_base() + log_lik
 
     def statistics(self, y, x, vectorize=False):
         if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
@@ -378,10 +378,12 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
     def log_base(self):
         return np.log(self.base)
 
-    def log_partition(self):
-        return - 0.5 * np.sum(np.log(np.diag(self.lmbdas)))
+    def log_partition(self, x):
+        mu = self.predict(x)
+        return 0.5 * np.einsum('nk,kh,nh->n', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
-    def entropy(self):
+    def entropy(self, x):
         raise NotImplementedError
 
     # Max likelihood
@@ -395,3 +397,72 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
         self.lmbdas = 1. / _sigmas
 
         return self
+
+
+class LinearGaussianWithKnownPrecision(LinearGaussianWithPrecision):
+    """
+    Multivariate Gaussian distribution with a linear mean function
+    and a fixed precision matrix.
+    Parameters are linear transf. and precision matrix:
+        A, lmbda
+    """
+
+    def __init__(self, A=None, lmbda=None, affine=True):
+        super(LinearGaussianWithKnownPrecision, self).__init__(A=A, lmbda=lmbda, affine=affine)
+
+    @property
+    def params(self):
+        return self.A
+
+    @params.setter
+    def params(self, values):
+        self.A = values
+
+    def statistics(self, y, x, vectorize=False):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x = y[idx], x[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            if vectorize:
+                c0, c1 = 'nk,nh->nkh', 'nk,nk->nk'
+            else:
+                c0, c1 = 'nk,nh->kh', 'nk,nk->k'
+
+            yxT = np.einsum(c0, y, x, optimize=True)
+            xxT = np.einsum(c0, x, x, optimize=True)
+
+            return Stats([yxT, xxT])
+        else:
+            func = partial(self.statistics, vectorize=vectorize)
+            stats = list(map(func, y, x))
+            return stats if vectorize else reduce(add, stats)
+
+    def weighted_statistics(self, y, x, weights, vectorize=False):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x, weights = y[idx], x[idx], weights[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            if vectorize:
+                c0, c1 = 'nk,n,nh->nkh', 'nk,n,nk->nk'
+            else:
+                c0, c1 = 'nk,n,nh->kh', 'nk,n,nk->k'
+
+            yxT = np.einsum(c0, y, weights, x, optimize=True)
+            xxT = np.einsum(c0, x, weights, x, optimize=True)
+
+            return Stats([yxT, xxT])
+        else:
+            func = partial(self.weighted_statistics, vectorize=vectorize)
+            stats = list(map(func, y, x, weights))
+            return stats if vectorize else reduce(add, stats)
+
+    def max_likelihood(self, y, x, weights=None):
+        raise NotImplementedError

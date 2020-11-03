@@ -12,7 +12,7 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import GaussianWithNormalGamma
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
@@ -50,7 +50,7 @@ def _job(kwargs):
 
     # initialize Normal
     alpha_ng = 1.
-    beta_ng = 1. / (1 * 1e2)
+    beta_ng = 1. / (2 * 1e2)
     kappas = 1e-2
 
     # initialize Matrix-Normal
@@ -75,8 +75,9 @@ def _job(kwargs):
 
     # define gating
     if args.prior == 'stick-breaking':
-        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)), deltas=np.ones((args.nb_models,)) * args.alpha)
-        gating_prior = StickBreaking(**gating_hypparams)
+        gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
+                                deltas=np.ones((args.nb_models,)) * args.alpha)
+        gating_prior = TruncatedStickBreaking(**gating_hypparams)
 
         ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
                                                basis=[GaussianWithNormalGamma(basis_prior[i])
@@ -113,14 +114,14 @@ def _job(kwargs):
                                              progprint=args.verbose)
 
         ilr.gating.prior = ilr.gating.posterior
-        for i in range(ilr.size):
+        for i in range(ilr.likelihood.size):
             ilr.basis[i].prior = ilr.basis[i].posterior
             ilr.models[i].prior = ilr.models[i].posterior
 
     return ilr
 
 
-def parallel_dpglm_inference(nb_jobs=50, **kwargs):
+def parallel_ilr_inference(nb_jobs=50, **kwargs):
     kwargs_list = []
     for n in range(nb_jobs):
         kwargs['seed'] = n
@@ -141,11 +142,11 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=5, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=3, type=int)
+    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
@@ -190,10 +191,10 @@ if __name__ == "__main__":
     input, target = data[:, :1], data[:, 1:]
     train_input, train_target = train_data[:, :1], train_data[:, 1:]
 
-    ilr = parallel_dpglm_inference(nb_jobs=args.nb_seeds,
-                                   train_input=train_input,
-                                   train_target=train_target,
-                                   arguments=args)[0]
+    ilr = parallel_ilr_inference(nb_jobs=args.nb_seeds,
+                                 train_input=train_input,
+                                 train_target=train_target,
+                                 arguments=args)[0]
 
     # predict on training
     mu, var, std, nlpd = \
@@ -219,14 +220,14 @@ if __name__ == "__main__":
     axes[0].plot(true_input, true_target, '--k')
     axes[0].scatter(train_input, train_target, marker='+', s=1.25, color='k')
     axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    for c in [1., 2., 3.]:
+    for c in [1., 2.]:
         axes[0].fill_between(sorted_input,
                              sorted_mu - c * sorted_std,
                              sorted_mu + c * sorted_std,
                              edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
     axes[0].set_ylabel('y')
-    axes[0].set_ylim(-15., 15.)
+    axes[0].set_ylim(-7.5, 7.5)
 
     # plot gaussian activations
     axes[1].set_xlabel('x')

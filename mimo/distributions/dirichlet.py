@@ -110,7 +110,14 @@ class Dirichlet(Distribution):
         return self.expected_statistics()
 
 
-class StickBreaking(Distribution):
+class TruncatedStickBreaking(Distribution):
+    # This stick-breaking construction is meant to
+    # be used as a truncated prior/posterior as suggest in
+    # "Gibbs sampling methods for stick-breaking priors"
+    # by Ishwaran and James, 2001
+    # and
+    # "Variational Inference for Dirichlet Process Mixtures"
+    # by Blei and Jordan, 2006
 
     def __init__(self, K=None, gammas=None, deltas=None):
         self.K = K
@@ -129,32 +136,33 @@ class StickBreaking(Distribution):
     def dim(self):
         return self.K
 
-    def rvs(self, size=1):
+    def rvs(self, size=1, truncate=True):
         # stick-breaking construction
-        betas = npr.beta(self.gammas, self.deltas)
+        betas = npr.beta(self.gammas[:-1], self.deltas[:-1])
+        betas = np.hstack((betas, 1.))
+
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        probs = probs / probs.sum()
-        # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
     def mean(self):
         # mean of stick-breaking
-        betas = self.gammas / (self.gammas + self.deltas)
+        betas = self.gammas[:-1] / (self.gammas[:-1] + self.deltas[:-1])
+        betas = np.hstack((betas, 1.))
+
         probs = np.zeros((self.K, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        probs = probs / probs.sum()
-        # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
     def mode(self):
         # mode of stick-breaking
         betas = np.zeros((self.K, ))
-        for k in range(self.K):
+        betas[-1] = 1.
+        for k in range(self.K - 1):
             if self.gamma[k] > 1. and self.delta[k] > 1.:
                 betas[k] = (self.gamma[k] - 1.) / (self.gamma[k] + self.delta[k] - 2.)
             elif self.gamma[k] == 1. and self.delta[k] == 1.:
@@ -173,8 +181,6 @@ class StickBreaking(Distribution):
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
-        probs = probs / probs.sum()
-        # probs[np.where(probs < 1e-16)[0]] = 0.
         return probs
 
     def log_likelihood(self, x):

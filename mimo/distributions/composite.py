@@ -10,15 +10,24 @@ from mimo.distributions import GaussianWithDiagonalPrecision
 
 from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import LinearGaussianWithDiagonalPrecision
+from mimo.distributions import LinearGaussianWithKnownPrecision
 
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 
 from mimo.distributions import MatrixNormalWithPrecision
 from mimo.distributions import MatrixNormalWithDiagonalPrecision
+from mimo.distributions import MatrixNormalWithKnownPrecision
+
+from operator import add
+from functools import reduce, partial
 
 from mimo.util.matrix import invpd, blockarray
 from mimo.util.data import extendlists
+
+from mimo.util.stats import multivariate_gaussian_loglik
+
+import copy
 
 
 class NormalWishart(Distribution):
@@ -55,7 +64,7 @@ class NormalWishart(Distribution):
     def log_likelihood(self, x):
         mu, lmbda = x
         return GaussianWithPrecision(mu=self.gaussian.mu,
-                                     lmbda=self.kappa * np.eye(self.dim)).log_likelihood(mu) \
+                                     lmbda=self.kappa * lmbda).log_likelihood(mu) \
                + self.wishart.log_likelihood(lmbda)
 
     @property
@@ -458,7 +467,7 @@ class MatrixNormalWishart(Distribution):
 
     def statistics(self, A, lmbda):
         # Stats corresponding to a diagonal Gamma prior on K
-        a = 0.5 * A.shape[0] * np.ones((A.shape[-1]))
+        a = 0.5 * self.drow * np.ones((self.dcol, ))
         b = - 0.5 * np.einsum('kh,km,mh->h', A - self.matnorm.M,
                               lmbda, A - self.matnorm.M)
         return Stats([a, b])
@@ -485,7 +494,7 @@ class MatrixNormalWishart(Distribution):
         M = params[0].dot(params[1])
         K = params[1]
         psi = invpd(params[2]) + params[0].dot(K).dot(params[0].T)
-        nu = params[3] - params[2].shape[0]
+        nu = params[3] - params[2].shape[0] - 1 + params[0].shape[-1]
         return Stats([M, K, psi, nu])
 
     @staticmethod
@@ -493,8 +502,7 @@ class MatrixNormalWishart(Distribution):
         M = np.linalg.solve(natparam[1], natparam[0].T).T
         K = natparam[1]
         psi = invpd(natparam[2] - M.dot(K).dot(M.T))
-        nu = natparam[3] + natparam[2].shape[0]
-
+        nu = natparam[3] + natparam[2].shape[0] + 1 - natparam[0].shape[-1]
         return M, K, psi, nu
 
     def log_partition(self, params=None):
@@ -630,3 +638,135 @@ class MatrixNormalGamma(Distribution):
     @nat_param.setter
     def nat_param(self, natparam):
         self.params = self.nat_to_std(natparam)
+
+
+class HierarchicalLinearGaussianWithSharedPrecision:
+
+    def __init__(self, M, V, K, affine=True):
+        self.affine = affine
+
+        self.matnorm = MatrixNormalWithKnownPrecision(M=M, V=V, K=K)
+        self.lingauss = LinearGaussianWithPrecision(A=M, lmbda=V,
+                                                    affine=affine)
+
+    @property
+    def params(self):
+        return self.matnorm.M, self.lingauss.V
+
+    @params.setter
+    def params(self, values):
+        self.matnorm.M, self.matnorm.V = values
+        self.lingauss.V = copy.deepcopy(self.matnorm.V)
+
+    @property
+    def dcol(self):
+        return self.matnorm.dcol
+
+    @property
+    def drow(self):
+        return self.matnorm.drow
+
+    def rvs(self, x, size=1):
+        W = self.matnorm.rvs()
+        self.lingauss.A = W
+        y = self.lingauss.rvs(x)
+        return y, W
+
+    def mean(self, x):
+        return self.marginal_likelihood(x)[0]
+
+    def mode(self, x):
+        return self.marginal_likelihood(x)[0]
+
+    def statistics(self, y, x):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x = y[idx], x[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            yyT = y.T @ y
+            xxT = x.T @ x
+            xyT = x.T @ y
+
+            matnorm_stats = np.array([
+                self.lingauss.A @ self.matnorm.K,
+                self.matnorm.K,
+                self.lingauss.A @ self.matnorm.K @ self.lingauss.A.T,
+                x.shape[1]
+            ])
+
+            lingauss_stats = np.array([
+                0.,
+                0.,
+                yyT - 2. * self.lingauss.A @ xyT
+                + self.lingauss.A @ xxT @ self.lingauss.A.T,
+                x.shape[0]
+            ])
+
+            stats = matnorm_stats + lingauss_stats
+            return Stats(stats)
+
+    def weighted_statistics(self, y, x, posterior):
+        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray)\
+                and not isinstance(posterior, list):
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            y, x = y[idx], x[idx]
+
+            if self.affine:
+                x = np.hstack((x, np.ones((x.shape[0], 1))))
+
+            yyT = y.T @ y
+            xxT = x.T @ x
+            xyT = x.T @ y
+
+            matnorm_stats = np.array([
+                posterior.M @ self.matnorm.K,
+                self.matnorm.K,
+                np.trace(self.matnorm.K @ np.linalg.inv(posterior.K))
+                    * np.linalg.inv(posterior.V)
+                    + posterior.M @ self.matnorm.K @ posterior.M.T,
+                x.shape[1]
+            ])
+
+            lingauss_stats = np.array([
+                0.,
+                0.,
+                yyT - 2. * posterior.M @ xyT + posterior.M @ xxT @ posterior.M.T
+                    + np.trace(xxT @ np.linalg.inv(posterior.K)) * np.linalg.inv(posterior.V),
+                x.shape[0]
+            ])
+
+            stats = matnorm_stats + lingauss_stats
+            return Stats(stats)
+
+    def marginal_likelihood(self, x):
+        x = np.reshape(x, (-1, self.dcol))
+
+        if self.affine:
+            x = np.hstack((x, np.ones((len(x), 1))))
+
+        M, V, K = self.matnorm.params
+
+        mus = np.einsum('kh,...h->...k', M, x)
+
+        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
+        lmbdas = np.einsum('kh,...->...kh', V, 1. / c)
+
+        return mus, lmbdas
+
+    def log_likelihood(self, y, x):
+        assert isinstance(y, (np.ndarray, list))
+        assert isinstance(x, (np.ndarray, list))
+
+        if isinstance(y, list) and isinstance(x, list):
+            return [self.log_likelihood(_y, _x) for _y, _x in zip(y, x)]
+        else:
+            mus, lmbdas = self.marginal_likelihood(x)
+            return multivariate_gaussian_loglik(y, mus, lmbdas)
+
+    def max_likelihood(self, y, x):
+        raise NotImplementedError

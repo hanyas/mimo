@@ -4,12 +4,12 @@ import numpy.random as npr
 import scipy as sc
 from scipy import stats
 
-from mimo.distributions import StickBreaking
+from mimo.distributions import TruncatedStickBreaking
 
-alpha = 5
-K = 5
+alpha = 10
+K = 100
 
-sb = StickBreaking(K, np.ones(K), np.ones(K) * alpha)
+sb = TruncatedStickBreaking(K, np.ones(K), np.ones(K) * alpha)
 
 weights = np.vstack([sb.rvs() for _ in range(10000)])
 weights = np.mean(weights, axis=0)

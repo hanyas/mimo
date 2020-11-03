@@ -1,5 +1,4 @@
 import abc
-import copy
 from operator import add, sub
 from functools import reduce
 
@@ -8,182 +7,271 @@ from mimo.util.data import islist
 
 
 # Base classes
-class Distribution(with_metaclass(abc.ABCMeta, object)):
-    @abc.abstractmethod
+class Distribution(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def params(self):
+        raise NotImplementedError
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
+
+    @property
+    def dim(self):
+        raise NotImplementedError
+
     def rvs(self, size=1):
-        # random variates (samples)
         pass
 
-    @abc.abstractmethod
-    def log_likelihood(self, x):
-        """
-        log likelihood (either log probability mass function or log probability
-        density function) of x, which has the same type as the output of rvs()
-        """
-        pass
-
-    @abc.abstractmethod
     def mean(self):
         pass
 
-    @abc.abstractmethod
     def mode(self):
         pass
 
-    @abc.abstractmethod
+    def log_likelihood(self, x):
+        pass
+
     def log_partition(self):
         pass
 
-    @abc.abstractmethod
     def entropy(self):
+        pass
+
+    def max_likelihood(self, data, weights=None):
         pass
 
 
 class BayesianDistribution(with_metaclass(abc.ABCMeta, Distribution)):
-    @abc.abstractmethod
+
     def empirical_bayes(self, data):
-        """
-        (optional) set hyperparameters via empirical bayes
-        e.g. treat argument as a pseudo-dataset for exponential family
-        """
         raise NotImplementedError
 
-    # Algorithm interfaces for inference in distributions
-    @abc.abstractmethod
+    def max_aposteriori(self, data, weights=None):
+        pass
+
     def resample(self, data=[]):
         pass
 
-    @abc.abstractmethod
-    def copy_sample(self):
-        """
-        return an object copy suitable for making lists of posterior samples
-        (override this method to prevent copying shared structures into each sample)
-        """
-        return copy.deepcopy(self)
-
-    @abc.abstractmethod
-    def resample_and_copy(self):
-        self.resample()
-        return self.copy_sample()
-
-    @abc.abstractmethod
-    def expected_log_likelihood(self, data):
-        pass
-
-    @abc.abstractmethod
     def meanfield_update(self, data, weights):
         pass
 
-    @abc.abstractmethod
+    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+        pass
+
     def variational_lowerbound(self):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def meanfield_sgdstep(self, stats, weights, prob, stepsize):
+    def expected_log_likelihood(self, data):
         pass
 
-    @abc.abstractmethod
-    def max_likelihood(self, data, weights=None):
-        """
-        sets the parameters set to their maximum likelihood values given the
-        (weighted) data
-        """
-        pass
+
+class Conditional(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def params(self):
+        raise NotImplementedError
 
     @property
     def nb_params(self):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def max_aposteriori(self, data, weights=None):
-        """
-        sets the parameters to their MAP values given the (weighted) data
-        analogous to max_likelihood but includes hyperparameters
-        """
+    @property
+    def dim(self):
+        raise NotImplementedError
+
+    def rvs(self, x, size=1):
         pass
 
-
-class Conditional(with_metaclass(abc.ABCMeta, object)):
-    @abc.abstractmethod
-    def rvs(self, x):
-        # random variates (samples)
-        pass
-
-    @abc.abstractmethod
     def log_likelihood(self, y, x):
-        """
-        log likelihood (either log probability mass function or log probability
-        density function) of y, which has the same type as the output of rvs()
-        x is a conditional variable of the density
-        """
         pass
 
-    @abc.abstractmethod
     def mean(self, x):
         pass
 
-    @abc.abstractmethod
     def mode(self, x):
         pass
 
-    @abc.abstractmethod
-    def log_partition(self):
+    def log_partition(self, x):
         pass
 
-    @abc.abstractmethod
-    def entropy(self):
+    def entropy(self, x):
+        pass
+
+    def max_likelihood(self, y, x, weights=None):
         pass
 
 
 class BayesianConditional(with_metaclass(abc.ABCMeta, Conditional)):
-    def empirical_bayes(self, data):
-        """
-        (optional) set hyperparameters via empirical bayes
-        e.g. treat argument as a pseudo-dataset for exponential family
-        """
+
+    def empirical_bayes(self, y, x):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def resample(self, data=[]):
+    def max_aposteriori(self, y, x, weights=None):
         pass
 
-    def resample_and_copy(self):
-        self.resample()
-        return self.copy_sample()
-
-    @abc.abstractmethod
-    def expected_log_likelihood(self, x):
+    def resample(self, y=[], x=[]):
         pass
 
-    @abc.abstractmethod
-    def meanfield_update(self, data, weights):
+    def meanfield_update(self, y, x, weights):
         pass
 
-    def variational_lowerbound(self):
+    def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
+        pass
+
+    def variational_lowerbound(self, x):
+        pass
+
+    def expected_log_likelihood(self, y, x):
+        pass
+
+
+class MixtureDistribution(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def params(self):
         raise NotImplementedError
-
-    @abc.abstractmethod
-    def meanfield_sgdstep(self, stats, weights, prob, stepsize):
-        pass
-
-    @abc.abstractmethod
-    def max_likelihood(self, data, weights=None):
-        """
-        sets the parameters set to their maximum likelihood values given the
-        (weighted) data
-        """
-        pass
 
     @property
     def nb_params(self):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def max_aposteriori(self, data, weights=None):
-        """
-        sets the parameters to their MAP values given the (weighted) data
-        analogous to max_likelihood but includes hyperparameters
-        """
+    @property
+    def size(self):
+        raise NotImplementedError
+
+    @property
+    def dim(self):
+        raise NotImplementedError
+
+    def rvs(self, size=1):
+        pass
+
+    def log_likelihood(self, obs):
+        pass
+
+    def log_scores(self, obs):
+        pass
+
+    def scores(self, obs):
+        pass
+
+    def max_likelihood(self, obs, weights=None):
+        pass
+
+
+class BayesianMixtureDistribution(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def used_labels(self):
+        raise NotImplementedError
+
+    def add_data(self, obs, **kwargs):
+        pass
+
+    def clear_data(self):
+        pass
+
+    def has_data(self):
+        pass
+
+    def max_aposterior(self, obs, **kwargs):
+        pass
+
+    def resample(self, obs=[], labels=[], **kwargs):
+        pass
+
+    def expected_scores(self, obs):
+        pass
+
+    def meanfield_update(self, obs):
+        pass
+
+    def meanfield_coordinate_descent(self, **kwargs):
+        pass
+
+    def meanfield_sgdstep(self, obs, prob, stepsize):
+        pass
+
+    def meanfield_stochastic_descent(self, **kwargs):
+        pass
+
+    def variational_lowerbound(self, obs, weights):
+        pass
+
+
+class ConditionalMixtureDistribution(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def params(self):
+        raise NotImplementedError
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
+
+    @property
+    def size(self):
+        raise NotImplementedError
+
+    @property
+    def dim(self):
+        raise NotImplementedError
+
+    def rvs(self, size=1):
+        pass
+
+    def log_likelihood(self, y, x):
+        pass
+
+    def log_scores(self, y, x):
+        pass
+
+    def scores(self, y, x):
+        pass
+
+    def max_likelihood(self, y, x, weights=None):
+        pass
+
+
+class BayesianConditionalMixtureDistribution(with_metaclass(abc.ABCMeta)):
+
+    @property
+    def used_labels(self):
+        raise NotImplementedError
+
+    def add_data(self, obs, **kwargs):
+        pass
+
+    def clear_data(self):
+        pass
+
+    def has_data(self):
+        pass
+
+    def max_aposterior(self, y, x, **kwargs):
+        pass
+
+    def resample(self, y=[], x=[], z=[], **kwargs):
+        pass
+
+    def expected_scores(self, y, x):
+        pass
+
+    def meanfield_update(self, y, x):
+        pass
+
+    def meanfield_coordinate_descent(self, **kwargs):
+        pass
+
+    def meanfield_sgdstep(self, y, x, prob, stepsize):
+        pass
+
+    def meanfield_stochastic_descent(self, **kwargs):
+        pass
+
+    def variational_lowerbound(self, y, x, weights):
         pass
 
 

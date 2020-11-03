@@ -2,7 +2,8 @@ import numpy as np
 from scipy import special as special
 from scipy.special import logsumexp
 
-from mimo.abstraction import Conditional
+from mimo.abstraction import ConditionalMixtureDistribution
+from mimo.abstraction import BayesianConditionalMixtureDistribution
 
 from mimo.distributions.bayesian import CategoricalWithDirichlet
 from mimo.distributions.bayesian import CategoricalWithStickBreaking
@@ -26,9 +27,126 @@ nb_cores = pathos.multiprocessing.cpu_count()
 eps = np.finfo(np.float64).tiny
 
 
-class BayesianMixtureOfLinearGaussians(Conditional):
+class MixtureOfLinearGaussians(ConditionalMixtureDistribution):
     """
-    This class is for mixtures of other distributions.
+    This class is for mixtures of Linear Gaussians.
+    """
+    def __init__(self, gating, basis, models):
+        assert len(basis) > 0 and len(models) > 0
+        assert len(basis) == len(models)
+
+        self.gating = gating
+        self.basis = basis  # input density
+        self.models = models  # output density
+
+    @property
+    def params(self):
+        raise NotImplementedError
+
+    @property
+    def nb_params(self):
+        return sum(b.nb_params for b in self.basis) + self.gating.nb_params\
+               + sum(m.nb_params for m in self.models)
+
+    @property
+    def size(self):
+        return len(self.basis)
+
+    @property
+    def drow(self):
+        return self.models[0].drow
+
+    @property
+    def dcol(self):
+        return self.models[0].dcol
+
+    @property
+    def dim(self):
+        return self.drow, self.dcol
+
+    def rvs(self, size=1):
+        z = self.gating.likelihood.rvs(size)
+        counts = np.bincount(z, minlength=self.size)
+
+        x = np.empty((size, self.dcol))
+        y = np.empty((size, self.drow))
+        for idx, (b, m, count) in enumerate(zip(self.basis, self.models, counts)):
+            x[z == idx, ...] = b.rvs(count)
+            y[z == idx, ...] = m.rvs(x[z == idx, ...])
+
+        perm = np.random.permutation(size)
+        x, y, z = x[perm], y[perm], z[perm]
+
+        return y, x, z
+
+    def log_likelihood(self, y, x):
+        assert isinstance(x, (np.ndarray, list)) and isinstance(y, (np.ndarray, list))
+        if isinstance(x, list) and isinstance(y, list):
+            return [self.log_likelihood(_y, _x) for (_y, _x) in zip(y, x)]
+        else:
+            scores = self.log_scores(y, x)
+            idx = np.logical_and(~np.isnan(y).any(axis=1),
+                                 ~np.isnan(x).any(axis=1))
+            return logsumexp(scores[idx], axis=1)
+
+    def log_scores(self, y, x):
+        N, K = y.shape[0], self.size
+
+        # update, see Eq. 10.67 in Bishop
+        component_scores = np.empty((N, K))
+        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+            component_scores[:, idx] = b.log_likelihood(x)
+            component_scores[:, idx] += m.log_likelihood(y, x)
+        component_scores = np.nan_to_num(component_scores, copy=False)
+
+        gating_scores = self.gating.log_likelihood(np.arange(K))
+        score = gating_scores + component_scores
+        return score
+
+    # Expectation-Maximization
+    def scores(self, y, x):
+        logr = self.log_scores(y, x)
+        score = np.exp(logr - np.max(logr, axis=1, keepdims=True))
+        score /= np.sum(score, axis=1, keepdims=True)
+        return score
+
+    def max_likelihood(self, y=None, x=None, maxiter=1, progprint=True):
+
+        current = mp.current_process()
+        if len(current._identity) > 0:
+            pos = current._identity[0] - 1
+        else:
+            pos = 0
+
+        y = y if isinstance(y, list) else [y]
+        x = x if isinstance(y, list) else [x]
+
+        elbo = []
+        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
+                  position=pos, disable=not progprint) as pbar:
+            for i in range(maxiter):
+                # Expectation step
+                scores = []
+                for _y, _x in zip(y, x):
+                    scores.append(self.scores(_y, _x))
+
+                # Maximization step
+                for idx, (b, m) in enumerate(zip(self.basis, self.models)):
+                    b.max_likelihood([_x for _x in x], [_score[:, idx] for _score in scores])
+                    m.max_likelihood([_y for _y in y], [_score[:, idx] for _score in scores])
+
+                # mixture weights
+                self.gating.max_likelihood(None, scores)
+
+                elbo.append(np.sum(self.log_likelihood(y, x)))
+                pbar.update(1)
+
+        return elbo
+
+
+class BayesianMixtureOfLinearGaussians(BayesianConditionalMixtureDistribution):
+    """
+    This class is for Bayesian mixtures of Linear Gaussians.
     """
 
     def __init__(self, gating, basis, models):
@@ -39,6 +157,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self.basis = basis  # input density
         self.models = models  # output density
 
+        self.likelihood = MixtureOfLinearGaussians(gating=self.gating.likelihood,
+                                                   basis=[b.likelihood for b in self.basis],
+                                                   models=[m.likelihood for m in self.models])
+
         self.input = []
         self.target = []
         self.labels = []
@@ -48,32 +170,14 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self.target_transform = None
 
     @property
-    def nb_params(self):
-        return self.gating.likelihood.nb_params\
-               + sum(b.likelihood.nb_params for b in self.basis)\
-               + sum(m.likelihood.nb_params for m in self.models)
-
-    @property
-    def size(self):
-        return len(self.models)
-
-    @property
-    def drow(self):
-        return self.models[0].likelihood.drow
-
-    @property
-    def dcol(self):
-        return self.models[0].likelihood.dcol
-
-    @property
     def used_labels(self):
         assert self.has_data()
-        label_usages = sum(np.bincount(_label, minlength=self.size)
+        label_usages = sum(np.bincount(_label, minlength=self.likelihood.size)
                            for _label in self.labels)
         used_labels, = np.where(label_usages > 0)
         return used_labels
 
-    def add_data(self, y, x, whiten=False,
+    def add_data(self, y, x=None, whiten=False,
                  target_transform=False,
                  input_transform=False,
                  transform_type='PCA',
@@ -117,7 +221,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         if labels_from_prior:
             for _y, _x in zip(self.target, self.input):
-                self.labels.append(self.gating.likelihood.rvs(len(_y)))
+                self.labels.append(self.likelihood.gating.rvs(len(_y)))
         else:
             self.labels = self._resample_labels(self.target, self.input)
 
@@ -133,64 +237,6 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
     def has_data(self):
         return len(self.target) > 0 and len(self.input) > 0
-
-    def rvs(self, size=1):
-        z = self.gating.likelihood.rvs(size)
-        counts = np.bincount(z, minlength=self.size)
-
-        x = np.empty((size, self.dcol))
-        y = np.empty((size, self.drow))
-        for idx, (b, m, count) in enumerate(zip(self.basis, self.models, counts)):
-            x[z == idx, ...] = b.likelihood.rvs(count)
-            y[z == idx, ...] = m.likelihood.rvs(x[z == idx, ...])
-
-        perm = np.random.permutation(size)
-        x, y, z = x[perm], y[perm], z[perm]
-
-        return y, x, z
-
-    def log_likelihood(self, y, x):
-        assert isinstance(x, (np.ndarray, list)) and isinstance(y, (np.ndarray, list))
-        if isinstance(x, list) and isinstance(y, list):
-            return sum(self.log_likelihood(_y, _x) for (_y, _x) in zip(y, x))
-        else:
-            scores = self.log_scores(y, x)
-            idx = np.logical_and(~np.isnan(y).any(axis=1),
-                                 ~np.isnan(x).any(axis=1))
-            return np.sum(logsumexp(scores[idx], axis=1))
-
-    def mean(self, x):
-        raise NotImplementedError
-
-    def mode(self, x):
-        raise NotImplementedError
-
-    def log_partition(self):
-        raise NotImplementedError
-
-    def entropy(self):
-        raise NotImplementedError
-
-    def log_scores(self, y, x):
-        N, K = y.shape[0], self.size
-
-        # update, see Eq. 10.67 in Bishop
-        component_scores = np.empty((N, K))
-        for idx, (b, m) in enumerate(zip(self.basis, self.models)):
-            component_scores[:, idx] = b.likelihood.log_likelihood(x)
-            component_scores[:, idx] += m.likelihood.log_likelihood(y, x)
-        component_scores = np.nan_to_num(component_scores, copy=False)
-
-        gating_scores = self.gating.likelihood.log_likelihood(np.arange(K))
-        score = gating_scores + component_scores
-        return score
-
-    # Expectation-Maximization
-    def scores(self, y, x):
-        logr = self.log_scores(y, x)
-        score = np.exp(logr - np.max(logr, axis=1, keepdims=True))
-        score /= np.sum(score, axis=1, keepdims=True)
-        return score
 
     @pass_target_and_input_arg
     def max_aposteriori(self, y=None, x=None, maxiter=1, progprint=True):
@@ -254,13 +300,13 @@ class BayesianMixtureOfLinearGaussians(Conditional):
     def _resample_labels(self, y, x):
         z = []
         for _y, _x in zip(y, x):
-            score = self.log_scores(_y, _x)
+            score = self.likelihood.log_scores(_y, _x)
             z.append(sample_discrete_from_log(score, axis=1))
         return z
 
     # Mean Field
     def expected_scores(self, y, x, nb_threads=4):
-        N, K = y.shape[0], self.size
+        N, K = y.shape[0], self.likelihood.size
 
         component_scores = np.empty((N, K))
 
@@ -276,7 +322,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 component_scores[:, idx] += self.models[idx].posterior.expected_log_likelihood(y, x, _affine)
 
             with Pool(threads=nb_threads) as p:
-                p.map(_loop, range(self.size))
+                p.map(_loop, range(self.likelihood.size))
 
         component_scores = np.nan_to_num(component_scores, copy=False)
 
@@ -309,7 +355,10 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             for i in range(maxiter):
                 elbo.append(self.meanfield_update())
                 if elbo[-1] is not None and len(elbo) > 1:
-                    if np.abs(elbo[-1] - elbo[-2]) < tol:
+                    if elbo[-1] < elbo[-2]:
+                        print('WARNING: ELBO should always increase')
+                        return elbo
+                    if (elbo[-1] - elbo[-2]) < tol:
                         return elbo
                 pbar.update(1)
 
@@ -343,7 +392,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         self.gating.meanfield_update(None, scores)
 
     def _meanfield_update_components(self, y, x, scores,
-                                     nb_threads=4):
+                                     nb_threads=1):
         if nb_threads == 1:
             for idx, (b, m) in enumerate(zip(self.basis, self.models)):
                 b.meanfield_update(x, [_score[:, idx] for _score in scores])
@@ -354,7 +403,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 self.models[idx].meanfield_update(y, x, [_score[:, idx] for _score in scores])
 
             with Pool(threads=nb_threads) as p:
-                p.map(_loop, range(self.size))
+                p.map(_loop, range(self.likelihood.size))
 
     # SVI
     def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
@@ -408,7 +457,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                 self.models[idx].meanfield_sgdstep(y, x, [_score[:, idx] for _score in scores], prob, stepsize)
 
             with Pool(threads=nb_threads) as p:
-                p.map(_loop, range(self.size))
+                p.map(_loop, range(self.likelihood.size))
 
     def _meanfield_sgdstep_gating(self, scores, prob, stepsize):
         self.gating.meanfield_sgdstep(None, scores, prob, stepsize)
@@ -449,30 +498,30 @@ class BayesianMixtureOfLinearGaussians(Conditional):
 
         # add in symmetry factor (if we're actually symmetric)
         if len(set(type(m) for m in self.models)) == 1:
-            vlb += special.gammaln(self.size + 1)
+            vlb += special.gammaln(self.likelihood.size + 1)
         return vlb
 
     # Misc
     def bic(self, y=None, x=None):
         assert x is not None and y is not None
-        return - 2. * self.log_likelihood(y, x) + self.nb_params\
+        return - 2. * np.sum(self.likelihood.log_likelihood(y, x)) + self.likelihood.nb_params\
                * np.log(sum([_y.shape[0] for _y in y]))
 
     def aic(self):
         assert self.has_data()
-        return 2. * self.nb_params - 2. * sum(self.log_likelihood(_y, _x)
-                                              for _y, _x in zip(self.target, self.input))
+        return 2. * self.likelihood.nb_params - 2. * sum(np.sum(self.likelihood.log_likelihood(_y, _x))
+                                                         for _y, _x in zip(self.target, self.input))
 
     def meanfield_predictive_activation(self, x, dist='gaussian'):
         # Mainly for plotting basis functions
-        x = np.reshape(x, (-1, self.dcol))
+        x = np.reshape(x, (-1, self.likelihood.dcol))
 
         x = x if not self.whitend \
             else self.input_transform.transform(x)
 
         weights = self.gating.posterior.mean()
 
-        labels = range(self.size)
+        labels = range(self.likelihood.size)
         activations = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
@@ -487,7 +536,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         # compute posterior mixing weights
         weights = self.gating.posterior.mean()
 
-        labels = range(self.size)
+        labels = range(self.likelihood.size)
         log_posterior_predictive = np.zeros((len(x), len(labels)))
 
         for i, idx in enumerate(labels):
@@ -499,8 +548,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return effective_weights
 
     def meanfield_predictive_moments(self, x, dist='gaussian', aleatoric_only=False):
-        mu, var = np.zeros((len(x), self.drow, self.size)),\
-                  np.zeros((len(x), self.drow, self.drow, self.size))
+        mu, var = np.zeros((len(x), self.likelihood.drow, self.likelihood.size)),\
+                  np.zeros((len(x), self.likelihood.drow, self.likelihood.drow, self.likelihood.size))
 
         for n, model in enumerate(self.models):
             if dist == 'gaussian':
@@ -513,7 +562,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         return mu, var
 
     def meanfiled_log_predictive_likelihood(self, y, x, dist='gaussian'):
-        lpd = np.zeros((len(x), self.size))
+        lpd = np.zeros((len(x), self.likelihood.size))
 
         for n, model in enumerate(self.models):
             lpd[:, n] = model.log_posterior_predictive_gaussian(y, x)\
@@ -535,8 +584,8 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         from mimo.util.data import inverse_transform_variance
         weights = self.gating.posterior.mean()
 
-        mus, vars = np.zeros((self.size, self.drow)),\
-                    np.zeros((self.size, self.drow, self.drow))
+        mus, vars = np.zeros((self.likelihood.size, self.likelihood.drow)),\
+                    np.zeros((self.likelihood.size, self.likelihood.drow, self.likelihood.drow))
 
         for n, (basis, model) in enumerate(zip(self.basis, self.models)):
             x = basis.posterior.gaussian.mu
@@ -559,11 +608,11 @@ class BayesianMixtureOfLinearGaussians(Conditional):
                              incremental=False,
                              variance='diagonal'):
 
-        x = np.reshape(x, (-1, self.dcol))
+        x = np.reshape(x, (-1, self.likelihood.dcol))
 
         compute_nlpd = False
         if y is not None:
-            y = np.reshape(y, (-1, self.drow))
+            y = np.reshape(y, (-1, self.likelihood.drow))
             compute_nlpd = True
 
         from mimo.util.data import transform, inverse_transform
@@ -579,7 +628,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
             idx = (range(len(k)), ..., k)
             mu, var = mus[idx], vars[idx]
         elif prediction == 'average':
-            labels = range(self.size)
+            labels = range(self.likelihood.size)
             mu, var = self._mixture_moments(mus[..., labels],
                                             vars[..., labels], weights)
         else:
@@ -594,7 +643,7 @@ class BayesianMixtureOfLinearGaussians(Conditional):
         mu, var = inverse_transform(mu, var, trans=self.target_transform)
 
         if incremental:
-            mu += x[:, :self.drow]
+            mu += x[:, :self.likelihood.drow]
 
         diag = np.vstack(list(map(np.diag, var)))
 
@@ -614,13 +663,16 @@ class CompressedMixtureOfLinearGaussians:
     # This class compresses the above mixture
     # for speed at prediction/deployment time
 
-    def __init__(self, mixture):
+    def __init__(self, mixture, size=1000):
         self.mixture = mixture
 
         self.input_transform = self.mixture.input_transform
         self.target_transform = self.mixture.target_transform
 
-        self.gating = {'weights': self.mixture.gating.posterior.mean()}
+        weights = self.mixture.gating.posterior.mean()
+        idx = weights.argsort()[-size:][::-1]
+
+        self.gating = {'weights': weights[idx]}
 
         _basis_mus = np.vstack([b.posterior_predictive_gaussian()[0]
                                     for b in self.mixture.basis])
@@ -628,12 +680,12 @@ class CompressedMixtureOfLinearGaussians:
                                   for b in self.mixture.basis], axis=0)
         _basis_logdet_lmbdas = np.linalg.slogdet(_basis_lmbdas)[1]
 
-        self.basis = {'mus': _basis_mus,
-                      'lmbdas': _basis_lmbdas,
-                      'logdet_lmbdas': _basis_logdet_lmbdas}
+        self.basis = {'mus': _basis_mus[idx, ...],
+                      'lmbdas': _basis_lmbdas[idx, ...],
+                      'logdet_lmbdas': _basis_logdet_lmbdas[idx, ...]}
 
         _models_mus = np.stack([m.posterior.matnorm.M for m in self.mixture.models], axis=0)
-        self.models = {'Ms': _models_mus}
+        self.models = {'Ms': _models_mus[idx, ...]}
 
     def log_basis_predictive(self, x):
         from mimo.util.stats import multivariate_gaussian_loglik as mvn_logpdf
