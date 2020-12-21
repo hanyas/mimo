@@ -20,7 +20,11 @@ from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
 
+import matplotlib
+matplotlib.rcParams['font.family'] = 'serif'
+
 import matplotlib.pyplot as plt
+
 
 if __name__ == "__main__":
 
@@ -29,7 +33,7 @@ if __name__ == "__main__":
     parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=50, type=float)
+    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
     parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
@@ -76,7 +80,7 @@ if __name__ == "__main__":
 
     basis_prior, models_prior = [], []
     psi_nw, kappa = 1e0, 1e-2
-    psi_mnw, K = 1e0, 1e-2
+    psi_mnw, K = 3e0, 1e-2
 
     for n in range(args.nb_models):
         basis_hypparams = dict(mu=np.zeros((input_dim,)),
@@ -107,7 +111,46 @@ if __name__ == "__main__":
     from sklearn.utils import shuffle
     from sklearn.metrics import mean_squared_error, r2_score
 
+    # init animation
     anim = []
+
+    # init prediction
+    mu, var, std = ilr.meanfield_prediction(x=input, prediction=args.prediction)
+
+    # plot prediction
+    fig = plt.figure(figsize=(1200. / 96., 675. / 96.), dpi=96)
+    plt.scatter(input, target, s=0.75, color='k')
+    plt.plot(input, mu, color='crimson')
+
+    for c in [1., 2.]:
+        plt.fill_between(input.flatten(),
+                         mu.flatten() - c * std.flatten(),
+                         mu.flatten() + c * std.flatten(),
+                         color=(0, 0, 1, 0.05))
+
+    plt.ylim((-2.5, 2.5))
+    plt.tight_layout()
+
+    # add extra frames at beginning
+    for _ in range(4):
+        anim.append(fig)
+
+    # plt.show()
+    # plt.pause(1)
+
+    # set working directory
+    dataset = 'chirp'
+    try:
+        os.chdir(args.evalpath + '/' + dataset)
+    except FileNotFoundError:
+        os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
+        os.chdir(args.evalpath + '/' + dataset)
+
+    # save tikz and pdf
+    import tikzplotlib
+
+    tikzplotlib.save(dataset + '_' + str(0) + '.tex')
+    plt.savefig(dataset + '_' + str(0) + '.pdf')
 
     split_size = int(nb_train / args.nb_splits)
 
@@ -155,7 +198,7 @@ if __name__ == "__main__":
         smse[n] = 1. - r2_score(target, mu)
 
         # plot prediction
-        fig = plt.figure(figsize=(12, 4))
+        fig = plt.figure(figsize=(1200. / 96., 675. / 96.), dpi=96)
         plt.scatter(input, target, s=0.75, color='k')
         plt.axvspan(train_input.min(), train_input.max(), facecolor='grey', alpha=0.1)
         plt.plot(input, mu, color='crimson')
@@ -167,11 +210,12 @@ if __name__ == "__main__":
                              color=(0, 0, 1, 0.05))
 
         plt.ylim((-2.5, 2.5))
+        plt.tight_layout()
 
         anim.append(fig)
 
-        plt.show()
-        plt.pause(1)
+        # plt.show()
+        # plt.pause(1)
 
         # set working directory
         dataset = 'chirp'
@@ -184,14 +228,17 @@ if __name__ == "__main__":
         # save tikz and pdf
         import tikzplotlib
 
-        tikzplotlib.save(dataset + '_' + str(n) + '.tex')
-        plt.savefig(dataset + '_' + str(n) + '.pdf')
+        tikzplotlib.save(dataset + '_' + str(n + 1) + '.tex')
+        plt.savefig(dataset + '_' + str(n + 1) + '.pdf')
+
+    # append with extra frames
+    for _ in range(3):
+        anim.append(anim[-1])
 
     from moviepy.editor import VideoClip
     from moviepy.video.io.bindings import mplfig_to_npimage
 
-    fps = 10
-
+    fps = 8
 
     def make_frame(t):
         idx = int(t * fps)
@@ -203,5 +250,5 @@ if __name__ == "__main__":
     dataset = 'chirp'
     path = os.path.join(str(dataset) + '/')
 
-    animation = VideoClip(make_frame, duration=2.5)
+    animation = VideoClip(make_frame, duration=4.0)
     animation.write_gif(path + dataset + '.gif', fps=fps)
