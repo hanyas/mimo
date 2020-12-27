@@ -427,13 +427,8 @@ class LinearGaussianWithKnownPrecision(LinearGaussianWithPrecision):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            if vectorize:
-                c0, c1 = 'nk,nh->nkh', 'nk,nk->nk'
-            else:
-                c0, c1 = 'nk,nh->kh', 'nk,nk->k'
-
-            yxT = np.einsum(c0, y, x, optimize=True)
-            xxT = np.einsum(c0, x, x, optimize=True)
+            yxT = np.einsum('nk,nh->kh', y, x, optimize=True)
+            xxT = np.einsum('nk,nh->kh', x, x, optimize=True)
 
             return Stats([yxT, xxT])
         else:
@@ -450,13 +445,8 @@ class LinearGaussianWithKnownPrecision(LinearGaussianWithPrecision):
             if self.affine:
                 x = np.hstack((x, np.ones((x.shape[0], 1))))
 
-            if vectorize:
-                c0, c1 = 'nk,n,nh->nkh', 'nk,n,nk->nk'
-            else:
-                c0, c1 = 'nk,n,nh->kh', 'nk,n,nk->k'
-
-            yxT = np.einsum(c0, y, weights, x, optimize=True)
-            xxT = np.einsum(c0, x, weights, x, optimize=True)
+            yxT = np.einsum('nk,n,nh->kh', y, weights, x, optimize=True)
+            xxT = np.einsum('nk,n,nh->kh', x, weights, x, optimize=True)
 
             return Stats([yxT, xxT])
         else:

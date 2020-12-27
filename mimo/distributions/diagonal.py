@@ -143,14 +143,14 @@ class GaussianWithDiagonalCovariance(Distribution):
 
     @staticmethod
     def std_to_nat(params):
+        mu = (1. / params[1]) @ params[0]
         sigmas = - 0.5 * (1. / params[1])
-        mu = - 2. * sigmas @ params[0]
         return Stats([mu, sigmas])
 
     @staticmethod
     def nat_to_std(natparam):
+        mu = - 0.5 * (1. / natparam[1]) * natparam[0]
         sigmas = - 0.5 * (1. / natparam[1])
-        mu = - 0.5 * sigmas * natparam[0]
         return Stats([mu, sigmas])
 
     def log_partition(self):
@@ -352,8 +352,8 @@ class GaussianWithDiagonalPrecision(Distribution):
 
     @staticmethod
     def nat_to_std(natparam):
-        mu = - 0.5 * natparam[1] * natparam[0]
-        lmbdas = - 0.5 * natparam[1]
+        mu = - 0.5 * (1. / natparam[1]) * natparam[0]
+        lmbdas = - 2. * natparam[1]
         return Stats([mu, lmbdas])
 
     def log_partition(self):

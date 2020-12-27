@@ -148,14 +148,14 @@ class GaussianWithCovariance(Distribution):
 
     @staticmethod
     def std_to_nat(params):
+        mu = np.linalg.inv(params[1]) @ params[0]
         sigma = - 0.5 * np.linalg.inv(params[1])
-        mu = - 2. * sigma @ params[0]
         return Stats([mu, sigma])
 
     @staticmethod
     def nat_to_std(natparam):
+        mu = - 0.5 * np.linalg.inv(natparam[1]) @ natparam[0]
         sigma = - 0.5 * np.linalg.inv(natparam[1])
-        mu = - 0.5 * sigma @ natparam[0]
         return Stats([mu, sigma])
 
     def log_partition(self):
@@ -355,8 +355,8 @@ class GaussianWithPrecision(Distribution):
 
     @staticmethod
     def nat_to_std(natparam):
-        mu = - 0.5 * natparam[1] @ natparam[0]
-        lmbda = - 0.5 * natparam[1]
+        mu = - 0.5 * np.linalg.inv(natparam[1]) @ natparam[0]
+        lmbda = - 2. * natparam[1]
         return Stats([mu, lmbda])
 
     def log_partition(self):
@@ -412,3 +412,75 @@ class GaussianWithPrecision(Distribution):
             plt.draw()
 
         return [_scatterplot] + list(_parameterplot)
+
+
+class GaussianWithKnownPrecision(GaussianWithPrecision):
+
+    def __init__(self, mu=None, lmbda=None):
+        super(GaussianWithKnownPrecision, self).__init__(mu=mu, lmbda=lmbda)
+
+    @property
+    def params(self):
+        return self.mu
+
+    @params.setter
+    def params(self, values):
+        self.mu = values
+
+    @property
+    def nb_params(self):
+        return self.dim
+
+    def statistics(self, data, vectorize=False):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data = data[idx]
+
+            n = data.shape[0]
+            x = np.einsum('kh,nh->k', self.lmbda, data, optimize=True)
+            xxT = - 0.5 * n * self.lmbda
+
+            return Stats([x, xxT])
+        else:
+            func = partial(self.statistics, vectorize=vectorize)
+            stats = list(map(func, data))
+            return stats if vectorize else reduce(add, stats)
+
+    def weighted_statistics(self, data, weights, vectorize=False):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data = data[idx]
+            weights = weights[idx]
+
+            n = data.shape[0]
+            x = np.einsum('n,kh,nh->k', weights, self.lmbda, data, optimize=True)
+            xxT = - 0.5 * n * self.lmbda
+
+            return Stats([x, xxT])
+        else:
+            func = partial(self.weighted_statistics, vectorize=vectorize)
+            stats = list(map(func, data, weights))
+            return stats if vectorize else reduce(add, stats)
+
+    @property
+    def base(self):
+        raise NotImplementedError
+
+    def log_base(self):
+        raise NotImplementedError
+
+    @property
+    def nat_param(self):
+        raise NotImplementedError
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        raise NotImplementedError
+
+    @staticmethod
+    def std_to_nat(params):
+        raise NotImplementedError
+
+    @staticmethod
+    def nat_to_std(natparam):
+        raise NotImplementedError
