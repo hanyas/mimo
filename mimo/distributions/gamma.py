@@ -51,7 +51,7 @@ class Gamma(Distribution):
 
             logx = np.log(data)
             x = data
-            n = np.ones((self.data.shape[0], ))
+            n = np.ones((data.shape[0], ))
 
             return Stats([logx, n, x, n])
         else:
