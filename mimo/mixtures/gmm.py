@@ -1,32 +1,25 @@
 import numpy as np
-from scipy import special as special
-from scipy.special import logsumexp
+import numpy.random as npr
 
-from mimo.abstraction import MixtureDistribution
-from mimo.abstraction import BayesianMixtureDistribution
+from scipy.special import logsumexp
 
 from mimo.distributions.bayesian import CategoricalWithDirichlet
 from mimo.distributions.bayesian import CategoricalWithStickBreaking
 
-from mimo.util.decorate import pass_obs_arg, pass_obs_and_labels_arg
-from mimo.util.stats import sample_discrete_from_log
-from mimo.util.data import batches
-
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from mimo.utils.data import one_hot
+from mimo.utils.stats import sample_discrete_from_log
+from mimo.utils.data import batches
 
 from tqdm import tqdm
-from pathos.helpers import mp
 
 
-class MixtureOfGaussians(MixtureDistribution):
+class MixtureOfGaussians:
     """
-    This class is for mixtures of Gaussians.
+    class for mixtures of Gaussians.
     """
 
     def __init__(self, gating, components):
-        assert len(components) > 0
-        assert len(components) == gating.K
+        assert components.size == gating.dim
 
         self.gating = gating
         self.components = components
@@ -37,89 +30,74 @@ class MixtureOfGaussians(MixtureDistribution):
 
     @property
     def nb_params(self):
-        return sum(c.nb_params for c in self.components) + self.gating.nb_params
+        raise NotImplementedError
 
     @property
     def size(self):
-        return len(self.components)
+        return self.gating.dim
 
     @property
     def dim(self):
-        return self.components[0].dim
+        return self.components.dim
+
+    def used_labels(self, obs):
+        resp, _ = self.responsibility(obs)
+        labels = np.argmax(resp, axis=0)
+        label_usages = np.bincount(labels, minlength=self.size)
+        used_labels = np.where(label_usages > 0)[0]
+        return used_labels
 
     def rvs(self, size=1):
-        z = self.gating.rvs(size)
-        counts = np.bincount(z, minlength=self.size)
-
-        obs = np.zeros((size, self.dim))
-        for idx, (c, count) in enumerate(zip(self.components, counts)):
-            obs[z == idx, ...] = c.rvs(count)
+        labels = self.gating.rvs(size)
+        counts = np.bincount(labels, minlength=self.size)
+        obs = self.components.rvs(counts)
 
         perm = np.random.permutation(size)
-        obs, z = obs[perm], z[perm]
-
-        return obs, z
+        obs, labels = obs[perm], labels[perm]
+        return obs, labels
 
     def log_likelihood(self, obs):
-        assert isinstance(obs, (np.ndarray, list))
-        if isinstance(obs, list):
-            return [self.log_likelihood(_obs) for _obs in obs]
-        else:
-            scores = self.log_scores(obs)
-            return logsumexp(scores[~np.isnan(obs).any(axis=1)], axis=1)
+        log_lik = self.log_complete_likelihood(obs)
+        return np.sum(logsumexp(log_lik, axis=0))
 
     # Expectation-Maximization
-    def log_scores(self, obs):
-        N, K = obs.shape[0], self.size
+    def log_complete_likelihood(self, obs):
+        component_loglik = self.components.log_likelihood(obs)
+        gating_loglik = self.gating.log_likelihood(np.arange(self.size))
+        return component_loglik + np.expand_dims(gating_loglik, axis=1)
 
-        # update, see Eq. 10.67 in Bishop
-        component_scores = np.empty((N, K))
-        for idx, c in enumerate(self.components):
-            component_scores[:, idx] = c.log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores, copy=False)
+    def responsibility(self, obs):
+        log_prob = self.log_complete_likelihood(obs)
+        log_norm = logsumexp(log_prob, axis=0)
+        resp = np.exp(log_prob - log_norm[np.newaxis, :])
+        return resp, np.sum(log_norm)
 
-        gating_scores = self.gating.log_likelihood(np.arange(K))
-        score = gating_scores + component_scores
-        return score
+    def max_likelihood(self, obs, maxiter=1,
+                       progressbar=True, process_id=0):
 
-    def scores(self, obs):
-        logr = self.log_scores(obs)
-        score = np.exp(logr - np.max(logr, axis=1, keepdims=True))
-        score /= np.sum(score, axis=1, keepdims=True)
-        return score
+        log_norm = []
+        with tqdm(total=maxiter, desc=f'EM #{process_id + 1}',
+                  position=process_id, disable=not progressbar) as pbar:
 
-    def max_likelihood(self, obs, maxiter=1, progprint=True):
-
-        current = mp.current_process()
-        if len(current._identity) > 0:
-            pos = current._identity[0] - 1
-        else:
-            pos = 0
-
-        obs = obs if isinstance(obs, list) else [obs]
-
-        elbo = []
-        with tqdm(total=maxiter, desc=f'EM #{pos + 1}',
-                  position=pos, disable=not progprint) as pbar:
             for _ in range(maxiter):
                 # Expectation step
-                scores = [self.scores(_obs) for _obs in obs]
+                resp, _log_norm = self.responsibility(obs)
 
                 # Maximization step
-                for idx, c in enumerate(self.components):
-                    c.max_likelihood([_obs for _obs in obs],
-                                     [_score[:, idx] for _score in scores])
+                self.components.max_likelihood(obs, resp)
+                self.gating.max_likelihood(None, resp)
 
-                # mixture weights
-                self.gating.max_likelihood(None, scores)
-
-                elbo.append(np.sum(self.log_likelihood(obs)))
+                log_norm.append(_log_norm)
                 pbar.update(1)
 
-        return elbo
+        return log_norm
 
-    def plot(self, obs=None, color=None, legend=False, alpha=None):
-        obs = obs if isinstance(obs, list) else [obs]
+    def plot(self, obs, labels=None,
+             color=None, legend=False, alpha=None):
+
+        if labels is None:
+            resp, _ = self.responsibility(obs)
+            labels = np.argmax(resp, axis=0)
 
         import matplotlib.pyplot as plt
         from matplotlib import cm
@@ -134,19 +112,14 @@ class MixtureOfGaussians(MixtureDistribution):
         else:
             label_colors = dict((idx, color) for idx in range(self.size))
 
-        labels = []
-        for _obs in obs:
-            labels.append(np.argmax(self.scores(_obs), axis=1))
-
         # plot data scatter
-        for _obs, _label in zip(obs, labels):
-            colorseq = [label_colors[l] for l in _label]
-            artists.append(plt.scatter(_obs[:, 0], _obs[:, 1], c=colorseq, marker='+'))
+        color_seq = [label_colors[l] for l in labels]
+        artists.append(plt.scatter(obs[:, 0], obs[:, 1], c=color_seq, marker='+'))
 
         # plot parameters
         axis = plt.axis()
-        for label, (c, w) in enumerate(zip(self.components, self.gating.probs)):
-            artists.extend(c.plot(color=label_colors[label], label='%d' % label,
+        for k, (c, w) in enumerate(zip(self.components.dists, self.gating.probs)):
+            artists.extend(c.plot(color=label_colors[k], label='%d' % k,
                                   alpha=min(0.25, 1. - (1. - w) ** 2) / 0.25
                                   if alpha is None else alpha))
         plt.axis(axis)
@@ -161,320 +134,196 @@ class MixtureOfGaussians(MixtureDistribution):
         return artists
 
 
-class BayesianMixtureOfGaussians(BayesianMixtureDistribution):
+class BayesianMixtureOfGaussians:
     """
-    This class is for a Bayesian mixtures of Gaussians.
+    class for a Bayesian mixtures of Gaussians.
     """
 
     def __init__(self, gating, components):
-        assert len(components) > 0
-
         self.gating = gating
         self.components = components
 
         self.likelihood = MixtureOfGaussians(gating=self.gating.likelihood,
-                                             components=[c.likelihood for c in self.components])
-
-        self.obs = []
-        self.labels = []
-
-        self.whitend = False
-        self.transform = None
+                                             components=self.components.likelihood)
 
     @property
-    def used_labels(self):
-        assert self.has_data()
-        label_usages = sum(np.bincount(_label, minlength=self.likelihood.size)
-                           for _label in self.labels)
-        used_labels, = np.where(label_usages > 0)
+    def size(self):
+        return self.likelihood.size
+
+    @property
+    def dim(self):
+        return self.likelihood.dim
+
+    def used_labels(self, obs):
+        resp = self.expected_responsibilities(obs)
+        labels = np.argmax(resp, axis=0)
+        label_usages = np.bincount(labels, minlength=self.size)
+        used_labels = np.where(label_usages > 0)[0]
         return used_labels
 
-    def add_data(self, obs, whiten=False,
-                 transform_type='PCA',
-                 labels_from_prior=False):
-
-        obs = obs if isinstance(obs, list) else [obs]
-
-        if whiten:
-            self.whitend = True
-
-            data = np.vstack([_obs for _obs in obs])
-
-            if transform_type == 'PCA':
-                self.transform = PCA(n_components=data.shape[-1], whiten=True)
-            elif transform_type == 'Standard':
-                self.transform = StandardScaler()
-            elif transform_type == 'MinMax':
-                self.transform = MinMaxScaler((-1., 1.))
-            else:
-                raise NotImplementedError
-
-            self.transform.fit(data)
-            for _obs in obs:
-                self.obs.append(self.transform.transform(_obs))
-        else:
-            self.obs = obs
-
-        if labels_from_prior:
-            for _obs in self.obs:
-                self.labels.append(self.likelihood.gating.rvs(len(_obs)))
-        else:
-            self.labels = self._resample_labels(self.obs)
-
-    def clear_data(self):
-        self.obs.clear()
-        self.labels.clear()
-
-    def clear_transform(self):
-        self.whitend = False
-        self.transform = None
-
-    def has_data(self):
-        return len(self.obs) > 0
-
     # Expectation-Maximization
-    @pass_obs_arg
-    def max_aposteriori(self, obs, maxiter=1, progprint=True):
+    def max_aposteriori(self, obs, maxiter=1,
+                        progressbar=True, process_id=0):
 
-        current = mp.current_process()
-        if len(current._identity) > 0:
-            pos = current._identity[0] - 1
-        else:
-            pos = 0
+        log_prob = []
+        with tqdm(total=maxiter, desc=f'MAP #{process_id + 1}',
+                  position=process_id, disable=not progressbar) as pbar:
 
-        obs = obs if isinstance(obs, list) else [obs]
-
-        with tqdm(total=maxiter, desc=f'MAP #{pos + 1}',
-                  position=pos, disable=not progprint) as pbar:
             for i in range(maxiter):
                 # Expectation step
-                scores = []
-                for _obs in obs:
-                    scores.append(self.likelihood.scores(_obs))
+                resp, log_norm = self.likelihood.responsibility(obs)
 
                 # Maximization step
-                for idx, c in enumerate(self.components):
-                    c.max_aposteriori([_obs for _obs in obs],
-                                      [_score[:, idx] for _score in scores])
+                self.components.max_aposteriori(obs, resp)
+                self.gating.max_aposteriori(None, resp)
 
-                # mixture weights
-                self.gating.max_aposteriori(None, scores)
+                log_prior = self.gating.prior.log_likelihood(self.gating.likelihood.params)\
+                            + np.sum(self.components.prior.log_likelihood(self.components.likelihood.params))
+                log_prob.append(log_norm + log_prior)
 
                 pbar.update(1)
+
+        return log_prob
 
     # Gibbs sampling
-    @pass_obs_and_labels_arg
-    def resample(self, obs=None, labels=None,
-                 maxiter=1, progprint=True):
+    def resample(self, obs, maxiter=1,
+                 progressbar=True, process_id=0):
 
-        current = mp.current_process()
-        if len(current._identity) > 0:
-            pos = current._identity[0] - 1
-        else:
-            pos = 0
+        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+                  position=process_id, disable=not progressbar) as pbar:
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{pos + 1}',
-                  position=pos, disable=not progprint) as pbar:
             for _ in range(maxiter):
-                self._resample_components(obs, labels)
-                self._resample_gating(labels)
-                labels = self._resample_labels(obs)
-
-                if self.has_data():
-                    self.labels = labels
+                _, labels = self.resample_labels(obs)
+                self.resample_gating(labels)
+                self.resample_components(obs, labels)
 
                 pbar.update(1)
 
-    def _resample_components(self, obs, labels):
-        for idx, c in enumerate(self.components):
-            c.resample(data=[_obs[_label == idx]
-                             for _obs, _label in zip(obs, labels)])
+    def resample_labels(self, obs):
+        log_prob = self.likelihood.log_complete_likelihood(obs)
+        labels = sample_discrete_from_log(log_prob, axis=0)
+        return log_prob, labels
 
-    def _resample_gating(self, labels):
-        self.gating.resample([_label for _label in labels])
+    def resample_gating(self, labels):
+        self.gating.resample(labels)
 
-    def _resample_labels(self, obs):
-        labels = []
-        for _obs in obs:
-            score = self.likelihood.log_scores(_obs)
-            labels.append(sample_discrete_from_log(score, axis=1))
-        return labels
+    def resample_components(self, obs, labels):
+        weights = one_hot(labels, K=self.size)
+        self.components.resample(obs, weights)
 
-    # Mean Field
-    def expected_scores(self, obs):
-        N, K = obs.shape[0], self.likelihood.size
+    # Mean field
+    def expected_responsibilities(self, obs):
+        component_loglik = self.components.expected_log_likelihood(obs)
 
-        # update, see Eq. 10.67 in Bishop
-        component_scores = np.empty((N, K))
-        for idx, c in enumerate(self.components):
-            component_scores[:, idx] = c.posterior.expected_log_likelihood(obs)
-        component_scores = np.nan_to_num(component_scores, copy=False)
-
+        gating_loglik = None
         if isinstance(self.gating, CategoricalWithDirichlet):
-            gating_scores = self.gating.posterior.expected_statistics()
+            gating_loglik = self.gating.expected_log_likelihood()
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            E_log_stick, E_log_rest = self.gating.posterior.expected_statistics()
-            gating_scores = E_log_stick + np.hstack((0, np.cumsum(E_log_rest)[:-1]))
-        else:
-            raise NotImplementedError
+            log_stick, log_rest = self.gating.expected_log_likelihood()
+            gating_loglik = log_stick + np.hstack((0, np.cumsum(log_rest)[:-1]))
 
-        logr = gating_scores + component_scores
+        log_prob = component_loglik + np.expand_dims(gating_loglik, axis=1)
+        resp = np.exp(log_prob - logsumexp(log_prob, axis=0, keepdims=True))
+        return resp
 
-        r = np.exp(logr - np.max(logr, axis=1, keepdims=True))
-        r /= np.sum(r, axis=1, keepdims=True)
+    def meanfield_coordinate_descent(self, obs=None, initialize=True,
+                                     maxiter=250, tol=1e-16,
+                                     progressbar=True, process_id=0):
 
-        return r
+        resp = np.random.rand(self.size, len(obs))
+        resp /= np.sum(resp, axis=0)
 
-    def meanfield_coordinate_descent(self, tol=1e-2, maxiter=250, progprint=True):
-        elbo = []
+        vlb = []
+        with tqdm(total=maxiter, desc=f'VI #{process_id + 1}',
+                  position=process_id, disable=not progressbar) as pbar:
 
-        current = mp.current_process()
-        if len(current._identity) > 0:
-            pos = current._identity[0] - 1
-        else:
-            pos = 0
-
-        with tqdm(total=maxiter, desc=f'VI #{pos + 1}',
-                  position=pos, disable=not progprint) as pbar:
             for i in range(maxiter):
-                elbo.append(self.meanfield_update())
-                if elbo[-1] is not None and len(elbo) > 1:
-                    if elbo[-1] < elbo[-2]:
-                        print('WARNING: ELBO should always increase')
-                        return elbo
-                    if (elbo[-1] - elbo[-2]) < tol:
-                        return elbo
+                self.meanfield_update_parameters(obs, resp)
+                resp = self.expected_responsibilities(obs)
+                vlb.append(self.variational_lowerbound(obs, resp))
+
+                if len(vlb) > 1:
+                    if abs(vlb[-1] - vlb[-2]) < tol:
+                        return vlb
+
                 pbar.update(1)
 
-        # print('WARNING: meanfield_coordinate_descent hit maxiter of %d' % maxiter)
-        return elbo
+        return vlb
 
-    @pass_obs_arg
-    def meanfield_update(self, obs=None):
-        scores, labels = self._meanfield_update_sweep(obs)
-        if self.has_data():
-            self.labels = labels
-        return self.variational_lowerbound(obs, scores)
+    def meanfield_update_parameters(self, obs, resp):
+        self.meanfield_update_components(obs, resp)
+        self.meanfield_update_gating(resp)
 
-    def _meanfield_update_sweep(self, obs):
-        scores, z = self._meanfield_update_labels(obs)
-        self._meanfield_update_parameters(obs, scores)
-        return scores, z
+    def meanfield_update_gating(self, resp):
+        self.gating.meanfield_update(None, resp)
 
-    def _meanfield_update_labels(self, obs):
-        scores, labels = [], []
-        for _obs in obs:
-            scores.append(self.expected_scores(_obs))
-            labels.append(np.argmax(scores[-1], axis=1))
-        return scores, labels
-
-    def _meanfield_update_parameters(self, obs, scores):
-        self._meanfield_update_components(obs, scores)
-        self._meanfield_update_gating(scores)
-
-    def _meanfield_update_gating(self, scores):
-        self.gating.meanfield_update(None, scores)
-
-    def _meanfield_update_components(self, obs, scores):
-        for idx, c in enumerate(self.components):
-            c.meanfield_update([_obs for _obs in obs],
-                               [_score[:, idx] for _score in scores])
+    def meanfield_update_components(self, obs, resp):
+        self.components.meanfield_update(obs, resp)
 
     # SVI
-    def meanfield_stochastic_descent(self, stepsize=1e-3, batchsize=128,
-                                     maxiter=500, progprint=True):
+    def meanfield_stochastic_descent(self, obs=None, maxiter=500,
+                                     stepsize=1e-2, batchsize=128,
+                                     progressbar=True, procces_id=0):
 
-        assert self.has_data()
+        vlb = []
+        with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
+                  position=procces_id, disable=not progressbar) as pbar:
 
-        current = mp.current_process()
-        if len(current._identity) > 0:
-            pos = current._identity[0] - 1
-        else:
-            pos = 0
-
-        prob = batchsize / float(sum(len(_obs) for _obs in self.obs))
-
-        with tqdm(total=maxiter, desc=f'SVI #{pos + 1}',
-                  position=pos, disable=not progprint) as pbar:
+            scale = batchsize / float(len(obs))
             for _ in range(maxiter):
-                for _obs in self.obs:
-                    for batch in batches(batchsize, len(_obs)):
-                        self.meanfield_sgdstep(_obs[batch, :], prob, stepsize)
+                for batch in batches(batchsize, len(obs)):
+                    resp = self.expected_responsibilities(obs[batch, :])
+                    self.meanfield_sgdstep_parameters(obs[batch, :], resp,
+                                                      scale, stepsize)
+
+                resp = self.expected_responsibilities(obs)
+                vlb.append(self.variational_lowerbound(obs, resp))
+
                 pbar.update(1)
 
-    def meanfield_sgdstep(self, obs, prob, stepsize):
-        obs = obs if isinstance(obs, list) else [obs]
+        return vlb
 
-        scores, _ = self._meanfield_update_labels(obs)
-        self._meanfield_sgdstep_parameters(obs, scores, prob, stepsize)
+    def meanfield_sgdstep_parameters(self, obs, resp, prob, stepsize):
+        self.meanfield_sgdstep_components(obs, resp, prob, stepsize)
+        self.meanfield_sgdstep_gating(resp, prob, stepsize)
 
-        if self.has_data():
-            for _obs in self.obs:
-                self.labels.append(np.argmax(self.expected_scores(_obs), axis=1))
+    def meanfield_sgdstep_components(self, obs, resp, prob, stepsize):
+        self.components.meanfield_sgdstep(obs, resp, prob, stepsize)
 
-    def _meanfield_sgdstep_parameters(self, obs, scores, prob, stepsize):
-        self._meanfield_sgdstep_components(obs, scores, prob, stepsize)
-        self._meanfield_sgdstep_gating(scores, prob, stepsize)
+    def meanfield_sgdstep_gating(self, resp, prob, stepsize):
+        self.gating.meanfield_sgdstep(None, resp, prob, stepsize)
 
-    def _meanfield_sgdstep_components(self, obs, scores, prob, stepsize):
-        for idx, c in enumerate(self.components):
-            c.meanfield_sgdstep([_obs for _obs in obs],
-                                [_score[:, idx] for _score in scores], prob, stepsize)
+    def variational_lowerbound_obs(self, obs, resp):
+        return np.sum(resp * self.components.expected_log_likelihood(obs))
 
-    def _meanfield_sgdstep_gating(self, scores, prob, stepsize):
-        self.gating.meanfield_sgdstep(None, scores, prob, stepsize)
-
-    def _variational_lowerbound_labels(self, scores):
+    def variational_lowerbound_labels(self, resp):
         vlb = 0.
-
         if isinstance(self.gating, CategoricalWithDirichlet):
-            vlb += np.sum(scores * self.gating.posterior.expected_log_likelihood())
+            vlb += np.sum(resp * np.expand_dims(self.gating.expected_log_likelihood(), axis=1))
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            cumscores = np.hstack((np.cumsum(scores[:, ::-1], axis=1)[:, -2::-1],
-                                   np.zeros((len(scores), 1))))
-            E_log_stick, E_log_rest = self.gating.posterior.expected_log_likelihood()
-            vlb += np.sum(scores * E_log_stick + cumscores * E_log_rest)
+            acc_resp = np.hstack((np.cumsum(resp[::-1, :], axis=1)[-2::-1, :],
+                                   np.zeros((1, len(resp)))))
+            E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
+            vlb += np.sum(resp * np.expand_dims(E_log_stick, axis=1)
+                          + acc_resp * np.expand_dims(E_log_rest, axis=1))
 
         errs = np.seterr(invalid='ignore', divide='ignore')
-        vlb -= np.nansum(scores * np.log(scores))  # treats nans as zeros
+        vlb -= np.nansum(resp * np.log(resp))
         np.seterr(**errs)
 
         return vlb
 
-    def _variational_lowerbound_obs(self, obs, scores):
-        return np.sum([r.dot(c.posterior.expected_log_likelihood(obs))
-                       for c, r in zip(self.components, scores.T)])
-
-    def variational_lowerbound(self, obs, scores):
+    def variational_lowerbound(self, obs, resp):
         vlb = 0.
-        vlb += sum(self._variational_lowerbound_labels(_score) for _score in scores)
         vlb += self.gating.variational_lowerbound()
-        vlb += sum(c.variational_lowerbound() for c in self.components)
-        vlb += sum(self._variational_lowerbound_obs(_obs, _score)
-                   for _obs, _score in zip(obs, scores))
-
-        # add in symmetry factor (if we're actually symmetric)
-        if len(set(type(c) for c in self.components)) == 1:
-            vlb += special.gammaln(self.likelihood.size + 1)
-
+        vlb += np.sum(self.components.variational_lowerbound())
+        vlb += self.variational_lowerbound_obs(obs, resp)
+        vlb += self.variational_lowerbound_labels(resp)
         return vlb
 
-    # Misc
-    def bic(self, obs=None):
-        assert obs is not None
-        return - 2. * np.sum(self.likelihood.log_likelihood(obs)) + self.likelihood.nb_params\
-               * np.log(sum([_obs.shape[0] for _obs in obs]))
+    def plot(self, obs, labels=None, color=None, legend=False, alpha=None):
+        resp = self.expected_responsibilities(obs)
+        labels = np.argmax(resp, axis=0)
 
-    def aic(self):
-        assert self.has_data()
-        return 2. * self.likelihood.nb_params - 2. * sum(np.sum(self.likelihood.log_likelihood(_obs))
-                                                         for _obs in self.obs)
-
-    @pass_obs_arg
-    def plot(self, obs=None, color=None, legend=False, alpha=None):
-        # I haven't implemented plotting
-        # for whitend data, it's a hassle :D
-        assert self.whitend is False
-
-        artists = self.likelihood.plot(obs, color, legend, alpha)
+        artists = self.likelihood.plot(obs, labels, color, legend, alpha)
         return artists

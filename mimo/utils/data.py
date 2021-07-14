@@ -59,12 +59,6 @@ def islist(*args):
     return all(isinstance(_arg, list) for _arg in args)
 
 
-def extendlists(l):
-    l = [[_l] if not isinstance(_l, list) else _l for _l in l]
-    maxlen = max(map(len, l))
-    return [_l + [_l[-1]] * (maxlen - len(_l)) for _l in l]
-
-
 def anynone(*args):
     return any(_ is None for _ in args)
 
@@ -161,3 +155,15 @@ def cumsum(v, strict=False):
         out = np.zeros_like(v)
         out[1:] = np.cumsum(v[:-1], axis=0)
     return out
+
+
+def one_hot(z, K):
+    z = np.atleast_1d(z).astype(int)
+    assert np.all(z >= 0) and np.all(z < K)
+    N, shp = z.size, z.shape
+
+    zoh = np.zeros((K, N))
+    zoh[np.arange(K)[np.ravel(z)], np.arange(N)] = 1
+    zoh = np.reshape(zoh, (K,) + shp)
+
+    return zoh

@@ -1,9 +1,9 @@
 import numpy as np
 import numpy.random as npr
 
-from mimo.distributions import TiedGaussiansWithPrecision
-from mimo.distributions import TiedGaussiansWithNormalWisharts
-from mimo.distributions import TiedNormalWisharts
+from mimo.distributions import StackedGaussiansWithPrecision
+from mimo.distributions import TiedGaussiansWithNormalGammas
+from mimo.distributions import TiedNormalGammas
 
 from mimo.distributions import Categorical
 from mimo.distributions import Dirichlet
@@ -25,15 +25,18 @@ mus = np.stack([np.array([-3., 3.]),
                 np.array([5., 5.]),
                 np.array([-5., -5.])])
 
-lmbdas = np.array(4 * [np.eye(2)])
+lmbdas = np.stack([4. * np.eye(2),
+                   3. * np.eye(2),
+                   2. * np.eye(2),
+                   1. * np.eye(2)])
 
-components = TiedGaussiansWithPrecision(size=4, dim=2,
-                                        mus=mus, lmbdas=lmbdas)
+components = StackedGaussiansWithPrecision(size=4, dim=2,
+                                           mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
 obs, labels = gmm.rvs(500)
-# gmm.plot(obs)
+gmm.plot(obs)
 
 # learn model
 gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
@@ -41,16 +44,16 @@ gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
 gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 
 mus = np.zeros((4, 2))
-kappas = 1e-2 * np.ones((4,))
-psis = np.array(4 * [np.eye(2)])
-nus = 3. * np.ones((4,)) + 1e-6
+kappas = 1e-2 * np.ones((4, 2))
+alphas = (3. + 1e-8) / 2. * np.ones((4, 2))
+betas = 1. / (2. * np.ones((4, 2)))
 
-components_prior = TiedNormalWisharts(size=4, dim=2,
-                                      mus=mus, kappas=kappas,
-                                      psis=psis, nus=nus)
+components_prior = TiedNormalGammas(size=4, dim=2,
+                                    mus=mus, kappas=kappas,
+                                    alphas=alphas, betas=betas)
 
-components = TiedGaussiansWithNormalWisharts(size=4, dim=2,
-                                             prior=components_prior)
+components = TiedGaussiansWithNormalGammas(size=4, dim=2,
+                                           prior=components_prior)
 
 model = BayesianMixtureOfGaussians(gating=gating, components=components)
 

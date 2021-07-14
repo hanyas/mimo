@@ -4,15 +4,18 @@ import operator
 import numpy as np
 import numpy.random as npr
 
-from matplotlib import pyplot as plt
+import scipy as sc
+from scipy import stats
+
+from mimo.distributions import StackedNormalWisharts
+from mimo.distributions import StackedGaussiansWithNormalWisharts
 
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
-from mimo.distributions import NormalWishart
-from mimo.distributions import GaussianWithNormalWishart
 
 from mimo.mixtures import BayesianMixtureOfGaussians
 
+from matplotlib import pyplot as plt
 
 npr.seed(1337)
 
@@ -32,34 +35,38 @@ plt.title('data')
 
 nb_models = 25
 
-gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
-gating_prior = Dirichlet(**gating_hypparams)
+gating_prior = Dirichlet(dim=nb_models, alphas=np.ones((nb_models, )))
 
-components_hypparams = dict(mu=np.zeros((2, )), kappa=0.01,
-                            psi=np.eye(2), nu=3)
-components_prior = NormalWishart(**components_hypparams)
+gating = CategoricalWithDirichlet(dim=nb_models, prior=gating_prior)
 
-gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                 components=[GaussianWithNormalWishart(components_prior)
-                                             for _ in range(nb_models)])
+mus = np.zeros((nb_models, 2))
+kappas = 0.01 * np.ones((nb_models,))
+psis = np.stack(nb_models * [np.eye(2)])
+nus = 3. * np.ones((nb_models,)) + 1e-8
 
-gmm.add_data(data, labels_from_prior=True)
+components_prior = StackedNormalWisharts(size=nb_models, dim=2,
+                                         mus=mus, kappas=kappas,
+                                         psis=psis, nus=nus)
 
-allscores = []
+components = StackedGaussiansWithNormalWisharts(size=nb_models, dim=2,
+                                                prior=components_prior)
+
+model = BayesianMixtureOfGaussians(gating=gating, components=components)
+
+allvlbs = []
 allmodels = []
 for superitr in range(5):
-    # Gibbs sampling to wander around the posterior
-    gmm.resample(maxiter=25)
-    # Stochastic Meanfield VI
-    gmm.meanfield_stochastic_descent(stepsize=1e-2, maxiter=100, batchsize=128)
+    model.resample(data, maxiter=25)
+    vlb = model.meanfield_stochastic_descent(obs=data, maxiter=500,
+                                             stepsize=1e-1, batchsize=256)
 
-    allscores.append(gmm.meanfield_update())
-    allmodels.append(copy.deepcopy(gmm))
+    allvlbs.append(vlb)
+    allmodels.append(copy.deepcopy(model))
 
-models_and_scores = sorted([(m, s) for m, s in zip(allmodels, allscores)],
-                           key=operator.itemgetter(1), reverse=True)
+scores = np.array([vlb[-1] for vlb in allvlbs])
+best = allmodels[np.argmin(sc.stats.rankdata(-1. * scores))]
 
 plt.figure()
-plt.title('best model')
-models_and_scores[0][0].plot()
+plt.title('Best Model')
+best.plot(data)
 plt.show()

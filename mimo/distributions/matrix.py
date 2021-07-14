@@ -4,11 +4,10 @@ import numpy.random as npr
 import scipy as sc
 from scipy import linalg
 
-from mimo.abstraction import Distribution
-from mimo.abstraction import Statistics as Stats
+from mimo.utils.abstraction import Statistics as Stats
 
 
-class MatrixNormalWithPrecision(Distribution):
+class MatrixNormalWithPrecision:
 
     def __init__(self, M=None, V=None, K=None):
         self.M = M
@@ -28,6 +27,26 @@ class MatrixNormalWithPrecision(Distribution):
     @params.setter
     def params(self, values):
         self.M, self.V, self.K = values
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        mu = params[1] @ params[0]
+        lmbda = - 0.5 * params[1]
+        return Stats([mu, lmbda])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        mu = - 0.5 * np.linalg.inv(natparam[1]) @ natparam[0]
+        lmbda = - 2. * natparam[1]
+        return Stats([mu, lmbda])
 
     @property
     def nb_params(self):
@@ -101,6 +120,12 @@ class MatrixNormalWithPrecision(Distribution):
     def sigma(self):
         return self.lmbda_chol_inv @ self.lmbda_chol_inv.T
 
+    def mean(self):
+        return self.M
+
+    def mode(self):
+        return self.M
+
     def rvs(self, size=1):
         if size == 1:
             aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
@@ -110,11 +135,17 @@ class MatrixNormalWithPrecision(Distribution):
             aux = npr.normal(size=size).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (size, self.drow, self.dcol), order='F')
 
-    def mean(self):
-        return self.M
+    @property
+    def base(self):
+        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
 
-    def mode(self):
-        return self.M
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        return 0.5 * np.einsum('k,kh,h->', mu, self.lmbda, mu)\
+               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
@@ -130,38 +161,6 @@ class MatrixNormalWithPrecision(Distribution):
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
-
-    @property
-    def base(self):
-        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
-
-    def log_base(self):
-        return np.log(self.base)
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        mu = params[1] @ params[0]
-        lmbda = - 0.5 * params[1]
-        return Stats([mu, lmbda])
-
-    @staticmethod
-    def nat_to_std(natparam):
-        mu = - 0.5 * np.linalg.inv(natparam[1]) @ natparam[0]
-        lmbda = - 2. * natparam[1]
-        return Stats([mu, lmbda])
-
-    def log_partition(self):
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
-        return 0.5 * np.einsum('k,kh,h->', mu, self.lmbda, mu)\
-               - np.sum(np.log(np.diag(self.lmbda_chol)))
 
     def expected_statistics(self):
         mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
@@ -186,7 +185,7 @@ class MatrixNormalWithPrecision(Distribution):
         return kl
 
 
-class MatrixNormalWithDiagonalPrecision(Distribution):
+class MatrixNormalWithDiagonalPrecision:
     def __init__(self, M=None, vs=None, K=None):
         self.M = M
 
@@ -278,6 +277,12 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
             self._lmbda_chol_inv = sc.linalg.inv(self.lmbda_chol)
         return self._lmbda_chol_inv
 
+    def mean(self):
+        return self.M
+
+    def mode(self):
+        return self.M
+
     def rvs(self, size=1):
         if size == 1:
             aux = npr.normal(size=self.drow * self.dcol).dot(self.lmbda_chol_inv.T)
@@ -287,11 +292,17 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
             aux = npr.normal(size=size).dot(self.lmbda_chol_inv.T)
             return self.M + np.reshape(aux, (size, self.drow, self.dcol), order='F')
 
-    def mean(self):
-        return self.M
+    @property
+    def base(self):
+        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
 
-    def mode(self):
-        return self.M
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
+        return 0.5 * np.einsum('k,kh,h->', mu, self.omega, mu)\
+               - np.sum(np.log(np.diag(self.omega_chol)))
 
     def log_likelihood(self, x):
         # apply vector operator with Fortran convention
@@ -307,18 +318,6 @@ class MatrixNormalWithDiagonalPrecision(Distribution):
 
         log_lik[bads] = 0
         return - self.log_partition() + self.log_base() + log_lik
-
-    @property
-    def base(self):
-        return np.power(2. * np.pi, - self.drow * self.dcol / 2.)
-
-    def log_base(self):
-        return np.log(self.base)
-
-    def log_partition(self):
-        mu = np.reshape(self.M, (self.drow * self.dcol), order='F')
-        return 0.5 * np.einsum('k,kh,h->', mu, self.omega, mu)\
-               - np.sum(np.log(np.diag(self.omega_chol)))
 
     def entropy(self):
         raise NotImplementedError

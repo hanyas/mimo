@@ -2,9 +2,7 @@ def pass_obs_arg(f):
     def wrapper(self, obs=None, **kwargs):
         if obs is None:
             assert self.has_data()
-            obs = [_obs for _obs in self.obs]
-        else:
-            obs = obs if isinstance(obs, list) else [obs]
+            obs = self.obs
 
         return f(self, obs, **kwargs)
     return wrapper
@@ -12,14 +10,12 @@ def pass_obs_arg(f):
 
 def pass_obs_and_labels_arg(f):
     def wrapper(self, obs=None, labels=None, **kwargs):
-        if obs is None or labels is None:
+        if obs is None and labels is None:
             assert self.has_data()
-            obs = [_obs for _obs in self.obs]
+            obs = self.obs
             labels = self.labels
-        else:
-            obs = obs if isinstance(obs, list) else [obs]
-            labels = [self.gating.likelihood.rvs(len(_obs)) for _obs in obs]\
-                if labels is None else labels
+        elif obs is not None and labels is None:
+            labels = self.gating.likelihood.rvs(len(obs))
 
         return f(self, obs, labels, **kwargs)
     return wrapper
@@ -49,8 +45,7 @@ def pass_target_input_and_labels_arg(f):
         else:
             y = y if isinstance(y, list) else [y]
             x = x if isinstance(x, list) else [x]
-            z = [self.gating.likelihood.rvs(len(_y)) for _y in y]\
-                if z is None else z
+            z = [self.gating.likelihood.rvs(len(_y)) for _y in y]
 
         return f(self, y, x, z, **kwargs)
     return wrapper

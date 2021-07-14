@@ -6,13 +6,11 @@ import scipy as sc
 from operator import add
 from functools import reduce, partial
 
-from mimo.abstraction import Conditional
-from mimo.abstraction import Statistics as Stats
-
-from mimo.util.matrix import invpd, symmetrize
+from mimo.utils.abstraction import Statistics as Stats
+from mimo.utils.matrix import symmetrize
 
 
-class LinearGaussianWithPrecision(Conditional):
+class LinearGaussianWithPrecision:
     """
     Multivariate Gaussian distribution with a linear mean function.
     Parameters are linear transf. and precision matrix:
@@ -195,19 +193,19 @@ class LinearGaussianWithPrecision(Conditional):
 
         yxT, xxT, yyT, n = stats
         self.A = np.linalg.solve(xxT, yxT.T).T
-        _sigma = (yyT - self.A.dot(yxT.T)) / n
+        sigma = (yyT - self.A.dot(yxT.T)) / n
 
         # numerical stabilization
-        _sigma = symmetrize(_sigma) + 1e-16 * np.eye(self.drow)
-        assert np.allclose(_sigma, _sigma.T)
-        assert np.all(np.linalg.eigvalsh(_sigma) > 0.)
+        sigma = symmetrize(sigma) + 1e-16 * np.eye(self.drow)
+        assert np.allclose(sigma, sigma.T)
+        assert np.all(np.linalg.eigvalsh(sigma) > 0.)
 
-        self.lmbda = invpd(_sigma)
+        self.lmbda = np.linalg.inv(sigma)
 
         return self
 
 
-class LinearGaussianWithDiagonalPrecision(Conditional):
+class LinearGaussianWithDiagonalPrecision:
     """
     Multivariate Gaussian distribution with a linear mean function.
     Parameters are linear transf. and diagonal precision matrix:
@@ -393,8 +391,8 @@ class LinearGaussianWithDiagonalPrecision(Conditional):
 
         yxT, xxT, yy, n = stats
         self.A = np.linalg.solve(xxT, yxT.T).T
-        _sigmas = (yy - np.einsum('kh,kh->k', self.A, yxT)) / n
-        self.lmbdas = 1. / _sigmas
+        sigmas = (yy - np.einsum('kh,kh->k', self.A, yxT)) / n
+        self.lmbdas = 1. / sigmas
 
         return self
 

@@ -1,45 +1,33 @@
-import numpy as np
+from abc import ABC
+from functools import partial
 
+import numpy as np
 from scipy.special import digamma
 
-from mimo.abstraction import Distribution
-from mimo.abstraction import Statistics as Stats
+from mimo.utils.abstraction import Statistics as Stats
 
 from mimo.distributions import GaussianWithPrecision
 from mimo.distributions import GaussianWithDiagonalPrecision
 
-from mimo.distributions import LinearGaussianWithPrecision
-from mimo.distributions import LinearGaussianWithDiagonalPrecision
-from mimo.distributions import LinearGaussianWithKnownPrecision
-
 from mimo.distributions import Wishart
 from mimo.distributions import Gamma
 
+from mimo.distributions import LinearGaussianWithPrecision
 from mimo.distributions import MatrixNormalWithPrecision
-from mimo.distributions import MatrixNormalWithDiagonalPrecision
-from mimo.distributions import MatrixNormalWithKnownPrecision
 
-from operator import add
-from functools import reduce, partial
-
-from mimo.util.matrix import invpd, blockarray
-from mimo.util.data import extendlists
-
-from mimo.util.stats import multivariate_gaussian_loglik
-
-import copy
+from mimo.utils.matrix import blockarray
 
 
-class NormalWishart(Distribution):
+class NormalWishart:
 
-    def __init__(self, mu, kappa, psi, nu):
-        self.gaussian = GaussianWithPrecision(mu=mu)
-        self.wishart = Wishart(psi=psi, nu=nu)
+    def __init__(self, dim, mu=None, kappa=None,
+                 psi=None, nu=None):
+
+        self.dim = dim
+
+        self.gaussian = GaussianWithPrecision(dim=dim, mu=mu)
+        self.wishart = Wishart(dim=dim, psi=psi, nu=nu)
         self.kappa = kappa
-
-    @property
-    def dim(self):
-        return self.gaussian.dim
 
     @property
     def params(self):
@@ -49,30 +37,9 @@ class NormalWishart(Distribution):
     def params(self, values):
         self.gaussian.mu, self.kappa, self.wishart.psi, self.wishart.nu = values
 
-    def rvs(self, size=1):
-        lmbda = self.wishart.rvs()
-        self.gaussian.lmbda = self.kappa * lmbda
-        mu = self.gaussian.rvs()
-        return mu, lmbda
-
-    def mean(self):
-        return self.gaussian.mean(), self.wishart.mean()
-
-    def mode(self):
-        return self.gaussian.mode(), self.wishart.mode()
-
-    def log_likelihood(self, x):
-        mu, lmbda = x
-        return GaussianWithPrecision(mu=self.gaussian.mu,
-                                     lmbda=self.kappa * lmbda).log_likelihood(mu) \
-               + self.wishart.log_likelihood(lmbda)
-
     @property
-    def base(self):
-        return self.gaussian.base * self.wishart.base
-
-    def log_base(self):
-        return np.log(self.base)
+    def nb_params(self):
+        raise NotImplementedError
 
     @property
     def nat_param(self):
@@ -84,49 +51,75 @@ class NormalWishart(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        # The definition of stats is slightly different
-        # from literatur to make posterior updates easy
-
-        # Assumed stats
-        # stats = [lmbda @ x,
-        #          -0.5 * lmbda @ xxT,
+        # stats = [mu.T @ lmbda,
+        #          -0.5 * lmbda @ (mu @ mu.T),
         #          -0.5 * lmbda,
-        #          0.5 * logdet_lmbda]
+        #          0.5 * logdet(lmbda)]
+        #
+        # nats = [kappa * m,
+        #         kappa,
+        #         psi^-1 + kappa * (m @ m.T),
+        #         nu - d]
 
-        mu = params[1] * params[0]
-        kappa = params[1]
-        psi = invpd(params[2]) \
-              + params[1] * np.outer(params[0], params[0])
-        nu = params[3] - params[2].shape[0]
-        return Stats([mu, kappa, psi, nu])
+        a = params[1] * params[0]
+        b = params[1]
+        c = np.linalg.inv(params[2]) + params[1] * np.outer(params[0], params[0])
+        d = params[3] - params[2].shape[0]
+        return Stats([a, b, c, d])
 
     @staticmethod
     def nat_to_std(natparam):
         mu = natparam[0] / natparam[1]
         kappa = natparam[1]
-        psi = invpd(natparam[2] - kappa * np.outer(mu, mu))
+        psi = np.linalg.inv(natparam[2] - kappa * np.outer(mu, mu))
         nu = natparam[3] + natparam[2].shape[0]
         return mu, kappa, psi, nu
 
-    def log_partition(self, params=None):
-        _, kappa, psi, nu = params if params is not None else self.params
-        dim = self.dim if params else psi.shape[0]
-        return - 0.5 * dim * np.log(kappa)\
-               + Wishart(psi=psi, nu=nu).log_partition()
+    def mean(self):
+        return self.gaussian.mean(), self.wishart.mean()
+
+    def mode(self):
+        mu = self.gaussian.mode()
+        lmbda = (self.wishart.nu - self.dim) * self.wishart.psi
+        return mu, lmbda
+
+    def rvs(self):
+        lmbda = self.wishart.rvs()
+        self.gaussian.lmbda = self.kappa * lmbda
+        mu = self.gaussian.rvs()
+        return mu, lmbda
+
+    @property
+    def base(self):
+        return self.gaussian.base * self.wishart.base
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        _, kappa, psi, nu = self.params
+        return - 0.5 * self.dim * np.log(kappa)\
+               + Wishart(dim=self.dim, psi=psi, nu=nu).log_partition()
+
+    def log_likelihood(self, x):
+        mu, lmbda = x
+        return GaussianWithPrecision(dim=self.dim, mu=self.gaussian.mu,
+                                     lmbda=self.kappa * lmbda).log_likelihood(mu) \
+               + self.wishart.log_likelihood(lmbda)
 
     def expected_statistics(self):
-        # stats = [lmbda @ x,
-        #          -0.5 * lmbda @ xxT,
+        # stats = [mu.T @ lmbda,
+        #          -0.5 * lmbda @ (mu @ mu.T),
         #          -0.5 * lmbda,
-        #          0.5 * logdet_lmbda]
+        #          0.5 * logdet(lmbda)]
 
-        E_x = self.wishart.nu * self.wishart.psi @ self.gaussian.mu
-        E_xLmbdaxT = - 0.5 * (self.dim / self.kappa + self.gaussian.mu.dot(E_x))
+        E_mu_lmbda = self.wishart.nu * self.wishart.psi @ self.gaussian.mu
+        E_mu_lmbda_muT = - 0.5 * (self.dim / self.kappa + self.gaussian.mu.dot(E_mu_lmbda))
         E_lmbda = - 0.5 * (self.wishart.nu * self.wishart.psi)
         E_logdet_lmbda = 0.5 * (np.sum(digamma((self.wishart.nu - np.arange(self.dim)) / 2.))
                                 + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.wishart.psi_chol))))
 
-        return E_x, E_xLmbdaxT, E_lmbda, E_logdet_lmbda
+        return E_mu_lmbda, E_mu_lmbda_muT, E_lmbda, E_logdet_lmbda
 
     def entropy(self):
         nat_param, stats = self.nat_param, self.expected_statistics()
@@ -140,46 +133,166 @@ class NormalWishart(Distribution):
                - (np.dot(nat_param[0], stats[0]) + nat_param[1] * stats[1]
                   + np.tensordot(nat_param[2], stats[2]) + nat_param[3] * stats[3])
 
-    # This implementation is valid but terribly slow
-    def _expected_log_likelihood(self, x):
-        # Natural parameter of marginal log-distirbution
-        # are the expected statsitics of the posterior
-        nat_param = self.expected_statistics()
 
-        # Data statistics under a Gaussian likelihood
-        # log-parition is subsumed into nat*stats
-        liklihood = GaussianWithPrecision(mu=np.empty_like(nat_param[0]))
-        stats = liklihood.statistics(x, vectorize=True)
-        log_base = liklihood.log_base()
+class StackedNormalWisharts:
 
-        return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
-               + nat_param[1] * stats[1] + nat_param[3] * stats[3]\
-               + np.einsum('kh,nkh->n', nat_param[2], stats[2])
+    def __init__(self, size, dim,
+                 mus=None, kappas=None,
+                 psis=None, nus=None):
 
-    def expected_log_likelihood(self, x):
-        _, _, _, _E_logdet_lmbda = self.expected_statistics()
-        E_logdet_lmbda = 2. * _E_logdet_lmbda
+        self.size = size
+        self.dim = dim
 
-        xc = np.einsum('nk,kh,nh->n', x - self.gaussian.mu, self.wishart.psi,
-                       x - self.gaussian.mu, optimize=True)
-
-        # see Eqs. 10.64, 10.67, and 10.71 in Bishop
-        # sneaky gaussian/quadratic identity hidden here
-        return 0.5 * E_logdet_lmbda - 0.5 * self.dim / self.kappa\
-               - 0.5 * self.wishart.nu * xc\
-               - 0.5 * self.dim * np.log(2. * np.pi)
-
-
-class NormalGamma(Distribution):
-
-    def __init__(self, mu, kappas, alphas, betas):
-        self.gaussian = GaussianWithDiagonalPrecision(mu=mu)
-        self.gamma = Gamma(alphas=alphas, betas=betas)
-        self.kappas = kappas
+        mus = [None] * self.size if mus is None else mus
+        kappas = [None] * self.size if kappas is None else kappas
+        psis = [None] * self.size if psis is None else psis
+        nus = [None] * self.size if nus is None else nus
+        self.dists = [NormalWishart(dim, mus[k], kappas[k],
+                                    psis[k], nus[k])
+                      for k in range(self.size)]
 
     @property
-    def dim(self):
-        return self.gaussian.dim
+    def params(self):
+        return self.mus, self.kappas, self.psis, self.nus
+
+    @params.setter
+    def params(self, values):
+        self.mus, self.kappas, self.psis, self.nus = values
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
+
+    def nat_to_std(self, natparam):
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
+
+    @property
+    def mus(self):
+        return np.array([dist.gaussian.mu for dist in self.dists])
+
+    @mus.setter
+    def mus(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.gaussian.mu = value[k, ...]
+
+    @property
+    def kappas(self):
+        return np.array([dist.kappa for dist in self.dists])
+
+    @kappas.setter
+    def kappas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.kappa = value[k, ...]
+
+    @property
+    def psis(self):
+        return np.array([dist.wishart.psi for dist in self.dists])
+
+    @psis.setter
+    def psis(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.wishart.psi = value[k, ...]
+
+    @property
+    def nus(self):
+        return np.array([dist.wishart.nu for dist in self.dists])
+
+    @nus.setter
+    def nus(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.wishart.nu = value[k, ...]
+
+    def mean(self):
+        means = zip(*[dist.mean() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), means))
+
+    def mode(self):
+        modes = zip(*[dist.mode() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), modes))
+
+    def rvs(self):
+        samples = zip(*[dist.rvs() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), samples))
+
+    @property
+    def base(self):
+        return np.array([dist.base for dist in self.dists])
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        return np.array([dist.log_partition() for dist in self.dists])
+
+    def log_likelihood(self, x):
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
+
+    def expected_statistics(self):
+        stats = zip(*[dist.expected_statistics() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), stats))
+
+    def entropy(self):
+        return np.array([dist.entropy() for dist in self.dists])
+
+    def cross_entropy(self, other):
+        return np.array([p.cross_entropy(q) for p, q in zip(self.dists, other.dists)])
+
+
+class TiedNormalWisharts(StackedNormalWisharts, ABC):
+
+    def __init_(self, size, dim,
+                 mus=None, kappas=None,
+                 psis=None, nus=None):
+
+        super(TiedNormalWisharts, self).__init__(size, dim,
+                                                 mus, kappas,
+                                                 psis, nus)
+
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
+
+    def nat_to_std(self, natparam):
+        mus = np.einsum('k,kd->kd', 1. / natparam[1], natparam[0])
+        kappas = natparam[1]
+        psi = np.linalg.inv(np.mean(natparam[2] - np.einsum('k,kd,kl->kdl', kappas, mus, mus), axis=0))
+        nu = np.mean(natparam[3] + self.dim)
+
+        psis = np.array(self.size * [psi])
+        nus = np.array(self.size * [nu])
+        return mus, kappas, psis, nus
+
+
+class NormalGamma:
+
+    def __init__(self, dim, mu=None, kappas=None,
+                 alphas=None, betas=None):
+
+        self.dim = dim
+
+        self.gaussian = GaussianWithDiagonalPrecision(dim=dim, mu=mu)
+        self.gamma = Gamma(dim=dim, alphas=alphas, betas=betas)
+        self.kappas = kappas
 
     @property
     def params(self):
@@ -189,31 +302,6 @@ class NormalGamma(Distribution):
     def params(self, values):
         self.gaussian.mu, self.kappas, self.gamma.alphas, self.gamma.betas = values
 
-    def rvs(self, size=1):
-        lmbdas = self.gamma.rvs()
-        self.gaussian.lmbdas = self.kappas * lmbdas
-        mu = self.gaussian.rvs()
-        return mu, lmbdas
-
-    def mean(self):
-        return self.gaussian.mean(), self.gamma.mean()
-
-    def mode(self):
-        return self.gaussian.mode(), self.gamma.mode()
-
-    def log_likelihood(self, x):
-        mu, lmbdas = x
-        return GaussianWithDiagonalPrecision(mu=self.gaussian.mu,
-                                             lmbdas=self.kappas * lmbdas).log_likelihood(mu)\
-               + self.gamma.log_likelihood(lmbdas)
-
-    @property
-    def base(self):
-        return self.gaussian.base * self.gamma.base
-
-    def log_base(self):
-        return np.log(self.base)
-
     @property
     def nat_param(self):
         return self.std_to_nat(self.params)
@@ -224,20 +312,21 @@ class NormalGamma(Distribution):
 
     @staticmethod
     def std_to_nat(params):
-        # The definition of stats is slightly different
-        # from literatur to make posterior updates easy
+        # stats = [mu * lmbda_diag,
+        #          -0.5 * lmbda_diag * mu * mu,
+        #          0.5 * log(lmbda_diag),
+        #          -0.5 * lmbda_diag]
+        #
+        # nats = [kappa * m,
+        #         kappa,
+        #         2 * alpha - 1,
+        #         2 * beta + kappa * m * m]
 
-        # Assumed stats
-        # stats = [lmbdas * x,
-        #          -0.5 * lmbdas * xx,
-        #          0.5 * log_lmbdas
-        #          -0.5 * lmbdas]
-
-        mu = params[1] * params[0]
-        kappas = params[1]
-        alphas = 2. * params[2] - 1.
-        betas = 2. * params[3] + params[1] * params[0]**2
-        return Stats([mu, kappas, alphas, betas])
+        a = params[1] * params[0]
+        b = params[1]
+        c = 2. * params[2] - 1.
+        d = 2. * params[3] + params[1] * params[0]**2
+        return Stats([a, b, c, d])
 
     @staticmethod
     def nat_to_std(natparam):
@@ -247,22 +336,50 @@ class NormalGamma(Distribution):
         betas = 0.5 * (natparam[3] - kappas * mu**2)
         return mu, kappas, alphas, betas
 
-    def log_partition(self, params=None):
-        mu, kappas, alphas, betas = params if params is not None else self.params
-        return - 0.5 * np.sum(np.log(kappas)) + Gamma(alphas=alphas, betas=betas).log_partition()
+    def mean(self):
+        return self.gaussian.mean(), self.gamma.mean()
+
+    def mode(self):
+        mu = self.gaussian.mode()
+        lmbda_diag = (self.gamma.alphas - 1. / 2.) / self.gamma.betas
+        return mu, lmbda_diag
+
+    def rvs(self):
+        lmbda_diag = self.gamma.rvs()
+        self.gaussian.lmbda_diag = self.kappas * lmbda_diag
+        mu = self.gaussian.rvs()
+        return mu, lmbda_diag
+
+    @property
+    def base(self):
+        return self.gaussian.base * self.gamma.base
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        _, kappas, alphas, betas = self.params
+        return - 0.5 * np.sum(np.log(kappas))\
+               + Gamma(dim=self.dim, alphas=alphas, betas=betas).log_partition()
+
+    def log_likelihood(self, x):
+        mu, lmbda_diag = x
+        return GaussianWithDiagonalPrecision(dim=self.dim, mu=self.gaussian.mu,
+                                             lmbda_diag=self.kappas * lmbda_diag).log_likelihood(mu)\
+               + self.gamma.log_likelihood(lmbda_diag)
 
     def expected_statistics(self):
-        # stats = [lmbdas * x,
-        #          -0.5 * lmbdas * xx,
-        #          0.5 * log_lmbdas
-        #          -0.5 * lmbdas]
+        # stats = [mu * lmbda_diag,
+        #          -0.5 * lmbda_diag * mu * mu,
+        #          0.5 * log(lmbda_diag),
+        #          -0.5 * lmbda_diag]
 
-        E_x = self.gamma.alphas / self.gamma.betas * self.gaussian.mu
-        E_lmbdas_xx = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_x)
+        E_mu_lmbdas = self.gamma.alphas / self.gamma.betas * self.gaussian.mu
+        E_lmbdas_mu_mu = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_mu_lmbdas)
         E_log_lmbdas = 0.5 * (digamma(self.gamma.alphas) - np.log(self.gamma.betas))
         E_lmbdas = - 0.5 * (self.gamma.alphas / self.gamma.betas)
 
-        return E_x, E_lmbdas_xx, E_log_lmbdas, E_lmbdas
+        return E_mu_lmbdas, E_lmbdas_mu_mu, E_log_lmbdas, E_lmbdas
 
     def entropy(self):
         nat_param, stats = self.nat_param, self.expected_statistics()
@@ -272,112 +389,39 @@ class NormalGamma(Distribution):
 
     def cross_entropy(self, dist):
         nat_param, stats = dist.nat_param, self.expected_statistics()
-        return self.log_partition() - self.log_base()\
+        return dist.log_partition() - dist.log_base() \
                - (np.dot(nat_param[0], stats[0]) + np.dot(nat_param[1], stats[1])
                   + np.dot(nat_param[2], stats[2]) + np.dot(nat_param[3], stats[3]))
 
-    # This implementation is valid but terribly slow
-    def _expected_log_likelihood(self, x):
-        # Natural parameter of marginal log-distirbution
-        # are the expected statsitics of the posterior
-        nat_param = self.expected_statistics()
 
-        # Data statistics under a Gaussian likelihood
-        # log-parition is subsumed into nat*stats
-        liklihood = GaussianWithDiagonalPrecision(mu=np.empty_like(nat_param[0]))
-        stats = liklihood.statistics(x, vectorize=True)
-        log_base = liklihood.log_base()
+class StackedNormalGammas:
 
-        return log_base + np.einsum('k,nk->n', nat_param[0], stats[0])\
-               + np.einsum('k,nk->n', nat_param[1], stats[1])\
-               + np.einsum('k,nk->n', nat_param[2], stats[2])\
-               + np.einsum('k,nk->n', nat_param[3], stats[3])
+    def __init__(self, size, dim,
+                 mus=None, kappas=None,
+                 alphas=None, betas=None):
 
-    def expected_log_likelihood(self, x):
-        E_x, E_lmbdas_xx, E_log_lmbdas, E_lmbdas = self.expected_statistics()
-        return (x**2).dot(E_lmbdas) + x.dot(E_x)\
-               + E_lmbdas_xx.sum() + E_log_lmbdas.sum()\
-               - 0.5 * self.dim * np.log(2. * np.pi)
+        self.size = size
+        self.dim = dim
 
-
-class TiedNormalWisharts:
-
-    def __init__(self, mus, kappas, psi, nu):
-        self.wishart = Wishart(psi=psi, nu=nu)
-        self.components = [NormalWishart(mu=_mu, kappa=_kappa, psi=psi, nu=nu)
-                           for _mu, _kappa in zip(mus, kappas)]
+        mus = [None] * self.size if mus is None else mus
+        kappas = [None] * self.size if kappas is None else kappas
+        alphas = [None] * self.size if alphas is None else alphas
+        betas = [None] * self.size if betas is None else betas
+        self.dists = [NormalGamma(dim, mus[k], kappas[k],
+                                  alphas[k], betas[k])
+                      for k in range(self.size)]
 
     @property
     def params(self):
-        return self.mus, self.kappas, self.psi, self.nu
+        return self.mus, self.kappas, self.alphas, self.betas
 
     @params.setter
     def params(self, values):
-        self.mus, self.kappas, self.psi, self.nu = values
-
-    def rvs(self, size=1):
-        assert size == 1
-        lmbda = Wishart(psi=self.psi, nu=self.nu).rvs()
-        for idx, c in enumerate(self.components):
-            c.gaussian.lmbda = c.kappa * lmbda
-        mus = [c.gaussian.rvs() for c in self.components]
-        return mus, lmbda
+        self.mus, self.kappas, self.alphas, self.betas = values
 
     @property
-    def dim(self):
-        return self.psi.shape[0]
-
-    @property
-    def size(self):
-        return len(self.components)
-
-    @property
-    def mus(self):
-        return[c.gaussian.mu for c in self.components]
-
-    @mus.setter
-    def mus(self, values):
-        for idx, c in enumerate(self.components):
-            c.gaussian.mu = values[idx]
-
-    @property
-    def kappas(self):
-        return [c.kappa for c in self.components]
-
-    @kappas.setter
-    def kappas(self, values):
-        for idx, c in enumerate(self.components):
-            c.kappa = values[idx]
-
-    @property
-    def psi(self):
-        return self.wishart.psi
-
-    @psi.setter
-    def psi(self, value):
-        self.wishart.psi = value
-        for c in self.components:
-            c.wishart.psi = value
-
-    @property
-    def nu(self):
-        return self.wishart.nu
-
-    @nu.setter
-    def nu(self, value):
-        self.wishart.nu = value
-        for c in self.components:
-            c.wishart.nu = value
-
-    def mean(self):
-        mus = [c.gaussian.mean() for c in self.components]
-        lmbda = Wishart(psi=self.psi, nu=self.nu).mean()
-        return mus, lmbda
-
-    def mode(self):
-        mus = [c.gaussian.mode() for c in self.components]
-        lmbda = self.wishart.mode()
-        return mus, lmbda
+    def nb_params(self):
+        raise NotImplementedError
 
     @property
     def nat_param(self):
@@ -387,38 +431,119 @@ class TiedNormalWisharts:
     def nat_param(self, natparam):
         self.params = self.nat_to_std(natparam)
 
-    @staticmethod
-    def std_to_nat(params):
-        nat = [NormalWishart.std_to_nat(_params)
-               for _params in zip(*extendlists(params))]
-        return Stats(nat)
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
 
-    @staticmethod
-    def nat_to_std(natparam):
-        mus, kappas = [], []
-        psis, nus = [], []
-        for _natparam in natparam:
-            mus.append(_natparam[0] / _natparam[1])
-            kappas.append(_natparam[1])
-            psis.append(_natparam[2] - kappas[-1] * np.outer(mus[-1], mus[-1]))
-            nus.append(_natparam[3] + _natparam[2].shape[0])
+    def nat_to_std(self, natparam):
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
 
-        psi = invpd(np.mean(np.stack(psis, axis=2), axis=2))
-        nu = np.mean(np.hstack(nus))
+    @property
+    def mus(self):
+        return np.array([dist.gaussian.mu for dist in self.dists])
 
-        return mus, kappas, psi, nu
+    @mus.setter
+    def mus(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.gaussian.mu = value[k, ...]
+
+    @property
+    def kappas(self):
+        return np.array([dist.kappas for dist in self.dists])
+
+    @kappas.setter
+    def kappas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.kappas = value[k, ...]
+
+    @property
+    def alphas(self):
+        return np.array([dist.gamma.alphas for dist in self.dists])
+
+    @alphas.setter
+    def alphas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.gamma.psi = value[k, ...]
+
+    @property
+    def betas(self):
+        return np.array([dist.gamma.betas for dist in self.dists])
+
+    @betas.setter
+    def betas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.gamma.nu = value[k, ...]
+
+    def mean(self):
+        means = zip(*[dist.mean() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), means))
+
+    def mode(self):
+        modes = zip(*[dist.mode() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), modes))
+
+    def rvs(self):
+        samples = zip(*[dist.rvs() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), samples))
+
+    @property
+    def base(self):
+        return np.array([dist.base for dist in self.dists])
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def log_partition(self):
+        return np.array([dist.log_partition() for dist in self.dists])
+
+    def log_likelihood(self, x):
+        return np.sum([dist.log_likelihood(_x)
+                       for dist, _x in zip(self.dists, list(zip(*x)))])
+
+    def expected_statistics(self):
+        stats = zip(*[dist.expected_statistics() for dist in self.dists])
+        return tuple(map(partial(np.stack, axis=0), stats))
 
     def entropy(self):
-        return np.sum([c.entropy() for c in self.components])
+        return np.array([dist.entropy() for dist in self.dists])
 
-    def cross_entropy(self, dist):
-        return np.sum([c.cross_entropy(d) for c, d in zip(self.components, dist.components)])
-
-    def expected_log_likelihood(self, x):
-        return np.stack([c.expected_log_likelihood(x) for c in self.components], axis=1)
+    def cross_entropy(self, other):
+        return np.array([p.cross_entropy(q) for p, q in zip(self.dists, other.dists)])
 
 
-class MatrixNormalWishart(Distribution):
+class TiedNormalGammas(StackedNormalGammas, ABC):
+
+    def __init_(self, size, dim,
+                 mus=None, kappas=None,
+                 alphas=None, betas=None):
+
+        super(TiedNormalGammas, self).__init__(size, dim,
+                                               mus, kappas,
+                                               alphas, betas)
+
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
+
+    def nat_to_std(self, natparam):
+        mus = np.einsum('kd,kd->kd', 1. / natparam[1], natparam[0])
+        kappas = natparam[1]
+        alphas = np.mean(0.5 * (natparam[2] + 1), axis=0)
+        betas = np.mean(0.5 * (natparam[3] - kappas * mus**2), axis=0)
+
+        alphas = np.array(self.size * [alphas])
+        betas = np.array(self.size * [betas])
+        return mus, kappas, alphas, betas
+
+
+class MatrixNormalWishart:
 
     def __init__(self, M, K, psi, nu):
         self.matnorm = MatrixNormalWithPrecision(M=M, K=K)
@@ -493,7 +618,7 @@ class MatrixNormalWishart(Distribution):
 
         M = params[0].dot(params[1])
         K = params[1]
-        psi = invpd(params[2]) + params[0].dot(K).dot(params[0].T)
+        psi = np.linalg.inv(params[2]) + params[0].dot(K).dot(params[0].T)
         nu = params[3] - params[2].shape[0] - 1 + params[0].shape[-1]
         return Stats([M, K, psi, nu])
 
@@ -501,7 +626,7 @@ class MatrixNormalWishart(Distribution):
     def nat_to_std(natparam):
         M = np.linalg.solve(natparam[1], natparam[0].T).T
         K = natparam[1]
-        psi = invpd(natparam[2] - M.dot(K).dot(M.T))
+        psi = np.linalg.inv(natparam[2] - M.dot(K).dot(M.T))
         nu = natparam[3] + natparam[2].shape[0] + 1 - natparam[0].shape[-1]
         return M, K, psi, nu
 
@@ -518,7 +643,7 @@ class MatrixNormalWishart(Distribution):
         #          0.5 * logdet_lmbda]
 
         E_Lmbda_A = self.wishart.nu * self.wishart.psi @ self.matnorm.M
-        E_AT_Lmbda_A = - 0.5 * (self.drow * invpd(self.matnorm.K) + self.matnorm.M.T.dot(E_Lmbda_A))
+        E_AT_Lmbda_A = - 0.5 * (self.drow * np.linalg.inv(self.matnorm.K) + self.matnorm.M.T.dot(E_Lmbda_A))
         E_lmbda = - 0.5 * (self.wishart.nu * self.wishart.psi)
         E_logdet_lmbda = 0.5 * (np.sum(digamma((self.wishart.nu - np.arange(self.drow)) / 2.))
                                 + self.drow * np.log(2.) + 2. * np.sum(np.log(np.diag(self.wishart.psi_chol))))
@@ -582,191 +707,3 @@ class MatrixNormalWishart(Distribution):
         res += - self.drow / 2. * np.log(2 * np.pi) + 1. / 2 * E_logdet_lmbda
 
         return res
-
-
-class MatrixNormalGamma(Distribution):
-
-    def __init__(self, M, K, alphas, betas):
-        self.matnorm = MatrixNormalWithDiagonalPrecision(M=M, K=K)
-        self.gamma = Gamma(alphas=alphas, betas=betas)
-
-    @property
-    def dcol(self):
-        return self.matnorm.dcol
-
-    @property
-    def drow(self):
-        return self.matnorm.drow
-
-    @property
-    def params(self):
-        return self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas
-
-    @params.setter
-    def params(self, values):
-        self.matnorm.M, self.matnorm.K, self.gamma.alphas, self.gamma.betas = values
-
-    def rvs(self, size=1):
-        lmbdas = self.gamma.rvs()
-        self.matnorm.vs = lmbdas
-        A = self.matnorm.rvs()
-        return A, lmbdas
-
-    def mean(self):
-        return self.matnorm.mean(), self.gamma.mean()
-
-    def mode(self):
-        return self.matnorm.mode(), self.gamma.mode()
-
-    def log_likelihood(self, x):
-        A, lmbdas = x
-        return MatrixNormalWithDiagonalPrecision(M=self.matnorm.M, vs=lmbdas,
-                                                 K=self.matnorm.K).log_likelihood(A)\
-               + self.gamma.log_likelihood(lmbdas)
-
-    @property
-    def base(self):
-        return self.matnorm.base * self.gamma.base
-
-    def log_base(self):
-        return np.log(self.base)
-
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-
-class HierarchicalLinearGaussianWithSharedPrecision:
-
-    def __init__(self, M, V, K, affine=True):
-        self.affine = affine
-
-        self.matnorm = MatrixNormalWithKnownPrecision(M=M, V=V, K=K)
-        self.lingauss = LinearGaussianWithPrecision(A=M, lmbda=V,
-                                                    affine=affine)
-
-    @property
-    def params(self):
-        return self.matnorm.M, self.lingauss.V
-
-    @params.setter
-    def params(self, values):
-        self.matnorm.M, self.matnorm.V = values
-        self.lingauss.V = copy.deepcopy(self.matnorm.V)
-
-    @property
-    def dcol(self):
-        return self.matnorm.dcol
-
-    @property
-    def drow(self):
-        return self.matnorm.drow
-
-    def rvs(self, x, size=1):
-        W = self.matnorm.rvs()
-        self.lingauss.A = W
-        y = self.lingauss.rvs(x)
-        return y, W
-
-    def mean(self, x):
-        return self.marginal_likelihood(x)[0]
-
-    def mode(self, x):
-        return self.marginal_likelihood(x)[0]
-
-    def statistics(self, y, x):
-        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray):
-            idx = np.logical_and(~np.isnan(y).any(axis=1),
-                                 ~np.isnan(x).any(axis=1))
-            y, x = y[idx], x[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            yyT = y.T @ y
-            xxT = x.T @ x
-            xyT = x.T @ y
-
-            matnorm_stats = np.array([
-                self.lingauss.A @ self.matnorm.K,
-                self.matnorm.K,
-                self.lingauss.A @ self.matnorm.K @ self.lingauss.A.T,
-                x.shape[1]
-            ])
-
-            lingauss_stats = np.array([
-                0.,
-                0.,
-                yyT - 2. * self.lingauss.A @ xyT
-                + self.lingauss.A @ xxT @ self.lingauss.A.T,
-                x.shape[0]
-            ])
-
-            stats = matnorm_stats + lingauss_stats
-            return Stats(stats)
-
-    def weighted_statistics(self, y, x, posterior):
-        if isinstance(y, np.ndarray) and isinstance(x, np.ndarray)\
-                and not isinstance(posterior, list):
-            idx = np.logical_and(~np.isnan(y).any(axis=1),
-                                 ~np.isnan(x).any(axis=1))
-            y, x = y[idx], x[idx]
-
-            if self.affine:
-                x = np.hstack((x, np.ones((x.shape[0], 1))))
-
-            yyT = y.T @ y
-            xxT = x.T @ x
-            xyT = x.T @ y
-
-            matnorm_stats = np.array([
-                posterior.M @ self.matnorm.K,
-                self.matnorm.K,
-                np.trace(self.matnorm.K @ np.linalg.inv(posterior.K))
-                    * np.linalg.inv(posterior.V)
-                    + posterior.M @ self.matnorm.K @ posterior.M.T,
-                x.shape[1]
-            ])
-
-            lingauss_stats = np.array([
-                0.,
-                0.,
-                yyT - 2. * posterior.M @ xyT + posterior.M @ xxT @ posterior.M.T
-                    + np.trace(xxT @ np.linalg.inv(posterior.K)) * np.linalg.inv(posterior.V),
-                x.shape[0]
-            ])
-
-            stats = matnorm_stats + lingauss_stats
-            return Stats(stats)
-
-    def marginal_likelihood(self, x):
-        x = np.reshape(x, (-1, self.dcol))
-
-        if self.affine:
-            x = np.hstack((x, np.ones((len(x), 1))))
-
-        M, V, K = self.matnorm.params
-
-        mus = np.einsum('kh,...h->...k', M, x)
-
-        c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-        lmbdas = np.einsum('kh,...->...kh', V, 1. / c)
-
-        return mus, lmbdas
-
-    def log_likelihood(self, y, x):
-        assert isinstance(y, (np.ndarray, list))
-        assert isinstance(x, (np.ndarray, list))
-
-        if isinstance(y, list) and isinstance(x, list):
-            return [self.log_likelihood(_y, _x) for _y, _x in zip(y, x)]
-        else:
-            mus, lmbdas = self.marginal_likelihood(x)
-            return multivariate_gaussian_loglik(y, mus, lmbdas)
-
-    def max_likelihood(self, y, x):
-        raise NotImplementedError

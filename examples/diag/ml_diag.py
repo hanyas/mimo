@@ -13,13 +13,17 @@ dist = GaussianWithDiagonalPrecision(dim=dim, mu=npr.randn(dim),
 data = dist.rvs(size=nb_samples)
 print("True mean" + "\n", dist.mu.T, "\n" + "True sigma" + "\n", dist.sigma)
 
+model = GaussianWithDiagonalPrecision(dim=dim, mu=np.zeros((dim, )))
+model.max_likelihood(data)
+print("ML mean"+"\n", model.mu.T, "\n"+"ML sigma"+"\n", model.sigma)
+
 hypparams = dict(dim=dim, mu=np.zeros((dim, )),
                  kappas=1e-2 * np.ones((dim, )),
-                 alphas=(4. + 1e-8) / 2. * np.ones((dim, )),
-                 betas=1. / (2. * np.ones((dim, ))))
+                 alphas=1. * np.ones((dim, )),
+                 betas=1. / 2. * np.ones((dim, )))
 prior = NormalGamma(**hypparams)
 
 model = GaussianWithNormalGamma(dim=dim, prior=prior)
-model.meanfield_update(data)
-print("Gibbs mean"+"\n", model.likelihood.mu.T,
-        "\n"+"Gibbs sigma"+"\n", model.likelihood.sigma)
+model.max_aposteriori(data)
+print("MAP mean"+"\n", model.likelihood.mu.T,
+      "\n"+"MAP sigma"+"\n", model.likelihood.sigma)

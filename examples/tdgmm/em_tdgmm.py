@@ -3,6 +3,7 @@ import numpy.random as npr
 
 from mimo.distributions import Categorical
 from mimo.distributions import StackedGaussiansWithPrecision
+from mimo.distributions import TiedGaussiansWithDiagonalPrecision
 
 from mimo.mixtures import MixtureOfGaussians
 
@@ -36,10 +37,10 @@ gmm.plot(obs)
 gating = Categorical(dim=4)
 
 mus = npr.randn(4, 2)
-lmbdas = np.stack(4 * [np.eye(2)])
+lmbdas_diags = np.ones((4, 2))
 
-components = StackedGaussiansWithPrecision(size=4, dim=2,
-                                           mus=mus, lmbdas=lmbdas)
+components = TiedGaussiansWithDiagonalPrecision(size=4, dim=2,
+                                                   mus=mus, lmbdas_diags=lmbdas_diags)
 
 model = MixtureOfGaussians(gating=gating, components=components)
 
