@@ -43,7 +43,7 @@ gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 mus = np.zeros((4, 2))
 kappas = 1e-2 * np.ones((4,))
 psis = np.array(4 * [np.eye(2)])
-nus = 3. * np.ones((4,)) + 1e-6
+nus = 3. * np.ones((4,)) + 1e-8
 
 components_prior = TiedNormalWisharts(size=4, dim=2,
                                       mus=mus, kappas=kappas,
@@ -55,7 +55,6 @@ components = TiedGaussiansWithNormalWisharts(size=4, dim=2,
 model = BayesianMixtureOfGaussians(gating=gating, components=components)
 
 vlb = model.meanfield_coordinate_descent(obs=obs, maxiter=5000, tol=0.)
-
 print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 plt.figure()

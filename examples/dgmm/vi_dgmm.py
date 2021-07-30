@@ -58,7 +58,6 @@ components = StackedGaussiansWithNormalGammas(size=4, dim=2,
 model = BayesianMixtureOfGaussians(gating=gating, components=components)
 
 vlb = model.meanfield_coordinate_descent(obs, maxiter=1000, tol=0.)
-
 print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 plt.figure()

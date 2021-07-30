@@ -58,7 +58,6 @@ components = StackedGaussiansWithNormalWisharts(size=4, dim=2,
 model = BayesianMixtureOfGaussians(gating=gating, components=components)
 
 ll = model.max_aposteriori(obs, maxiter=100)
-
 print("ll monoton?", np.all(np.diff(ll) >= -1e-8))
 
 plt.figure()
