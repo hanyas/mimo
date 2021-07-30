@@ -18,6 +18,8 @@ from mimo.distributions import LinearGaussianWithPrecision
 from mimo.utils.stats import multivariate_gaussian_loglik as mvn_logpdf
 from mimo.utils.stats import multivariate_studentt_loglik as mvt_logpdf
 
+from mimo.utils.abstraction import Statistics as Stats
+
 
 class CategoricalWithDirichlet:
     """
@@ -50,7 +52,7 @@ class CategoricalWithDirichlet:
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
-        self.likelihood.params = self.posterior.mean()
+        self.likelihood.params = self.posterior.mode()
 
     # Gibbs sampling
     def resample(self, data):
@@ -120,7 +122,7 @@ class CategoricalWithStickBreaking:
         self.posterior.gammas = self.prior.gammas + counts
         self.posterior.deltas = self.prior.deltas + acc_counts
 
-        self.likelihood.params = self.posterior.mean()
+        self.likelihood.params = self.posterior.mode()
 
     # Gibbs sampling
     def resample(self, data):
@@ -493,6 +495,265 @@ class TiedGaussiansWithNormalGammas(StackedGaussiansWithNormalGammas, ABC):
                                                             mus=mus, lmbdas_diags=lmbdas_diags)
 
         super(TiedGaussiansWithNormalGammas, self).__init__(size, dim, prior, likelihood)
+
+
+class GaussianWithHierarchicalNormalWishart:
+
+    def __init__(self, dim, hyper_prior, prior):
+        self.dim = dim
+
+        # init hierarchical prior
+        tau, lmbda = hyper_prior.rvs()
+        prior.mu, prior.lmbda = tau, lmbda
+
+        self.hyper_prior = hyper_prior
+        self.hyper_posterior = copy.deepcopy(self.hyper_prior)
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(self.prior)
+
+        mu = self.prior.rvs()
+        self.likelihood = GaussianWithPrecision(dim=dim, mu=mu,
+                                                lmbda=lmbda)
+
+    def empirical_bayes(self, data):
+        raise NotImplementedError
+
+    def resample(self, data, nb_iter=1):
+
+        lmbda, mu = None, None
+        for _ in range(nb_iter):
+            # sampling posterior
+            x, n, xxT, n = self.likelihood.statistics(data)
+            self.posterior.nat_param = self.prior.nat_param + Stats([x, n])
+
+            mu = self.posterior.rvs()
+
+            # sampling hyper posterior
+            # stats = Stats([self.prior.kappa * mu,
+            #                self.prior.kappa,
+            #                xxT - np.outer(mu, x) - np.outer(x, mu)
+            #                + (n + self.prior.kappa) * np.outer(mu, mu),
+            #                n + 1])
+            #
+            # self.hyper_posterior.nat_param = self.hyper_prior + stats
+
+            rho = (self.prior.kappa * mu + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu)\
+                  / (self.prior.kappa + self.hyper_prior.kappa)
+            kappa = self.prior.kappa + self.hyper_prior.kappa
+            psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
+                                + self.hyper_prior.kappa * self.prior.kappa / (self.hyper_prior.kappa + self.prior.kappa)
+                                * np.einsum('d,l->dl', self.hyper_prior.gaussian.mu - mu, self.hyper_prior.gaussian.mu - mu)
+                                + xxT - np.einsum('d,l->dl', mu, x) - np.einsum('d,l->dl', x, mu) + n * np.einsum('d,l->dl', mu, mu))
+            nu = self.hyper_prior.wishart.nu + n + 1
+
+            self.hyper_posterior.params = rho, kappa, psi, nu
+
+            tau, lmbda = self.hyper_posterior.rvs()
+
+            self.prior.mu, self.prior.lmbda = tau, lmbda
+            self.posterior.lmbda = lmbda
+
+        self.likelihood.params = mu, lmbda
+
+    # Mean field
+    def meanfield_update(self, data, nb_iter=25):
+
+        vlb = []
+        for i in range(nb_iter):
+            # variational e-step
+            tau, lmbda = self.hyper_posterior.mean()
+
+            self.prior.mu = tau
+            self.posterior.lmbda = lmbda
+
+            x, n, xxT, n = self.likelihood.statistics(data)
+            self.posterior.nat_param = self.prior.nat_param + Stats([x, n])
+
+            # variational m-step
+            mu = (self.prior.kappa * self.posterior.mu + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu)\
+                 / (self.prior.kappa + self.hyper_prior.kappa)
+            kappa = self.prior.kappa + self.hyper_prior.kappa
+            psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
+                                + (self.prior.kappa + n) * np.linalg.inv(self.posterior.omega)
+                                + self.hyper_prior.kappa * self.prior.kappa / (self.hyper_prior.kappa + self.prior.kappa)
+                                * np.einsum('d,l->dl', self.hyper_prior.gaussian.mu - self.posterior.mu,
+                                            self.hyper_prior.gaussian.mu - self.posterior.mu)
+                                + xxT - np.einsum('d,l->dl', self.posterior.mu, x) - np.einsum('d,l->dl', x, self.posterior.mu)
+                                + n * np.einsum('d,l->dl', self.posterior.mu, self.posterior.mu))
+            nu = self.hyper_prior.wishart.nu + n + 1
+
+            self.hyper_posterior.params = mu, kappa, psi, nu
+
+            # vlb.append(self.variational_lowerbound(data))
+
+        _, lmbda = self.hyper_posterior.mode()
+        mu = self.posterior.mode()
+        self.likelihood.params = mu, lmbda
+
+        return vlb
+
+    def expected_log_likelihood(self, x):
+        raise NotImplementedError
+
+    def variational_lowerbound(self, x):
+        raise NotImplementedError
+
+
+class TiedGaussiansWithHierarchicalNormalWisharts:
+
+    def __init__(self, size, dim, hyper_prior, prior):
+        self.size = size
+        self.dim = dim
+
+        # init hierarchical prior
+        taus = np.zeros((self.size, self.dim))
+        lmbdas = np.zeros((self.size, self.dim, self.dim))
+        for k in range(self.size):
+            taus[k], lmbdas[k] = hyper_prior.rvs()
+
+        prior.mus, prior.lmbdas = taus, lmbdas
+
+        self.hyper_prior = hyper_prior
+        self.hyper_posterior = copy.deepcopy(self.hyper_prior)
+
+        self.prior = prior
+        self.posterior = copy.deepcopy(self.prior)
+
+        mus = self.prior.rvs(sizes=self.size * [1])
+        self.likelihood = TiedGaussiansWithPrecision(size=size, dim=dim,
+                                                     mus=mus, lmbdas=lmbdas)
+
+    def empirical_bayes(self, data):
+        raise NotImplementedError
+
+    # Gibbs sampling
+    def resample(self, data, labels, nb_iter=5):
+
+        lmbdas, mus = None, None
+        for _ in range(nb_iter):
+            # sampling posterior
+            xk, nk, xxTk, nk = self.likelihood.weighted_statistics(data, labels)
+            self.posterior.nat_param = self.prior.nat_param + Stats([xk, nk])
+
+            mus = self.posterior.rvs(sizes=self.size * [1])
+
+            # sampling hyper posterior
+            rho = np.sum(np.einsum('k,kd->kd', self.prior.kappas, mus)
+                         + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu, axis=0) / np.sum(self.prior.kappas + self.hyper_prior.kappa)
+            kappa = np.sum(self.prior.kappas + self.hyper_prior.kappa) / self.size
+            psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
+                                + np.sum(np.expand_dims(self.hyper_prior.kappa * self.prior.kappas, axis=(1, 2))
+                                         * np.einsum('kd,kl->kdl', np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus,
+                                                     np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus) /
+                                         (np.expand_dims(self.hyper_prior.kappa + self.prior.kappas, axis=(1, 2))), axis=0) / self.size
+                                + np.sum(xxTk, axis=0) / self.size - np.einsum('kd,kl->dl', mus, xk) / self.size
+                                - np.einsum('kd,kl->dl', xk, mus) / self.size
+                                + np.einsum('k,kd,kl->dl', nk, mus, mus) / self.size)
+            nu = np.sum(self.hyper_prior.wishart.nu + nk + 1) / self.size
+
+            self.hyper_posterior.params = rho, kappa, psi, nu
+
+            taus = np.zeros((self.size, self.dim))
+            lmbdas = np.zeros((self.size, self.dim, self.dim))
+            for k in range(self.size):
+                taus[k], lmbdas[k] = self.hyper_posterior.rvs()
+
+            self.prior.mus = taus
+            self.prior.lmbdas = lmbdas
+            self.posterior.lmbdas = lmbdas
+
+        self.likelihood.mus = mus
+        self.likelihood.lmbdas = lmbdas
+
+    # Mean field
+    def meanfield_update(self, data, weights, nb_iter=25):
+
+        for i in range(nb_iter):
+            # variational e-step
+            tau, lmbda = self.hyper_posterior.mean()
+
+            self.prior.mus = np.stack(self.size * [tau])
+            self.prior.lmbdas = np.stack(self.size * [lmbda])
+            self.posterior.lmbdas = np.stack(self.size * [lmbda])
+
+            xk, nk, xxTk, nk = self.likelihood.weighted_statistics(data, weights)
+            self.posterior.nat_param = self.prior.nat_param + Stats([xk, nk])
+
+            # variational m-step
+            mu = np.sum(np.einsum('k,kd->kd', self.prior.kappas, self.posterior.mus)
+                        + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu, axis=0) / np.sum(self.prior.kappas + self.hyper_prior.kappa)
+            kappa = np.sum(self.prior.kappas + self.hyper_prior.kappa) / self.size
+            psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
+                                + np.sum(np.einsum('k,kdl->kdl', self.prior.kappas, np.linalg.inv(self.posterior.omegas)), axis=0) / self.size
+                                + np.sum(np.einsum('k,kdl->kdl', nk, np.linalg.inv(self.posterior.omegas)), axis=0) / self.size
+                                + np.sum(np.expand_dims(self.hyper_prior.kappa * self.prior.kappas, axis=(1, 2))
+                                         * np.einsum('kd,kl->kdl', np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - self.posterior.mus,
+                                                     np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - self.posterior.mus) /
+                                         (np.expand_dims(self.hyper_prior.kappa + self.prior.kappas, axis=(1, 2))), axis=0) / self.size
+                                + np.sum(xxTk, axis=0) / self.size - np.einsum('kd,kl->dl', self.posterior.mus, xk) / self.size
+                                - np.einsum('kd,kl->dl', xk, self.posterior.mus) / self.size
+                                + np.einsum('k,kd,kl->dl', nk, self.posterior.mus, self.posterior.mus) / self.size)
+            nu = np.sum(self.hyper_prior.wishart.nu + nk + 1) / self.size
+
+            self.hyper_posterior.params = mu, kappa, psi, nu
+
+        _, lmbda = self.hyper_posterior.mode()
+        mus = self.posterior.mode()
+        self.likelihood.mus = mus
+        self.likelihood.lmbdas = np.stack(self.size * [lmbda])
+
+    def expected_log_likelihood(self, x):
+        from scipy.special import digamma
+
+        E_mu_lmbda = np.einsum('kd,dl->kl', self.posterior.mus, self.hyper_posterior.wishart.nu * self.hyper_posterior.wishart.psi)
+        E_mu_lmbda_muT = - 0.5 * np.einsum('kd,kd->k', E_mu_lmbda, self.posterior.mus)
+        E_lmbda = - 0.5 * (self.hyper_posterior.wishart.nu * self.hyper_posterior.wishart.psi)
+        E_logdet_lmbda = 0.5 * (np.sum(digamma((self.hyper_posterior.wishart.nu - np.arange(self.dim)) / 2.))
+                                + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.hyper_posterior.wishart.psi_chol))))
+
+        xk, nk, xxTk, nk = self.likelihood.statistics(x, fold=False)
+        xxTk += np.expand_dims(np.linalg.inv(self.posterior.omegas), axis=1)
+
+        log_base = self.likelihood.log_base()
+
+        return np.expand_dims(log_base, axis=1)\
+               + np.einsum('kd,knd->kn', E_mu_lmbda, xk)\
+               + np.einsum('k,kn->kn', E_mu_lmbda_muT, nk)\
+               + np.einsum('kdl,kndl->kn', np.stack(self.size * [E_lmbda]), xxTk)\
+               + np.einsum('k,kn->kn', np.expand_dims(E_logdet_lmbda, axis=0), nk)
+
+    def variational_lowerbound(self):
+        from scipy.special import digamma
+
+        vlb = 0.
+        for k in range(self.size):
+            # entropy of hyper posterior
+            vlb += self.hyper_posterior.entropy()
+
+            # cross entropy of hyper posterior
+            vlb += - self.hyper_posterior.cross_entropy(self.hyper_prior)
+
+            # entropy of posterior
+            vlb += self.posterior.dists[k].entropy()
+
+            # expected cross entropy of posterior
+            vlb += - 0.5 * self.dim * np.log(2. * np.pi)
+
+            E_logdet_lmbda = np.sum(digamma((self.hyper_posterior.wishart.nu - np.arange(self.dim)) / 2.))\
+                             + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.hyper_posterior.wishart.psi_chol)))
+
+            vlb += 0.5 * self.dim * np.log(self.prior.kappas[k])
+            vlb += 0.5 * E_logdet_lmbda
+            vlb += - 0.5 * self.prior.kappas[k] * self.dim / self.hyper_posterior.kappa
+            vlb += - 0.5 * np.einsum('d,dl,l->', self.posterior.mus[k] - self.hyper_posterior.gaussian.mu,
+                                     self.prior.kappas[k] * self.hyper_posterior.wishart.nu
+                                     * self.hyper_posterior.wishart.psi,
+                                     self.posterior.mus[k] - self.hyper_posterior.gaussian.mu)
+            vlb += - 0.5 * np.trace(self.prior.kappas[k] * self.hyper_posterior.wishart.nu
+                                    * self.hyper_posterior.wishart.psi @ np.linalg.inv(self.posterior.omegas[k]))
+
+        return vlb
 
 
 class LinearGaussianWithMatrixNormalWishart:

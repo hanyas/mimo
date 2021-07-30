@@ -897,3 +897,359 @@ class TiedGaussiansWithDiagonalPrecision(StackedGaussiansWithDiagonalPrecision, 
         self.mus = mus
         lmbda_diag = 1. / (sigma_diag + 1e-16)
         self.lmbdas_diags = np.array(self.size * [lmbda_diag])
+
+
+class GaussianWithKnownPrecision(GaussianWithPrecision):
+
+    def __init__(self, dim, mu=None, lmbda=None):
+
+        super(GaussianWithKnownPrecision, self).__init__(dim, mu, lmbda)
+
+    def statistics(self, data, fold=True):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data = data[idx]
+
+            if fold:
+                c0 = 'nd->d'
+                n = data.shape[0]
+            else:
+                c0 = 'nd->nd'
+                n = np.ones((data.shape[0], ))
+
+            x = np.einsum(c0, data, optimize=True)
+
+            return Stats([x, n])
+        else:
+            func = partial(self.statistics, fold=fold)
+            stats = list(map(func, data))
+            return reduce(add, stats) if fold else stats
+
+    def weighted_statistics(self, data, weights):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data, weights = data[idx], weights[idx]
+
+            c0 = 'n,nd->d'
+            x = np.einsum(c0, weights, data, optimize=True)
+            n = np.sum(weights)
+
+            return Stats([x, n])
+        else:
+            stats = list(map(self.weighted_statistics, data, weights))
+            return reduce(add, stats)
+
+
+class GaussianWithKnownScaledPrecision(_GaussianBase, ABC):
+    # A prior over mean of a Gaussian likelihood
+    # Likelihood shares precision with prior
+    # up to a scaling factor \kappa
+
+    def __init__(self, dim, kappa, lmbda=None, mu=None):
+
+        super(GaussianWithKnownScaledPrecision, self).__init__(dim, mu)
+
+        self.kappa = kappa
+        self._lmbda = lmbda
+        # omega = kappa * lmbda
+        self._omega_chol = None
+        self._omega_chol_inv = None
+
+    @property
+    def params(self):
+        return self.mu, self.kappa
+
+    @params.setter
+    def params(self, values):
+        self.mu, self.kappa = values
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        # stats = [mu.T @ lmbda,
+        #          -0.5 * lmbda @ (mu @ mu.T)]
+        #
+        # nats = [kappa * m,
+        #         kappa]
+
+        a = params[1] * params[0]
+        b = params[1]
+        return Stats([a, b])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        mu = natparam[0] / natparam[1]
+        kappa = natparam[1]
+        return mu, kappa
+
+    @property
+    def lmbda(self):
+        return self._lmbda
+
+    @lmbda.setter
+    def lmbda(self, value):
+        self._lmbda = value
+        self._omega_chol = None
+        self._omega_chol_inv = None
+
+    @property
+    def omega(self):
+        return self.kappa * self.lmbda
+
+    @property
+    def omega_chol(self):
+        if self._omega_chol is None:
+            self._omega_chol = sc.linalg.cholesky(self.omega, lower=False)
+        return self._omega_chol
+
+    @property
+    def omega_chol_inv(self):
+        if self._omega_chol_inv is None:
+            self._omega_chol_inv = sc.linalg.inv(self.omega_chol)
+        return self._omega_chol_inv
+
+    @property
+    def sigma(self):
+        return self.omega_chol_inv @ self.omega_chol_inv.T
+
+    def rvs(self, size=1):
+        size = self.dim if size == 1 else tuple([size, self.dim])
+        return self.mu + npr.normal(size=size).dot(self.omega_chol_inv.T)
+
+    def statistics(self, data, fold=True):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data = data[idx]
+
+            if fold:
+                c0 = 'nd->d'
+                n = data.shape[0]
+            else:
+                c0 = 'nd->nd'
+                n = np.ones((data.shape[0],))
+
+            x = np.einsum(c0, data, optimize=True)
+
+            return Stats([x, n])
+        else:
+            func = partial(self.statistics, fold=fold)
+            stats = list(map(func, data))
+            return reduce(add, stats) if fold else stats
+
+    def weighted_statistics(self, data, weights):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data, weights = data[idx], weights[idx]
+
+            c0 = 'n,nd->d'
+            x = np.einsum(c0, weights, data, optimize=True)
+            n = np.sum(weights)
+
+            return Stats([x, n])
+        else:
+            stats = list(map(self.weighted_statistics, data, weights))
+            return reduce(add, stats)
+
+    def log_partition(self):
+        return 0.5 * np.einsum('d,dl,l->', self.mu, self.lmbda, self.mu) \
+               - np.sum(np.log(np.diag(self.omega_chol)))
+
+    def log_likelihood(self, x):
+        if isinstance(x, np.ndarray):
+            bads = np.isnan(np.atleast_2d(x)).any(axis=1)
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
+
+            log_lik = np.einsum('d,dl,nl->n', self.mu, self.omega, x, optimize=True) \
+                      - 0.5 * np.einsum('nd,dl,nl->n', x, self.omega, x, optimize=True)
+
+            log_lik[bads] = 0.
+            log_lik += - self.log_partition() + self.log_base()
+            return log_lik
+        else:
+            return list(map(self.log_likelihood, x))
+
+    def entropy(self):
+        return 0.5 * np.log(np.power(2. * np.pi * np.exp(1), self.dim)) \
+               - np.sum(np.log(np.diag(self.omega_chol)))
+
+    # Max likelihood
+    def max_likelihood(self, data, weights=None):
+        raise NotImplementedError
+
+
+class TiedGaussiansWithKnownScaledPrecision:
+    # A prior over mean of a Gaussian likelihood
+    # Likelihood shares precision with prior
+    # up to a scaling factor \kappa
+
+    def __init__(self, size, dim, kappas, lmbdas=None, mus=None):
+        self.size = size
+        self.dim = dim
+
+        kappas = [None] * self.size if kappas is None else kappas
+        lmbdas = [None] * self.size if lmbdas is None else lmbdas
+        mus = [None] * self.size if mus is None else mus
+        self.dists = [GaussianWithKnownScaledPrecision(dim, kappas[k],
+                                                       mus[k], lmbdas[k])
+                      for k in range(self.size)]
+
+    @property
+    def params(self):
+        return self.mus, self.kappas
+
+    @params.setter
+    def params(self, values):
+        self.mus, self.kappas = values
+
+    @property
+    def nb_params(self):
+        raise NotImplementedError
+
+    @property
+    def nat_param(self):
+        return self.std_to_nat(self.params)
+
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    def std_to_nat(self, params):
+        params_list = list(zip(*params))
+        natparams_list = [dist.std_to_nat(par) for dist, par in zip(self.dists, params_list)]
+        natparams_stack = Stats(map(partial(np.stack, axis=0), zip(*natparams_list)))
+        return natparams_stack
+
+    def nat_to_std(self, natparam):
+        natparams_list = list(zip(*natparam))
+        params_list = [dist.nat_to_std(par) for dist, par in zip(self.dists, natparams_list)]
+        params_stack = tuple(map(partial(np.stack, axis=0), zip(*params_list)))
+        return params_stack
+
+    @property
+    def mus(self):
+        return np.array([dist.mu for dist in self.dists])
+
+    @mus.setter
+    def mus(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.mu = value[k, ...]
+
+    @property
+    def kappas(self):
+        return np.array([dist.kappa for dist in self.dists])
+
+    @kappas.setter
+    def kappas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.kappa = value[k, ...]
+
+    @property
+    def lmbdas(self):
+        return np.array([dist.lmbda for dist in self.dists])
+
+    @lmbdas.setter
+    def lmbdas(self, value):
+        for k, dist in enumerate(self.dists):
+            dist.lmbda = value[k, ...]
+
+    @property
+    def omegas(self):
+        return np.array([dist.omega for dist in self.dists])
+
+    @property
+    def omegas_chol(self):
+        return np.array([dist.omega_chol for dist in self.dists])
+
+    @property
+    def omegas_chol_ins(self):
+        return np.array([dist.omega_chol_inv for dist in self.dists])
+
+    @property
+    def sigmas(self):
+        return np.array([dist.sigma for dist in self.dists])
+
+    def rvs(self, sizes):
+        return np.vstack([dist.rvs(size) for dist, size in zip(self.dists, sizes)])
+
+    def mean(self):
+        return np.array([dist.mean() for dist in self.dists])
+
+    def mode(self):
+        return np.array([dist.mode() for dist in self.dists])
+
+    @property
+    def base(self):
+        return np.array([dist.base for dist in self.dists])
+
+    def log_base(self):
+        return np.log(self.base)
+
+    def statistics(self, data, fold=True):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data = data[idx]
+
+            if fold:
+                c0 = 'nd->d'
+                n = data.shape[0]
+            else:
+                c0 = 'nd->nd'
+                n = np.ones((data.shape[0],))
+
+            x = np.einsum(c0, data, optimize=True)
+
+            xk = np.array([x for _ in range(self.size)])
+            nk = np.array([n for _ in range(self.size)])
+
+            return Stats([xk, nk])
+        else:
+            func = partial(self.statistics, fold=fold)
+            stats = list(map(func, data))
+            return reduce(add, stats) if fold else stats
+
+    def weighted_statistics(self, data, weights):
+        if isinstance(data, np.ndarray):
+            idx = ~np.isnan(data).any(axis=1)
+            data, weights = data[idx], weights[:, idx]
+
+            c0 = 'kn,nd->kd'
+            xk = np.einsum(c0, weights, data, optimize=True)
+            nk = np.sum(weights, axis=1)
+
+            return Stats([xk, nk])
+        else:
+            stats = list(map(self.weighted_statistics, data, weights))
+            return reduce(add, stats)
+
+    def log_partition(self):
+        return np.array([dist.log_partition() for dist in self.dists])
+
+    def log_likelihood(self, x):
+        if isinstance(x, np.ndarray):
+            bads = np.isnan(np.atleast_2d(x)).any(axis=1)
+            x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
+
+            log_lik = np.einsum('kd,kdl,nl->kn', self.mus, self.omegas, x, optimize=True)\
+                      - 0.5 * np.einsum('nd,kdl,nl->kn', x, self.omegas, x, optimize=True)
+
+            log_lik[:, bads] = 0.
+            log_lik += - np.expand_dims(self.log_partition(), axis=1)\
+                       + np.expand_dims(self.log_base(), axis=1)
+            return log_lik
+        else:
+            return list(map(self.log_likelihood, x))
+
+    # Max likelihood
+    def max_likelihood(self, data, weights):
+        raise NotImplementedError
