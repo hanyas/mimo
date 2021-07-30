@@ -45,7 +45,7 @@ gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 mus = np.zeros((4, 2))
 kappas = 1e-2 * np.ones((4,))
 psis = np.stack(4 * [np.eye(2)])
-nus = 3. * np.ones((4,)) + 1e-8
+nus = 3. * np.ones((4,)) + 1e-16
 
 components_prior = StackedNormalWisharts(size=4, dim=2,
                                          mus=mus, kappas=kappas,

@@ -123,24 +123,24 @@ upper_size = 8
 lower_size = 4
 dim = 2
 
-gating_prior = Dirichlet(dim=upper_size, alphas=0.01 * np.ones((upper_size, )))
+gating_prior = Dirichlet(dim=upper_size, alphas=0.1 * np.ones((upper_size, )))
 gating = CategoricalWithDirichlet(dim=upper_size, prior=gating_prior)
 
 components = []
 for _ in range(upper_size):
     # lower gating
-    _local_gating_prior = Dirichlet(dim=lower_size, alphas=0.01 * np.ones((lower_size,)))
+    _local_gating_prior = Dirichlet(dim=lower_size, alphas=np.ones((lower_size,)))
     _local_gating = CategoricalWithDirichlet(dim=lower_size, prior=_local_gating_prior)
 
     # lower components
     _mu, _kappa = np.zeros((dim,)), 1e-2
-    _psi, _nu = np.eye(dim), 3. + 1e-32
+    _psi, _nu = np.eye(dim), dim + 1 + 1e-32
 
     _local_components_hyper_prior = NormalWishart(dim=dim,
                                                   mu=_mu, kappa=_kappa,
                                                   psi=_psi, nu=_nu)
 
-    _etas = 1e-2 * np.ones((lower_size,))
+    _etas = np.ones((lower_size,))
     _local_components_prior = TiedGaussiansWithKnownScaledPrecision(size=lower_size, dim=dim,
                                                                     kappas=_etas)
 
@@ -157,8 +157,8 @@ from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
 
 model = BayesianMixtureOfMixtureOfGaussians(gating=gating, components=components)
 
-model.resample(obs, maxiter=10, maxsubiter=500, maxsubsubiter=1)
-model.meanfield_coordinate_descent(obs, maxiter=100,
-                                   maxsubiter=50, maxsubsubiter=25)
+# model.resample(obs, maxiter=10, maxsubiter=500, maxsubsubiter=1)
+model.meanfield_coordinate_descent(obs, maxiter=500, randomize=True,
+                                   maxsubiter=250, maxsubsubiter=1)
 
 model.plot(obs)
