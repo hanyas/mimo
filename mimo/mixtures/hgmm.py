@@ -16,7 +16,6 @@ class MixtureOfMixtureOfGaussians:
 
         self.gating = gating
         self.components = components
-        self.resp = None
 
     @property
     def params(self):
@@ -66,27 +65,32 @@ class MixtureOfMixtureOfGaussians:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
-    def max_likelihood(self, obs, maxiter=1, maxsubiter=10,
+    def max_likelihood(self, obs, randomize=True,
+                       maxiter=250, maxsubiter=5,
                        progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = npr.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = npr.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.responsibilities(obs)
 
         log_lik = []
         with tqdm(total=maxiter, desc=f'EM #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
-            for _ in range(maxiter):
+            for i in range(maxiter):
                 # Maximization step
                 for m in range(self.size):
-                    self.components[m].max_likelihood(obs, self.resp[m, :],
+                    randomize = randomize if i == 0 else False
+                    self.components[m].max_likelihood(obs, resp[m, :],
+                                                      randomize=randomize,
                                                       maxiter=maxsubiter,
                                                       progressbar=False)
-                self.gating.max_likelihood(None, self.resp)
+                self.gating.max_likelihood(None, resp)
 
                 # Expectation step
-                self.resp = self.responsibilities(obs)
+                resp = self.responsibilities(obs)
 
                 log_lik.append(np.sum(self.log_likelihood(obs)))
                 pbar.update(1)
@@ -127,8 +131,6 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
         self.gating = gating
         self.components = components
 
-        self.resp = None
-
         from mimo.mixtures import MixtureOfGaussians
         self.likelihood = MixtureOfGaussians(gating=self.gating.likelihood,
                                              components=self.components.likelihood)
@@ -145,7 +147,7 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
         raise NotImplementedError
 
     # Gibbs sampling
-    def resample(self, obs, maxiter=1, maxsubiter=1,
+    def resample(self, obs, maxiter=250, maxsubiter=5,
                  progressbar=True, processid=0):
 
         with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
@@ -186,25 +188,28 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
-    def meanfield_coordinate_descent(self, obs=None, weights=None,
-                                     maxiter=250, maxsubiter=10, tol=1e-8,
+    def meanfield_coordinate_descent(self, obs=None, randomize=True,
+                                     weights=None, maxiter=250,
+                                     maxsubiter=5, tol=1e-8,
                                      progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = np.random.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = np.random.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.expected_responsibilities(obs)
 
         vlb = []
         with tqdm(total=maxiter, desc=f'VI #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
             for i in range(maxiter):
-                self.resp = self.resp if weights is None else self.resp * weights
+                resp = resp if weights is None else resp * weights
 
-                self.meanfield_update_parameters(obs, self.resp, maxsubiter)
-                self.resp = self.expected_responsibilities(obs)
+                self.meanfield_update_parameters(obs, resp, maxsubiter)
+                resp = self.expected_responsibilities(obs)
 
-                vlb.append(self.variational_lowerbound(obs, self.resp))
+                vlb.append(self.variational_lowerbound(obs, resp))
 
                 if len(vlb) > 1:
                     if abs(vlb[-1] - vlb[-2]) < tol:
@@ -259,7 +264,6 @@ class BayesianMixtureOfMixtureOfGaussians:
 
         self.gating = gating
         self.components = components
-        self.resp = None
 
         from mimo.mixtures import MixtureOfGaussians
 
@@ -288,7 +292,7 @@ class BayesianMixtureOfMixtureOfGaussians:
 
     # Gibbs sampling
     def resample(self, obs,
-                 maxiter=1, maxsubiter=50, maxsubsubiter=1,
+                 maxiter=250, maxsubiter=100, maxsubsubiter=5,
                  progressbar=True, processid=0):
 
         with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
@@ -330,22 +334,25 @@ class BayesianMixtureOfMixtureOfGaussians:
         resp = np.exp(log_prob - logsumexp(log_prob, axis=0, keepdims=True))
         return resp
 
-    def meanfield_coordinate_descent(self, obs,
+    def meanfield_coordinate_descent(self, obs, randomize=True,
                                      maxiter=250, maxsubiter=5, maxsubsubiter=5,
                                      tol=1e-8, progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = np.random.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = np.random.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.expected_responsibilities(obs)
 
         vlb = []
         with tqdm(total=maxiter, desc=f'VI #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
             for i in range(maxiter):
-                self.meanfield_update_parameters(obs, self.resp,
-                                                 maxsubiter, maxsubsubiter)
-                self.resp = self.expected_responsibilities(obs)
+                randomize = randomize if i == 0 else False
+                self.meanfield_update_parameters(obs, resp, maxsubiter,
+                                                 maxsubsubiter, randomize)
+                resp = self.expected_responsibilities(obs)
 
                 # vlb.append(self.variational_lowerbound(obs, upper_resp, lower_resp))
                 #
@@ -357,16 +364,23 @@ class BayesianMixtureOfMixtureOfGaussians:
 
         return vlb
 
-    def meanfield_update_parameters(self, obs, resp, maxsubiter, maxsubsubiter):
-        self.meanfield_update_components(obs, resp, maxsubiter, maxsubsubiter)
+    def meanfield_update_parameters(self, obs, resp, maxsubiter,
+                                    maxsubsubiter, randomize):
+
         self.meanfield_update_gating(resp)
+        self.meanfield_update_components(obs, resp, maxsubiter,
+                                         maxsubsubiter, randomize)
 
     def meanfield_update_gating(self, resp):
         self.gating.meanfield_update(None, resp)
 
-    def meanfield_update_components(self, obs, resp, maxsubiter, maxsubsubiter):
+    def meanfield_update_components(self, obs, resp, maxsubiter,
+                                    maxsubsubiter, randomize):
+
         for m in range(self.size):
-            self.components[m].meanfield_coordinate_descent(obs=obs, weights=resp[m, :],
+            self.components[m].meanfield_coordinate_descent(obs=obs,
+                                                            randomize=randomize,
+                                                            weights=resp[m, :],
                                                             maxiter=maxsubiter,
                                                             maxsubiter=maxsubsubiter,
                                                             progressbar=False)

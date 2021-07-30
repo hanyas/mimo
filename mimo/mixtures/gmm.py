@@ -23,7 +23,6 @@ class MixtureOfGaussians:
 
         self.gating = gating
         self.components = components
-        self.resp = None
 
     @property
     def params(self):
@@ -75,26 +74,28 @@ class MixtureOfGaussians:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
-    def max_likelihood(self, obs, weights=None,
-                       maxiter=1, progressbar=True, processid=0):
+    def max_likelihood(self, obs, randomize=True, weights=None,
+                       maxiter=250, progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = np.random.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = np.random.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.responsibilities(obs)
 
         log_lik = []
         with tqdm(total=maxiter, desc=f'EM #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
             for _ in range(maxiter):
-                self.resp = self.resp if weights is None else self.resp * weights
+                resp = resp if weights is None else resp * weights
 
                 # Maximization step
-                self.components.max_likelihood(obs, self.resp)
-                self.gating.max_likelihood(None, self.resp)
+                self.components.max_likelihood(obs, resp)
+                self.gating.max_likelihood(None, resp)
 
                 # Expectation step
-                self.resp = self.responsibilities(obs)
+                resp = self.responsibilities(obs)
 
                 log_lik.append(np.sum(self.log_likelihood(obs)))
                 pbar.update(1)
@@ -152,7 +153,6 @@ class BayesianMixtureOfGaussians:
 
         self.gating = gating
         self.components = components
-        self.resp = None
 
         self.likelihood = MixtureOfGaussians(gating=self.gating.likelihood,
                                              components=self.components.likelihood)
@@ -173,12 +173,14 @@ class BayesianMixtureOfGaussians:
         return used_labels
 
     # Expectation-Maximization
-    def max_aposteriori(self, obs, maxiter=1,
+    def max_aposteriori(self, obs, randomize=True, maxiter=250,
                         progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = np.random.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = npr.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.likelihood.responsibilities(obs)
 
         log_prob = []
         with tqdm(total=maxiter, desc=f'MAP #{processid + 1}',
@@ -186,11 +188,11 @@ class BayesianMixtureOfGaussians:
 
             for i in range(maxiter):
                 # Maximization step
-                self.components.max_aposteriori(obs, self.resp)
-                self.gating.max_aposteriori(None, self.resp)
+                self.components.max_aposteriori(obs, resp)
+                self.gating.max_aposteriori(None, resp)
 
                 # Expectation step
-                self.resp = self.likelihood.responsibilities(obs)
+                resp = self.likelihood.responsibilities(obs)
 
                 log_lik = np.sum(self.likelihood.log_likelihood(obs))
                 log_prior = self.gating.prior.log_likelihood(self.gating.likelihood.params)\
@@ -249,23 +251,25 @@ class BayesianMixtureOfGaussians:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
-    def meanfield_coordinate_descent(self, obs=None,
+    def meanfield_coordinate_descent(self, obs=None, randomize=True,
                                      maxiter=250, tol=1e-8,
                                      progressbar=True, processid=0):
 
-        if self.resp is None:
-            self.resp = np.random.rand(self.size, len(obs))
-            self.resp /= np.sum(self.resp, axis=0)
+        if randomize:
+            resp = np.random.rand(self.size, len(obs))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.expected_responsibilities(obs)
 
         vlb = []
         with tqdm(total=maxiter, desc=f'VI #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
             for i in range(maxiter):
-                self.meanfield_update_parameters(obs, self.resp)
-                self.resp = self.expected_responsibilities(obs)
+                self.meanfield_update_parameters(obs, resp)
+                resp = self.expected_responsibilities(obs)
 
-                vlb.append(self.variational_lowerbound(obs, self.resp))
+                vlb.append(self.variational_lowerbound(obs, resp))
 
                 if len(vlb) > 1:
                     if abs(vlb[-1] - vlb[-2]) < tol:
