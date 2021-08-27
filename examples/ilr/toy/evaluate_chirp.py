@@ -1,29 +1,30 @@
 import os
 import argparse
 
-os.environ["OMP_NUM_THREADS"] = "1"
-
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
 import numpy as np
 import numpy.random as npr
 
 import mimo
-from mimo.distributions import NormalWishart
-from mimo.distributions import MatrixNormalWishart
-from mimo.distributions import GaussianWithNormalWishart
-from mimo.distributions import LinearGaussianWithMatrixNormalWishart
+
+from mimo.distributions import StackedNormalWisharts
+from mimo.distributions import StackedMatrixNormalWisharts
+from mimo.distributions import TiedMatrixNormalWisharts
+
+from mimo.distributions import StackedGaussiansWithNormalWisharts
+from mimo.distributions import StackedLinearGaussiansWithMatrixNormalWisharts
+from mimo.distributions import TiedLinearGaussiansWithMatrixNormalWisharts
 
 from mimo.distributions import TruncatedStickBreaking
+from mimo.distributions import Dirichlet
+from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfLinearGaussians
 
+import matplotlib.pyplot as plt
+
 import matplotlib
 matplotlib.rcParams['font.family'] = 'serif'
-
-import matplotlib.pyplot as plt
 
 
 if __name__ == "__main__":
@@ -61,55 +62,58 @@ if __name__ == "__main__":
     y = chirp(x, f0=2.5, f1=1., t1=2.5, method='hyperbolic') + 0.25 * npr.randn(nb_train, 1)
     data = np.hstack((x, y))
 
-    input, target = data[:, :1], data[:, 1:]
-
-    # scale data
-    from sklearn.preprocessing import StandardScaler
-    input_transform = StandardScaler()
-    target_transform = StandardScaler()
-
-    input_transform.fit(input)
-    target_transform.fit(target)
+    input, output = data[:, :1], data[:, 1:]
 
     # prepare model
-    input_dim, target_dim = 1, 1
+    nb_models = args.nb_models
+    input_dim, output_dim = 1, 1
 
-    nb_params = input_dim
-    if args.affine:
-        nb_params += 1
+    row_dim = output_dim
+    column_dim = input_dim + 1 if args.affine else input_dim
 
-    basis_prior, models_prior = [], []
-    psi_nw, kappa = 1e0, 1e-2
-    psi_mnw, K = 3e0, 1e-2
+    # initialize Normal
+    mus = np.zeros((nb_models, input_dim))
+    kappas = 1e-2 * np.ones((nb_models,))
+    psis = np.stack(nb_models * [1e0 * np.eye(input_dim)])
+    nus = (input_dim + 1) * np.ones((nb_models,)) + 1e-16
 
-    for n in range(args.nb_models):
-        basis_hypparams = dict(mu=np.zeros((input_dim,)),
-                               psi=np.eye(input_dim) * psi_nw,
-                               kappa=kappa, nu=input_dim + 1)
+    basis_prior = StackedNormalWisharts(size=nb_models, dim=input_dim,
+                                        mus=mus, kappas=kappas,
+                                        psis=psis, nus=nus)
 
-        aux = NormalWishart(**basis_hypparams)
-        basis_prior.append(aux)
+    basis = StackedGaussiansWithNormalWisharts(size=nb_models,
+                                               dim=input_dim,
+                                               prior=basis_prior)
 
-        models_hypparams = dict(M=np.zeros((target_dim, nb_params)),
-                                K=K * np.eye(nb_params), nu=target_dim + 1,
-                                psi=np.eye(target_dim) * psi_mnw)
+    # initialize Matrix-Normal
+    Ms = np.zeros((nb_models, row_dim, column_dim))
+    Ks = np.stack(nb_models * [1e-2 * np.eye(column_dim)])
+    psis = np.stack(nb_models * [3e0 * np.eye(output_dim)])
+    nus = (output_dim + 1) * np.ones((nb_models,)) + 1e-16
 
-        aux = MatrixNormalWishart(**models_hypparams)
-        models_prior.append(aux)
+    models_prior = StackedMatrixNormalWisharts(nb_models, column_dim, row_dim,
+                                               Ms=Ms, Ks=Ks, psis=psis, nus=nus)
 
-    gating_hypparams = dict(K=args.nb_models, gammas=np.ones((args.nb_models,)),
-                            deltas=np.ones((args.nb_models,)) * args.alpha)
-    gating_prior = TruncatedStickBreaking(**gating_hypparams)
+    models = StackedLinearGaussiansWithMatrixNormalWisharts(nb_models, column_dim, row_dim,
+                                                            models_prior, affine=args.affine)
 
-    ilr = BayesianMixtureOfLinearGaussians(gating=CategoricalWithStickBreaking(gating_prior),
-                                           basis=[GaussianWithNormalWishart(basis_prior[i])
-                                                  for i in range(args.nb_models)],
-                                           models=[LinearGaussianWithMatrixNormalWishart(models_prior[i], affine=args.affine)
-                                                   for i in range(args.nb_models)])
+    # define gating
+    if args.prior == 'stick-breaking':
+        gammas = np.ones((args.nb_models,))
+        betas = np.ones((args.nb_models,)) * args.alpha
+        gating_prior = TruncatedStickBreaking(nb_models, gammas, betas)
+        gating = CategoricalWithStickBreaking(nb_models, gating_prior)
+    else:
+        alphas = np.ones((args.nb_models,)) * args.alpha
+        gating_prior = Dirichlet(nb_models, alphas)
+        gating = CategoricalWithDirichlet(nb_models, gating_prior)
+
+    ilr = BayesianMixtureOfLinearGaussians(gating=gating, basis=basis, models=models)
+
+    ilr.init_transform(input, output)
 
     import copy
     from sklearn.utils import shuffle
-    from sklearn.metrics import mean_squared_error, r2_score
 
     # init animation
     anim = []
@@ -119,7 +123,7 @@ if __name__ == "__main__":
 
     # plot prediction
     fig = plt.figure(figsize=(1200. / 96., 675. / 96.), dpi=96)
-    plt.scatter(input, target, s=0.75, color='k')
+    plt.scatter(input, output, s=0.75, color='k')
     plt.plot(input, mu, color='crimson')
 
     for c in [1., 2.]:
@@ -161,45 +165,35 @@ if __name__ == "__main__":
     for n in range(args.nb_splits):
         print('Processing data split ' + str(n + 1) + ' out of ' + str(args.nb_splits))
 
-        # clear all previous data
-        if n > 0:
-            ilr.clear_data()
-
         train_input = input[n * split_size: (n + 1) * split_size, :]
-        train_target = target[n * split_size: (n + 1) * split_size, :]
-
-        ilr.add_data(y=train_target, x=train_input,
-                     whiten=True, transform_type='Standard',
-                     input_transform=input_transform,
-                     target_transform=target_transform)
+        train_output = output[n * split_size: (n + 1) * split_size, :]
 
         ilr.gating.prior = copy.deepcopy(ilr.gating.posterior)
-        for i in range(ilr.likelihood.size):
-            ilr.basis[i].prior = copy.deepcopy(ilr.basis[i].posterior)
-            ilr.models[i].prior = copy.deepcopy(ilr.models[i].posterior)
+        ilr.basis.prior = copy.deepcopy(ilr.basis.posterior)
+        ilr.models.prior = copy.deepcopy(ilr.models.posterior)
 
-        ilr.resample(maxiter=args.gibbs_iters)
+        ilr.resample(train_input, train_output,
+                     labels='random',
+                     maxiter=args.gibbs_iters)
 
         for _ in range(args.super_iters):
-            vlb = ilr.meanfield_coordinate_descent(tol=args.earlystop,
+            vlb = ilr.meanfield_coordinate_descent(train_input, train_output,
+                                                   randomize=False,
+                                                   tol=args.earlystop,
                                                    maxiter=args.meanfield_iters,
-                                                   progprint=args.verbose)
+                                                   progressbar=args.verbose)
             # print(vlb[-1])
 
             ilr.gating.prior = ilr.gating.posterior
-            for i in range(ilr.likelihood.size):
-                ilr.basis[i].prior = ilr.basis[i].posterior
-                ilr.models[i].prior = ilr.models[i].posterior
+            ilr.basis.prior = ilr.basis.posterior
+            ilr.models.prior = ilr.models.posterior
 
         # predict on all data
         mu, var, std = ilr.meanfield_prediction(x=input, prediction=args.prediction)
 
-        mse[n] = mean_squared_error(target, mu)
-        smse[n] = 1. - r2_score(target, mu)
-
         # plot prediction
         fig = plt.figure(figsize=(1200. / 96., 675. / 96.), dpi=96)
-        plt.scatter(input, target, s=0.75, color='k')
+        plt.scatter(input, output, s=0.75, color='k')
         plt.axvspan(train_input.min(), train_input.max(), facecolor='grey', alpha=0.1)
         plt.plot(input, mu, color='crimson')
 
@@ -243,7 +237,6 @@ if __name__ == "__main__":
     def make_frame(t):
         idx = int(t * fps)
         return mplfig_to_npimage(anim[idx])
-
 
     # set working directory
     os.chdir(args.evalpath)
