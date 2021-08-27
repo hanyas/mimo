@@ -14,6 +14,12 @@ from mimo.distributions import StackedGaussiansWithDiagonalPrecision
 from mimo.distributions import TiedGaussiansWithDiagonalPrecision
 
 from mimo.distributions import LinearGaussianWithPrecision
+from mimo.distributions import StackedLinearGaussiansWithPrecision
+from mimo.distributions import TiedLinearGaussiansWithPrecision
+
+from mimo.distributions import LinearGaussianWithDiagonalPrecision
+from mimo.distributions import StackedLinearGaussiansWithDiagonalPrecision
+from mimo.distributions import TiedLinearGaussiansWithDiagonalPrecision
 
 from mimo.utils.stats import multivariate_gaussian_loglik as mvn_logpdf
 from mimo.utils.stats import multivariate_studentt_loglik as mvt_logpdf
@@ -217,11 +223,11 @@ class GaussianWithNormalWishart:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+    def meanfield_sgdstep(self, data, weights, scale, stepsize):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+                                   + stepsize * (self.prior.nat_param + 1. / scale * stats)
 
         self.likelihood.params = self.posterior.rvs()
 
@@ -251,28 +257,6 @@ class GaussianWithNormalWishart:
         log_partition_prior = self.prior.log_partition()
         log_partition_posterior = self.posterior.log_partition()
         return log_partition_posterior - log_partition_prior
-
-    def posterior_predictive_gaussian(self):
-        mu, kappa, psi, nu = self.posterior.params
-        df = nu - self.dim + 1
-        c = 1. + 1. / kappa
-        lmbda = df * psi / c
-        return mu, lmbda
-
-    def log_posterior_predictive_gaussian(self, x):
-        mu, lmbda = self.posterior_predictive_gaussian()
-        return mvn_logpdf(x, mu, lmbda)
-
-    def posterior_predictive_studentt(self):
-        mu, kappa, psi, nu = self.posterior.params
-        df = nu - self.dim + 1
-        c = 1. + 1. / kappa
-        lmbda = df * psi / c
-        return mu, lmbda, df
-
-    def log_posterior_predictive_studentt(self, x):
-        mu, lmbda, df = self.posterior_predictive_studentt()
-        return mvt_logpdf(x, mu, lmbda, df)
 
 
 class StackedGaussiansWithNormalWisharts(GaussianWithNormalWishart, ABC):
@@ -309,6 +293,28 @@ class StackedGaussiansWithNormalWisharts(GaussianWithNormalWishart, ABC):
                + np.einsum('k,kn->kn', nat_param[1], stats[1]) \
                + np.einsum('kdl,kndl->kn', nat_param[2], stats[2])\
                + np.einsum('k,kn->kn', nat_param[3], stats[3])
+
+    def posterior_predictive_gaussian(self):
+        mus, kappas, psis, nus = self.posterior.params
+        dfs = nus - self.dim + 1
+        cs = 1. + 1. / kappas
+        lmbdas = np.einsum('k,kdl->kdl', dfs / cs, psis)
+        return mus, lmbdas
+
+    def log_posterior_predictive_gaussian(self, x):
+        mus, lmbdas = self.posterior_predictive_gaussian()
+        return mvn_logpdf(x, mus, lmbdas)
+
+    def posterior_predictive_studentt(self):
+        mus, kappas, psis, nus = self.posterior.params
+        dfs = nus - self.dim + 1
+        cs = 1. + 1. / kappas
+        lmbdas = np.einsum('k,kdl->kdl', dfs / cs, psis)
+        return mus, lmbdas, dfs
+
+    def log_posterior_predictive_studentt(self, x):
+        mus, lmbdas, dfs = self.posterior_predictive_studentt()
+        return mvt_logpdf(x, mus, lmbdas, dfs)
 
 
 class TiedGaussiansWithNormalWisharts(StackedGaussiansWithNormalWisharts, ABC):
@@ -378,11 +384,11 @@ class GaussianWithNormalGamma:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, prob, stepsize):
+    def meanfield_sgdstep(self, data, weights, scale, stepsize):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+                                   + stepsize * (self.prior.nat_param + 1. / scale * stats)
 
         self.likelihood.params = self.posterior.rvs()
 
@@ -411,38 +417,6 @@ class GaussianWithNormalGamma:
         log_partition_prior = self.prior.log_partition()
         log_partition_posterior = self.posterior.log_partition()
         return log_partition_posterior - log_partition_prior
-
-    def posterior_predictive_gaussian(self):
-        mu, kappas, alphas, betas = self.posterior.params
-        c = 1. + 1. / kappas
-        lmbda_diag = (alphas / betas) * 1. / c
-        return mu, lmbda_diag
-
-    def log_posterior_predictive_gaussian(self, x):
-        mu, lmbda_diag = self.posterior_predictive_gaussian()
-        log_posterior = 0.
-        for _x, _mu, _lmbda in zip(x, mu, lmbda_diag):
-            log_posterior += mvn_logpdf(_x.reshape(-1, 1),
-                                        _mu.reshape(-1, 1),
-                                        _lmbda.reshape(-1, 1, 1))
-        return log_posterior
-
-    def posterior_predictive_studentt(self):
-        mu, kappas, alphas, betas = self.posterior.params
-        dfs = 2. * alphas
-        c = 1. + 1. / kappas
-        lmbda_diag = (alphas / betas) * 1. / c
-        return mu, lmbda_diag, dfs
-
-    def log_posterior_predictive_studentt(self, x):
-        mu, lmbda_diag, dfs = self.posterior_predictive_studentt()
-        log_posterior = 0.
-        for _x, _mu, _lmbda, _df in zip(x, mu, lmbda_diag, dfs):
-            log_posterior += mvt_logpdf(_x.reshape(-1, 1),
-                                        _mu.reshape(-1, 1),
-                                        _lmbda.reshape(-1, 1, 1),
-                                        _df)
-        return log_posterior
 
 
 class StackedGaussiansWithNormalGammas(GaussianWithNormalGamma, ABC):
@@ -478,6 +452,29 @@ class StackedGaussiansWithNormalGammas(GaussianWithNormalGamma, ABC):
                + np.einsum('kd,knd->kn', nat_param[1], stats[1])\
                + np.einsum('kd,knd->kn', nat_param[2], stats[2])\
                + np.einsum('kd,knd->kn', nat_param[3], stats[3])
+
+    def posterior_predictive_gaussian(self):
+        mus, kappas, alphas, betas = self.posterior.params
+        c = 1. + 1. / kappas
+        lmbda_diags = (alphas / betas) * 1. / c
+        return mus, lmbda_diags
+
+    def log_posterior_predictive_gaussian(self, x):
+        mus, lmbda_diags = self.posterior_predictive_gaussian()
+        lmbdas = np.eye(self.dim) * lmbda_diags[:, np.newaxis]
+        return mvn_logpdf(x, mus, lmbdas)
+
+    def posterior_predictive_studentt(self):
+        mus, kappas, alphas, betas = self.posterior.params
+        dfs = 2. * alphas
+        c = 1. + 1. / kappas
+        lmbda_diags = (alphas / betas) * 1. / c
+        return mus, lmbda_diags, dfs
+
+    def log_posterior_predictive_studentt(self, x):
+        mus, lmbda_diags, dfs = self.posterior_predictive_studentt()
+        lmbdas = np.eye(self.dim) * lmbda_diags[:, np.newaxis]
+        return mvt_logpdf(x, mus, lmbdas, dfs)
 
 
 class TiedGaussiansWithNormalGammas(StackedGaussiansWithNormalGammas, ABC):
@@ -762,7 +759,8 @@ class LinearGaussianWithMatrixNormalWishart:
     Uses a conjugate Matrix-Normal Wishart prior.
     """
 
-    def __init__(self, prior, likelihood=None, affine=True):
+    def __init__(self, column_dim, row_dim, prior,
+                 likelihood=None, affine=True):
         # Matrix-Normal-Wishart prior
         self.prior = prior
 
@@ -774,40 +772,42 @@ class LinearGaussianWithMatrixNormalWishart:
             self.likelihood = likelihood
         else:
             A, lmbda = self.prior.rvs()
-            self.likelihood = LinearGaussianWithPrecision(A=A, lmbda=lmbda,
+            self.likelihood = LinearGaussianWithPrecision(column_dim, row_dim,
+                                                          A=A, lmbda=lmbda,
                                                           affine=affine)
 
-    def empirical_bayes(self, y, x):
+    def empirical_bayes(self, x, y):
         raise NotImplementedError
 
     # Max a posteriori
-    def max_aposteriori(self, y, x, weights=None):
-        stats = self.likelihood.statistics(y, x) if weights is None\
-            else self.likelihood.weighted_statistics(y, x, weights)
+    def max_aposteriori(self, x, y, weights=None):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.mode()
 
     # Gibbs sampling
-    def resample(self, y=[], x=[]):
-        stats = self.likelihood.statistics(y, x)
+    def resample(self, x, y, z):
+        stats = self.likelihood.statistics(x, y) if z is None\
+            else self.likelihood.weighted_statistics(x, y, z)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.rvs()
 
     # Mean field
-    def meanfield_update(self, y, x, weights=None):
-        stats = self.likelihood.statistics(y, x) if weights is None\
-            else self.likelihood.weighted_statistics(y, x, weights)
+    def meanfield_update(self, x, y, weights=None):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
         self.posterior.nat_param = self.prior.nat_param + stats
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, y, x, weights, prob, stepsize):
-        stats = self.likelihood.statistics(y, x) if weights is None\
-            else self.likelihood.weighted_statistics(y, x, weights)
+    def meanfield_sgdstep(self, x, y, weights, scale, stepsize):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
         self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
-                                   + stepsize * (self.prior.nat_param + 1. / prob * stats)
+                                   + stepsize * (self.prior.nat_param + 1. / scale * stats)
 
         self.likelihood.params = self.posterior.rvs()
 
@@ -816,46 +816,241 @@ class LinearGaussianWithMatrixNormalWishart:
         qp_cross_entropy = self.posterior.cross_entropy(self.prior)
         return q_entropy - qp_cross_entropy
 
-    def posterior_predictive_gaussian(self, x, aleatoric_only=False):
-        x = np.reshape(x, (-1, self.likelihood.dcol))
+    # expected log_likelihood under posterior
+    def expected_log_likelihood(self, x, y):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.posterior.expected_statistics()
+
+        # Data statistics under a linear Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        stats = self.likelihood.statistics(x, y, fold=False)
+        log_base = self.likelihood.log_base()
+
+        return log_base\
+               + np.einsum('dl,ndl->n', nat_param[0], stats[0])\
+               + np.einsum('dl,ndl->n', nat_param[1], stats[1])\
+               + np.einsum('dl,ndl->n', nat_param[2], stats[2])\
+               + nat_param[3] * stats[3]
+
+
+class StackedLinearGaussiansWithMatrixNormalWisharts(LinearGaussianWithMatrixNormalWishart, ABC):
+
+    def __init__(self, size, column_dim, row_dim,
+                 prior, likelihood=None, affine=True):
+
+        self.size = size
+
+        # Linear Gaussian likelihood
+        if likelihood is None:
+            As, lmbdas = prior.rvs()
+            likelihood = StackedLinearGaussiansWithPrecision(size, column_dim, row_dim,
+                                                             As=As, lmbdas=lmbdas,
+                                                             affine=affine)
+
+        super(StackedLinearGaussiansWithMatrixNormalWisharts, self).__init__(column_dim, row_dim,
+                                                                             prior, likelihood)
+
+    # expected log_likelihood under posterior
+    def expected_log_likelihood(self, x, y):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.posterior.expected_statistics()
+
+        # Data statistics under a linear Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        stats = self.likelihood.statistics(x, y, fold=False)
+        log_base = self.likelihood.log_base()
+
+        return np.expand_dims(log_base, axis=1)\
+               + np.einsum('kdl,kndl->kn', nat_param[0], stats[0])\
+               + np.einsum('kdl,kndl->kn', nat_param[1], stats[1])\
+               + np.einsum('kdl,kndl->kn', nat_param[2], stats[2])\
+               + np.einsum('k,kn->kn', nat_param[3], stats[3])
+
+    def posterior_predictive_gaussian(self, x):
+        x = np.reshape(x, (-1, self.likelihood.input_dim))
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
 
-        M, K, psi, nu = self.posterior.params
+        Ms, Ks, psis, nus = self.posterior.params
 
-        df = nu - self.likelihood.drow + 1
-        mus = np.einsum('kh,...h->...k', M, x)
+        dfs = nus - self.likelihood.row_dim + 1
+        mus = np.einsum('kdl,nl->knd', Ms, x)
 
-        if aleatoric_only:
-            lmbdas = np.tile(psi * df, (len(x), 1, 1))
-        else:
-            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
+        cs = 1. + np.einsum('nd,kdl,nl->kn', x, np.linalg.inv(Ks), x)
+        lmbdas = np.einsum('kdl,k,kn->kndl', psis, dfs, 1. / cs)
         return mus, lmbdas
 
-    def log_posterior_predictive_gaussian(self, y, x):
+    def log_posterior_predictive_gaussian(self, x, y):
         mus, lmbdas = self.posterior_predictive_gaussian(x)
         return mvn_logpdf(y, mus, lmbdas)
 
-    def posterior_predictive_studentt(self, x, aleatoric_only=False):
-        x = np.reshape(x, (-1, self.likelihood.dcol))
+    def posterior_predictive_studentt(self, x):
+        x = np.reshape(x, (-1, self.likelihood.input_dim))
 
         if self.likelihood.affine:
             x = np.hstack((x, np.ones((len(x), 1))))
 
-        M, K, psi, nu = self.posterior.params
+        Ms, Ks, psis, nus = self.posterior.params
 
-        df = nu - self.likelihood.drow + 1
-        mus = np.einsum('kh,...h->...k', M, x)
+        dfs = nus - self.likelihood.row_dim + 1
+        mus = np.einsum('kdl,nl->knd', Ms, x)
 
-        if aleatoric_only:
-            lmbdas = np.tile(psi * df, (len(x), 1, 1))
+        cs = 1. + np.einsum('nd,kdl,nl->kn', x, np.linalg.inv(Ks), x)
+        lmbdas = np.einsum('kdl,k,kn->kndl', psis, dfs, 1. / cs)
+        return mus, lmbdas, dfs
+
+    def log_posterior_predictive_studentt(self, x, y):
+        mus, lmbdas, dfs = self.posterior_predictive_studentt(x)
+        return mvt_logpdf(y, mus=mus, lmbdas=lmbdas, dfs=dfs)
+
+
+class TiedLinearGaussiansWithMatrixNormalWisharts(StackedLinearGaussiansWithMatrixNormalWisharts, ABC):
+
+    def __init__(self, size, column_dim, row_dim,
+                 prior, likelihood=None, affine=True):
+
+        self.size = size
+
+        # tied linear Gaussian likelihood
+        if likelihood is None:
+            As, lmbdas = prior.rvs()
+            likelihood = TiedLinearGaussiansWithPrecision(size, column_dim, row_dim,
+                                                          As=As, lmbdas=lmbdas,
+                                                          affine=affine)
+
+        super(TiedLinearGaussiansWithMatrixNormalWisharts, self).__init__(size, column_dim, row_dim,
+                                                                          prior, likelihood)
+
+
+class LinearGaussianWithMatrixNormalGamma:
+
+    def __init__(self, column_dim, row_dim, prior,
+                 likelihood=None, affine=True):
+
+        # Matrix-Normal-Gamma prior
+        self.prior = prior
+
+        # Matrix-Normal-Gamma posterior
+        self.posterior = copy.deepcopy(prior)
+
+        # Diagonal Linear Gaussian likelihood
+        if likelihood is not None:
+            self.likelihood = likelihood
         else:
-            c = 1. + np.einsum('...k,...kh,...h->...', x, np.linalg.inv(K), x)
-            lmbdas = np.einsum('kh,...->...kh', psi, df / c)
-        return mus, lmbdas, df
+            A, lmbda_diag = self.prior.rvs()
+            self.likelihood = LinearGaussianWithDiagonalPrecision(column_dim, row_dim,
+                                                                  A=A, lmbda_diag=lmbda_diag,
+                                                                  affine=affine)
 
-    def log_posterior_predictive_studentt(self, y, x):
-        mus, lmbdas, df = self.posterior_predictive_studentt(x)
-        return mvt_logpdf(y, mu=mus, lmbda=lmbdas, df=df)
+    def empirical_bayes(self, x, y):
+        raise NotImplementedError
+
+    # Max a posteriori
+    def max_aposteriori(self, x, y, weights=None):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.mode()
+
+    # Gibbs sampling
+    def resample(self, x, y, z):
+        stats = self.likelihood.statistics(x, y) if z is None\
+            else self.likelihood.weighted_statistics(x, y, z)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+
+    # Mean field
+    def meanfield_update(self, x, y, weights=None):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
+        self.posterior.nat_param = self.prior.nat_param + stats
+
+        self.likelihood.params = self.posterior.rvs()
+
+    def meanfield_sgdstep(self, x, y, weights, scale, stepsize):
+        stats = self.likelihood.statistics(x, y) if weights is None\
+            else self.likelihood.weighted_statistics(x, y, weights)
+        self.posterior.nat_param = (1. - stepsize) * self.posterior.nat_param\
+                                   + stepsize * (self.prior.nat_param + 1. / scale * stats)
+
+        self.likelihood.params = self.posterior.rvs()
+
+    def variational_lowerbound(self):
+        q_entropy = self.posterior.entropy()
+        qp_cross_entropy = self.posterior.cross_entropy(self.prior)
+        return q_entropy - qp_cross_entropy
+
+    # expected log_likelihood under posterior
+    def expected_log_likelihood(self, x, y):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.posterior.expected_statistics()
+
+        # Data statistics under a diagonal linear Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        stats = self.likelihood.statistics(x, y, fold=False)
+        log_base = self.likelihood.log_base()
+
+        return log_base\
+               + np.einsum('dl,ndl->n', nat_param[0], stats[0])\
+               + np.einsum('dl,ndl->n', nat_param[1], stats[1])\
+               + np.einsum('d,nd->n', nat_param[2], stats[2])\
+               + np.einsum('d,nd->n', nat_param[3], stats[3])
+
+
+class StackedLinearGaussiansWithMatrixNormalGammas(LinearGaussianWithMatrixNormalGamma, ABC):
+
+    def __init__(self, size, column_dim, row_dim,
+                 prior, likelihood=None, affine=True):
+
+        self.size = size
+
+        # Diagonal Linear Gaussian likelihood
+        if likelihood is None:
+            As, lmbdas_diags = prior.rvs()
+            likelihood = StackedLinearGaussiansWithDiagonalPrecision(size, column_dim, row_dim,
+                                                                     As=As, lmbdas_diags=lmbdas_diags,
+                                                                     affine=affine)
+
+        super(StackedLinearGaussiansWithMatrixNormalGammas, self).__init__(column_dim, row_dim,
+                                                                           prior, likelihood)
+
+    # expected log_likelihood under posterior
+    def expected_log_likelihood(self, x, y):
+        # Natural parameter of marginal log-distirbution
+        # are the expected statsitics of the posterior
+        nat_param = self.posterior.expected_statistics()
+
+        # Data statistics under a diagonal linear Gaussian likelihood
+        # log-parition is subsumed into nat*stats
+        stats = self.likelihood.statistics(x, y, fold=False)
+        log_base = self.likelihood.log_base()
+
+        return np.expand_dims(log_base, axis=1)\
+               + np.einsum('kdl,kndl->kn', nat_param[0], stats[0])\
+               + np.einsum('kdl,kndl->kn', nat_param[1], stats[1])\
+               + np.einsum('kd,knd->kn', nat_param[2], stats[2])\
+               + np.einsum('kd,knd->kn', nat_param[3], stats[3])
+
+
+class TiedLinearGaussiansWithMatrixNormalGammas(StackedLinearGaussiansWithMatrixNormalGammas, ABC):
+
+    def __init__(self, size, column_dim, row_dim,
+                 prior, likelihood=None, affine=True):
+
+        self.size = size
+
+        # tied linear Gaussian likelihood
+        if likelihood is None:
+            As, lmbdas_diags = prior.rvs()
+            likelihood = TiedLinearGaussiansWithDiagonalPrecision(size, column_dim, row_dim,
+                                                                  As=As, lmbdas_diags=lmbdas_diags,
+                                                                  affine=affine)
+
+        super(TiedLinearGaussiansWithMatrixNormalGammas, self).__init__(size, column_dim, row_dim,
+                                                                        prior, likelihood)

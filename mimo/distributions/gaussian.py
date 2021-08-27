@@ -14,6 +14,7 @@ from mimo.utils.matrix import symmetrize
 
 
 class _GaussianBase:
+
     def __init__(self, dim, mu=None):
         self.dim = dim
 
@@ -352,20 +353,6 @@ class GaussianWithPrecision(_GaussianBase):
         return 0.5 * np.einsum('d,dl,l->', self.mu, self.lmbda, self.mu)\
                - np.sum(np.log(np.diag(self.lmbda_chol)))
 
-    def log_likelihood(self, x):
-        if isinstance(x, np.ndarray):
-            bads = np.isnan(np.atleast_2d(x)).any(axis=1)
-            x = np.nan_to_num(x, copy=False).reshape((-1, self.dim))
-
-            log_lik = np.einsum('d,dl,nl->n', self.mu, self.lmbda, x, optimize=True)\
-                      - 0.5 * np.einsum('nd,dl,nl->n', x, self.lmbda, x, optimize=True)
-
-            log_lik[bads] = 0.
-            log_lik += - self.log_partition() + self.log_base()
-            return log_lik
-        else:
-            return list(map(self.log_likelihood, x))
-
     def expected_statistics(self):
         E_x = self.mu
         E_xxT = np.outer(self.mu, self.mu) + self.sigma
@@ -616,8 +603,8 @@ class GaussianWithDiagonalPrecision(_GaussianBase):
     @staticmethod
     def nat_to_std(natparam):
         mu = - 0.5 * (1. / natparam[1]) * natparam[0]
-        lmbdas = - 2. * natparam[1]
-        return mu, lmbdas
+        lmbda_diag = - 2. * natparam[1]
+        return mu, lmbda_diag
 
     @property
     def lmbda_diag(self):
@@ -836,7 +823,8 @@ class StackedGaussiansWithDiagonalPrecision:
 
             xk = np.einsum('kn,nd->kd', weights, data)
             xxk = np.einsum('nd,kn,nd->kd', data, weights, data)
-            ndk = np.broadcast_to(np.sum(weights, axis=1)[:, None], (self.size, self.dim))
+            ndk = np.broadcast_to(np.sum(weights, axis=1, keepdims=True),
+                                  (self.size, self.dim))
 
             return Stats([xk, ndk, ndk, xxk])
         else:

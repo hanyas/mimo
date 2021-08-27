@@ -21,28 +21,30 @@ def sample_discrete_from_log(p_log, return_lognorms=False, axis=0, dtype=np.int3
         return samples
 
 
-def multivariate_gaussian_loglik(xs, mu, lmbda, logdet_lmbda=None):
+def multivariate_gaussian_loglik(xs, mus, lmbdas, logdet_lmbdas=None):
     # Accepts vectorized parameters
-    d = mu.shape[-1]
+    d = mus.shape[-1]
 
-    xc = np.nan_to_num(xs, copy=False) - mu
-    log_exp = - 0.5 * np.einsum('...k,...kh,...h->...', xc, lmbda, xc, optimize=True)
-    log_norm = - 0.5 * d * np.log(2. * np.pi)
+    xc = np.nan_to_num(xs, copy=False)[:, None, :] - mus[None, :, :]
+    log_exps = - 0.5 * np.einsum('nkd,kdl,nkl->kn', xc, lmbdas, xc, optimize=True)
+    log_norms = - 0.5 * d * np.log(2. * np.pi)
 
-    if logdet_lmbda is not None:
-        log_norm += 0.5 * logdet_lmbda
+    if logdet_lmbdas is not None:
+        log_norms += 0.5 * logdet_lmbdas
     else:
-        log_norm += 0.5 * np.linalg.slogdet(lmbda)[1]
+        log_norms += 0.5 * np.linalg.slogdet(lmbdas)[1]
 
-    return log_norm + log_exp
+    return np.expand_dims(log_norms, axis=1) + log_exps
 
 
-def multivariate_studentt_loglik(xs, mu, lmbda, df):
+def multivariate_studentt_loglik(xs, mus, lmbdas, dfs):
     # Accepts vectorized parameters
-    d = mu.shape[-1]
+    d = mus.shape[-1]
 
-    xc = np.nan_to_num(xs, copy=False) - mu
-    delta = np.einsum('...k,...kh,...h->...', xc, lmbda, xc)
-    return sc.special.gammaln((df + d) / 2.) - sc.special.gammaln(df / 2.)\
-           + 0.5 * np.linalg.slogdet(lmbda)[1] - (d / 2.) * np.log(df * np.pi)\
-           - 0.5 * (df + d) * np.log1p(delta / df)
+    xc = np.nan_to_num(xs, copy=False)[:, None, :] - mus[None, :, :]
+    deltas = np.einsum('nkd,kdl,nkl->kn', xc, lmbdas, xc, optimize=True)
+
+    aux = sc.special.gammaln((dfs + d) / 2.) - sc.special.gammaln(dfs / 2.)\
+          + 0.5 * np.linalg.slogdet(lmbdas)[1] - (d / 2.) * np.log(dfs * np.pi)\
+          - 0.5 * (dfs + d)
+    return np.expand_dims(aux, axis=1) + np.log1p(deltas / dfs)

@@ -251,7 +251,7 @@ class BayesianMixtureOfGaussians:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
-    def meanfield_coordinate_descent(self, obs=None, randomize=True,
+    def meanfield_coordinate_descent(self, obs, randomize=True,
                                      maxiter=250, tol=1e-8,
                                      progressbar=True, processid=0):
 
@@ -290,7 +290,7 @@ class BayesianMixtureOfGaussians:
         self.components.meanfield_update(obs, resp)
 
     # SVI
-    def meanfield_stochastic_descent(self, obs=None, maxiter=500,
+    def meanfield_stochastic_descent(self, obs, maxiter=500,
                                      stepsize=1e-2, batchsize=128,
                                      progressbar=True, procces_id=0):
 
@@ -312,15 +312,15 @@ class BayesianMixtureOfGaussians:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp, prob, stepsize):
-        self.meanfield_sgdstep_components(obs, resp, prob, stepsize)
-        self.meanfield_sgdstep_gating(resp, prob, stepsize)
+    def meanfield_sgdstep_parameters(self, obs, resp, scale, stepsize):
+        self.meanfield_sgdstep_components(obs, resp, scale, stepsize)
+        self.meanfield_sgdstep_gating(resp, scale, stepsize)
 
-    def meanfield_sgdstep_components(self, obs, resp, prob, stepsize):
-        self.components.meanfield_sgdstep(obs, resp, prob, stepsize)
+    def meanfield_sgdstep_components(self, obs, resp, scale, stepsize):
+        self.components.meanfield_sgdstep(obs, resp, scale, stepsize)
 
-    def meanfield_sgdstep_gating(self, resp, prob, stepsize):
-        self.gating.meanfield_sgdstep(None, resp, prob, stepsize)
+    def meanfield_sgdstep_gating(self, resp, scale, stepsize):
+        self.gating.meanfield_sgdstep(None, resp, scale, stepsize)
 
     def variational_lowerbound_obs(self, obs, resp):
         return np.sum(resp * self.components.expected_log_likelihood(obs))
@@ -330,8 +330,8 @@ class BayesianMixtureOfGaussians:
         if isinstance(self.gating, CategoricalWithDirichlet):
             vlb += np.sum(resp * np.expand_dims(self.gating.expected_log_likelihood(), axis=1))
         elif isinstance(self.gating, CategoricalWithStickBreaking):
-            acc_resp = np.hstack((np.cumsum(resp[::-1, :], axis=1)[-2::-1, :],
-                                   np.zeros((1, len(resp)))))
+            acc_resp = np.vstack((np.cumsum(resp[::-1, :], axis=0)[-2::-1, :],
+                                  np.zeros((1, resp.shape[-1]))))
             E_log_stick, E_log_rest = self.gating.expected_log_likelihood()
             vlb += np.sum(resp * np.expand_dims(E_log_stick, axis=1)
                           + acc_resp * np.expand_dims(E_log_rest, axis=1))

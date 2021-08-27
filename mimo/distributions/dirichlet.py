@@ -143,7 +143,7 @@ class TruncatedStickBreaking:
         betas = self.gammas[:-1] / (self.gammas[:-1] + self.deltas[:-1])
         betas = np.hstack((betas, 1.))
 
-        probs = np.zeros((self.K, ))
+        probs = np.zeros((self.dim, ))
         probs[0] = betas[0]
         probs[1:] = betas[1:] * np.cumprod(1.0 - betas[:-1])
 
