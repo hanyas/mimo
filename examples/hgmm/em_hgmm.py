@@ -72,7 +72,7 @@ dim = 2
 
 gating = Categorical(dim=upper_size)
 
-components = []
+clusters = []
 for _ in range(upper_size):
     _prob = npr.rand(lower_size)
     _prob /= _prob.sum()
@@ -83,11 +83,11 @@ for _ in range(upper_size):
     _local_components = TiedGaussiansWithPrecision(size=lower_size, dim=dim,
                                                    mus=_mus, lmbdas=_lmbdas)
 
-    _local_model = MixtureOfGaussians(gating=_local_gating,
-                                      components=_local_components)
-    components.append(_local_model)
+    _mixture = MixtureOfGaussians(gating=_local_gating,
+                                  components=_local_components)
+    clusters.append(_mixture)
 
-model = MixtureOfMixtureOfGaussians(gating=gating, components=components)
+model = MixtureOfMixtureOfGaussians(gating=gating, clusters=clusters)
 
 ll = model.max_likelihood(obs, maxiter=2500, maxsubiter=5)
 print("ll monoton?", np.all(np.diff(ll) >= -1e-8))

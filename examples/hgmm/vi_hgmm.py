@@ -132,7 +132,7 @@ gating = CategoricalWithDirichlet(dim=upper_size, prior=gating_prior)
 #                                       deltas=8. * np.ones((upper_size,)))
 # gating = CategoricalWithStickBreaking(dim=upper_size, prior=gating_prior)
 
-components = []
+clusters = []
 for _ in range(upper_size):
     # lower gating
     _local_gating_prior = Dirichlet(dim=lower_size, alphas=np.ones((lower_size,)))
@@ -158,14 +158,14 @@ for _ in range(upper_size):
                                                                     hyper_prior=_local_components_hyper_prior,
                                                                     prior=_local_components_prior)
 
-    _local_mixture = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=_local_gating,
-                                                                     components=_local_components)
-    components.append(_local_mixture)
+    _mixture = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=_local_gating,
+                                                               components=_local_components)
+    clusters.append(_mixture)
 
 
 from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
 
-model = BayesianMixtureOfMixtureOfGaussians(gating=gating, components=components)
+model = BayesianMixtureOfMixtureOfGaussians(gating=gating, clusters=clusters)
 
 # model.resample(obs, maxiter=10, maxsubiter=500, maxsubsubiter=1)
 
