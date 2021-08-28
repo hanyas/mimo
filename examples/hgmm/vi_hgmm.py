@@ -114,7 +114,9 @@ from mimo.distributions import TiedGaussiansWithKnownScaledPrecision
 from mimo.distributions import TiedGaussiansWithHierarchicalNormalWisharts
 
 from mimo.distributions import Dirichlet
+from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import CategoricalWithDirichlet
+from mimo.distributions import CategoricalWithStickBreaking
 
 from mimo.mixtures import BayesianMixtureOfGaussiansWithHierarchicalPrior
 
@@ -126,11 +128,19 @@ dim = 2
 gating_prior = Dirichlet(dim=upper_size, alphas=0.1 * np.ones((upper_size, )))
 gating = CategoricalWithDirichlet(dim=upper_size, prior=gating_prior)
 
+# gating_prior = TruncatedStickBreaking(dim=upper_size, gammas=np.ones((upper_size, )),
+#                                       deltas=8. * np.ones((upper_size,)))
+# gating = CategoricalWithStickBreaking(dim=upper_size, prior=gating_prior)
+
 components = []
 for _ in range(upper_size):
     # lower gating
     _local_gating_prior = Dirichlet(dim=lower_size, alphas=np.ones((lower_size,)))
     _local_gating = CategoricalWithDirichlet(dim=lower_size, prior=_local_gating_prior)
+
+    # _local_gating_prior = TruncatedStickBreaking(dim=lower_size, gammas=np.ones((lower_size,)),
+    #                                              deltas=4. * np.ones((lower_size,)))
+    # _local_gating = CategoricalWithStickBreaking(dim=lower_size, prior=_local_gating_prior)
 
     # lower components
     _mu, _kappa = np.zeros((dim,)), 1e-2
@@ -148,9 +158,9 @@ for _ in range(upper_size):
                                                                     hyper_prior=_local_components_hyper_prior,
                                                                     prior=_local_components_prior)
 
-    _local_model = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=_local_gating,
-                                                                   components=_local_components)
-    components.append(_local_model)
+    _local_mixture = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=_local_gating,
+                                                                     components=_local_components)
+    components.append(_local_mixture)
 
 
 from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
@@ -158,7 +168,12 @@ from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
 model = BayesianMixtureOfMixtureOfGaussians(gating=gating, components=components)
 
 # model.resample(obs, maxiter=10, maxsubiter=500, maxsubsubiter=1)
-model.meanfield_coordinate_descent(obs, maxiter=500, randomize=True,
-                                   maxsubiter=250, maxsubsubiter=1)
+
+# model.meanfield_coordinate_descent(obs, maxiter=500, randomize=True,
+#                                    maxsubiter=250, maxsubsubiter=1)
+
+model.meanfield_stochastic_descent(obs, maxiter=250, randomize=True,
+                                   maxsubiter=50, maxsubsubiter=5,
+                                   stepsize=5e-1, batchsize=128)
 
 model.plot(obs)

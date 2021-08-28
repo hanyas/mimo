@@ -173,7 +173,7 @@ if __name__ == "__main__":
         ilr.models.prior = copy.deepcopy(ilr.models.posterior)
 
         ilr.resample(train_input, train_output,
-                     labels='random',
+                     init_labels='random',
                      maxiter=args.gibbs_iters)
 
         for _ in range(args.super_iters):

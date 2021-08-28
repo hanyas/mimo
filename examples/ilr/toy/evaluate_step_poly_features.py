@@ -37,13 +37,13 @@ if __name__ == "__main__":
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=5, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
+    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=False)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=500, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-2, type=float)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=128, type=int)
     parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=0., type=float)
@@ -127,16 +127,17 @@ if __name__ == "__main__":
 
     # ilr.init_transform(trans_input, output)
 
-    for _ in range(args.super_iters):
-        # Gibbs sampling
-        ilr.resample(trans_input, output,
-                     labels='random',
-                     maxiter=args.gibbs_iters,
-                     progressbar=args.verbose)
+    # Gibbs sampling
+    ilr.resample(trans_input, output,
+                 init_labels='random',
+                 maxiter=args.gibbs_iters,
+                 progressbar=args.verbose)
 
+    for _ in range(args.super_iters):
         if args.stochastic:
             # Stochastic meanfield VI
             ilr.meanfield_stochastic_descent(trans_input, output,
+                                             randomize=False,
                                              maxiter=args.svi_iters,
                                              stepsize=args.svi_stepsize,
                                              batchsize=args.svi_batchsize)

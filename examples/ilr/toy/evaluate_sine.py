@@ -37,14 +37,14 @@ if __name__ == "__main__":
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=10, type=int)
-    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=False)
+    parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
-    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=True)
+    parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=False)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
-    parser.add_argument('--svi_iters', help='SVI iterations', default=100, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=1e-1, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=128, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
+    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -124,10 +124,10 @@ if __name__ == "__main__":
 
     ilr = BayesianMixtureOfLinearGaussians(gating=gating, basis=basis, models=models)
 
-    ilr.init_transform(train_input, train_output)
+    ilr.init_transform(train_input, train_output)        # Gibbs sampling
 
-    # Gibbs sampling
     ilr.resample(train_input, train_output,
+                 init_labels='random',
                  maxiter=args.gibbs_iters,
                  progressbar=args.verbose)
 
@@ -135,6 +135,7 @@ if __name__ == "__main__":
         if args.stochastic:
             # Stochastic meanfield VI
             ilr.meanfield_stochastic_descent(train_input, train_output,
+                                             randomize=False,
                                              maxiter=args.svi_iters,
                                              stepsize=args.svi_stepsize,
                                              batchsize=args.svi_batchsize)
