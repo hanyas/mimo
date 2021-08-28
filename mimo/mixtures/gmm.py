@@ -55,7 +55,7 @@ class MixtureOfGaussians:
         for idx, (c, count) in enumerate(zip(self.components.dists, counts)):
             obs[labels == idx, ...] = c.rvs(count)
 
-        perm = np.random.permutation(size)
+        perm = npr.permutation(size)
         obs, labels = obs[perm], labels[perm]
         return obs, labels
 
@@ -78,7 +78,7 @@ class MixtureOfGaussians:
                        maxiter=250, progressbar=True, processid=0):
 
         if randomize:
-            resp = np.random.rand(self.size, len(obs))
+            resp = npr.rand(self.size, len(obs))
             resp /= np.sum(resp, axis=0)
         else:
             resp = self.responsibilities(obs)
@@ -204,16 +204,23 @@ class BayesianMixtureOfGaussians:
         return log_prob
 
     # Gibbs sampling
-    def resample(self, obs, maxiter=1,
-                 progressbar=True, processid=0):
+    def resample(self, obs, init_labels='prior',
+                 maxiter=1, progressbar=True, processid=0):
+
+        if init_labels == 'random':
+            labels = npr.choice(self.size, size=(len(obs)))
+        elif init_labels == 'prior':
+            labels = self.gating.likelihood.rvs(len(obs))
+        elif init_labels == 'posterior':
+            _, labels = self.resample_labels(obs)
 
         with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
                   position=processid, disable=not progressbar) as pbar:
 
             for _ in range(maxiter):
-                _, labels = self.resample_labels(obs)
-                self.resample_gating(labels)
                 self.resample_components(obs, labels)
+                self.resample_gating(labels)
+                _, labels = self.resample_labels(obs)
 
                 pbar.update(1)
 
@@ -256,7 +263,7 @@ class BayesianMixtureOfGaussians:
                                      progressbar=True, processid=0):
 
         if randomize:
-            resp = np.random.rand(self.size, len(obs))
+            resp = npr.rand(self.size, len(obs))
             resp /= np.sum(resp, axis=0)
         else:
             resp = self.expected_responsibilities(obs)
@@ -290,18 +297,24 @@ class BayesianMixtureOfGaussians:
         self.components.meanfield_update(obs, resp)
 
     # SVI
-    def meanfield_stochastic_descent(self, obs, maxiter=500,
-                                     stepsize=1e-2, batchsize=128,
-                                     progressbar=True, procces_id=0):
+    def meanfield_stochastic_descent(self, obs, randomize=True,
+                                     maxiter=500, stepsize=1e-2,
+                                     batchsize=128, progressbar=True,
+                                     procces_id=0):
 
         vlb = []
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
                   position=procces_id, disable=not progressbar) as pbar:
 
             scale = batchsize / float(len(obs))
-            for _ in range(maxiter):
+            for i in range(maxiter):
                 for batch in batches(batchsize, len(obs)):
-                    resp = self.expected_responsibilities(obs[batch, :])
+                    if i == 0 and randomize is True:
+                        resp = npr.rand(self.size, len(obs[batch, :]))
+                        resp /= np.sum(resp, axis=0)
+                    else:
+                        resp = self.expected_responsibilities(obs[batch, :])
+
                     self.meanfield_sgdstep_parameters(obs[batch, :], resp,
                                                       scale, stepsize)
 

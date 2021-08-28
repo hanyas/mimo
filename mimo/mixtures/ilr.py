@@ -65,7 +65,7 @@ class MixtureOfLinearGaussians:
             x[z == idx, ...] = b.rvs(count)
             y[z == idx, ...] = m.rvs(x[z == idx, ...])
 
-        perm = np.random.permutation(size)
+        perm = npr.permutation(size)
         x, y, z = x[perm], y[perm], z[perm]
 
         return x, y, z
@@ -144,7 +144,7 @@ class BayesianMixtureOfLinearGaussians:
         raise NotImplementedError
 
     # Gibbs sampling
-    def resample(self, x, y, labels='prior',
+    def resample(self, x, y, init_labels='prior',
                  maxiter=1, progressbar=True, processid=0):
 
         if self.scale:
@@ -153,11 +153,11 @@ class BayesianMixtureOfLinearGaussians:
         else:
             xx, yy = x, y
 
-        if labels == 'random':
+        if init_labels == 'random':
             z = npr.choice(self.size, size=(len(xx)))
-        elif labels == 'posterior':
+        elif init_labels == 'posterior':
             _, z = self.resample_labels(xx, yy)
-        elif labels == 'prior':
+        elif init_labels == 'prior':
             z = self.gating.likelihood.rvs(len(xx))
 
         with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
@@ -217,7 +217,7 @@ class BayesianMixtureOfLinearGaussians:
             xx, yy = x, y
 
         if randomize:
-            resp = np.random.rand(self.size, len(xx))
+            resp = npr.rand(self.size, len(xx))
             resp /= np.sum(resp, axis=0)
         else:
             resp = self.expected_responsibilities(xx, yy)
@@ -255,9 +255,10 @@ class BayesianMixtureOfLinearGaussians:
         self.models.meanfield_update(x, y, resp)
 
     # SVI
-    def meanfield_stochastic_descent(self, x, y, maxiter=500,
-                                     stepsize=1e-3, batchsize=128,
-                                     progressbar=True, procces_id=0):
+    def meanfield_stochastic_descent(self, x, y, randomize=True,
+                                     maxiter=500, stepsize=1e-3,
+                                     batchsize=128, progressbar=True,
+                                     procces_id=0):
 
         if self.scale:
             xx = self.input_transform.transform(x)
@@ -270,11 +271,16 @@ class BayesianMixtureOfLinearGaussians:
                   position=procces_id, disable=not progressbar) as pbar:
 
             scale = batchsize / float(len(xx))
-            for _ in range(maxiter):
+            for i in range(maxiter):
                 for batch in batches(batchsize, len(xx)):
-                    resp = self.expected_responsibilities(xx[batch, :], yy[batch, :])
-                    self.meanfield_sgdstep_parameters(xx[batch, :], yy[batch, :], resp,
-                                                      scale, stepsize)
+                    if i == 0 and randomize is True:
+                        resp = npr.rand(self.size, len(xx[batch, :]))
+                        resp /= np.sum(resp, axis=0)
+                    else:
+                        resp = self.expected_responsibilities(xx[batch, :], yy[batch, :])
+
+                    self.meanfield_sgdstep_parameters(xx[batch, :], yy[batch, :],
+                                                      resp, scale, stepsize)
 
                 resp = self.expected_responsibilities(xx, yy)
                 vlb.append(self.variational_lowerbound(xx, yy, resp))
