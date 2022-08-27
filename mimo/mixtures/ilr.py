@@ -20,9 +20,14 @@ eps = np.finfo(np.float64).tiny
 
 class MixtureOfLinearGaussians:
 
-    def __init__(self, gating, basis, models):
-        assert basis.size == gating.dim
-        assert models.size == gating.dim
+    def __init__(self, size,
+                 input_dim, output_dim,
+                 gating, basis, models):
+
+        self.size = size
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.gating = gating
         self.basis = basis  # input density
@@ -36,28 +41,16 @@ class MixtureOfLinearGaussians:
     def nb_params(self):
         raise NotImplementedError
 
-    @property
-    def size(self):
-        return self.gating.dim
-
-    @property
-    def input_dim(self):
-        return self.models.input_dim
-
-    @property
-    def output_dim(self):
-        return self.models.output_dim
-
     def used_labels(self, x, y):
         resp, _ = self.responsibilities(x, y)
         labels = np.argmax(resp, axis=0)
-        label_usages = np.bincount(labels, minlength=self.size)
+        label_usages = np.bincount(labels, minlength=self.mixture_size)
         used_labels = np.where(label_usages > 0)[0]
         return used_labels
 
     def rvs(self, size=1):
         z = self.gating.likelihood.rvs(size)
-        counts = np.bincount(z, minlength=self.size)
+        counts = np.bincount(z, minlength=self.mixture_size)
 
         x = np.empty((size, self.input_dim))
         y = np.empty((size, self.output_dim))
@@ -87,39 +80,33 @@ class MixtureOfLinearGaussians:
         return resp
 
     def max_likelihood(self, x, y, randomize=True,
-                       maxiter=250, progressbar=True, processid=0):
+                       maxiter=250, progress_bar=True, process_id=0):
         raise NotImplementedError
 
 
 class BayesianMixtureOfLinearGaussians:
 
-    def __init__(self, gating, basis, models, scale=False):
-        assert basis.size == gating.dim
-        assert models.size == gating.dim
+    def __init__(self, size,
+                 input_dim, output_dim,
+                 gating, basis, models, scale=False):
+
+        self.size = size
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
 
         self.gating = gating
         self.basis = basis  # input density
         self.models = models  # output density
 
-        self.likelihood = MixtureOfLinearGaussians(gating=self.gating.likelihood,
+        self.likelihood = MixtureOfLinearGaussians(size, input_dim, output_dim,
+                                                   gating=self.gating.likelihood,
                                                    basis=self.basis.likelihood,
                                                    models=self.models.likelihood)
 
         self.scale = scale
         self.input_transform = StandardScaler()
         self.output_transform = StandardScaler()
-
-    @property
-    def size(self):
-        return self.likelihood.size
-
-    @property
-    def input_dim(self):
-        return self.likelihood.input_dim
-
-    @property
-    def output_dim(self):
-        return self.likelihood.output_dim
 
     def used_labels(self, x, y):
         if self.scale:
@@ -140,12 +127,12 @@ class BayesianMixtureOfLinearGaussians:
         self.output_transform.fit(y)
 
     def max_aposteriori(self, x, y, randomize=True, maxiter=250,
-                        progressbar=True, processid=0):
+                        progress_bar=True, process_id=0):
         raise NotImplementedError
 
     # Gibbs sampling
     def resample(self, x, y, init_labels='prior',
-                 maxiter=1, progressbar=True, processid=0):
+                 maxiter=1, progress_bar=True, process_id=0):
 
         if self.scale:
             xx = self.input_transform.transform(x)
@@ -160,8 +147,8 @@ class BayesianMixtureOfLinearGaussians:
         elif init_labels == 'prior':
             z = self.gating.likelihood.rvs(len(xx))
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
                 self.resample_basis(xx, z)
@@ -208,7 +195,7 @@ class BayesianMixtureOfLinearGaussians:
 
     def meanfield_coordinate_descent(self, x, y, randomize=True,
                                      maxiter=250, tol=1e-8,
-                                     progressbar=True, processid=0):
+                                     progress_bar=True, process_id=0):
 
         if self.scale:
             xx = self.input_transform.transform(x)
@@ -223,8 +210,8 @@ class BayesianMixtureOfLinearGaussians:
             resp = self.expected_responsibilities(xx, yy)
 
         vlb = []
-        with tqdm(total=maxiter, desc=f'VI #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'VI #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for i in range(maxiter):
                 self.meanfield_update_parameters(xx, yy, resp)
@@ -257,7 +244,7 @@ class BayesianMixtureOfLinearGaussians:
     # SVI
     def meanfield_stochastic_descent(self, x, y, randomize=True,
                                      maxiter=500, stepsize=1e-3,
-                                     batchsize=128, progressbar=True,
+                                     batchsize=128, progress_bar=True,
                                      procces_id=0):
 
         if self.scale:
@@ -268,7 +255,7 @@ class BayesianMixtureOfLinearGaussians:
 
         vlb = []
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
-                  position=procces_id, disable=not progressbar) as pbar:
+                  position=procces_id, disable=not progress_bar) as pbar:
 
             scale = batchsize / float(len(xx))
             for i in range(maxiter):
@@ -360,9 +347,6 @@ class BayesianMixtureOfLinearGaussians:
         return weights
 
     def meanfield_predictive_moments(self, x, dist='gaussian'):
-        mus, covars = np.zeros((self.size, len(x), self.output_dim)),\
-                     np.zeros((self.size, len(x), self.output_dim, self.output_dim))
-
         if dist == 'gaussian':
             mus, lmbdas = self.models.posterior_predictive_gaussian(x)
             covars = np.linalg.inv(lmbdas)

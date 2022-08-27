@@ -75,7 +75,7 @@ class MixtureOfGaussians:
         return resp
 
     def max_likelihood(self, obs, randomize=True, weights=None,
-                       maxiter=250, progressbar=True, processid=0):
+                       maxiter=250, progress_bar=True, process_id=0):
 
         if randomize:
             resp = npr.rand(self.size, len(obs))
@@ -84,8 +84,8 @@ class MixtureOfGaussians:
             resp = self.responsibilities(obs)
 
         log_lik = []
-        with tqdm(total=maxiter, desc=f'EM #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'EM #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
                 resp = resp if weights is None else resp * weights
@@ -174,7 +174,7 @@ class BayesianMixtureOfGaussians:
 
     # Expectation-Maximization
     def max_aposteriori(self, obs, randomize=True, maxiter=250,
-                        progressbar=True, processid=0):
+                        progress_bar=True, process_id=0):
 
         if randomize:
             resp = npr.rand(self.size, len(obs))
@@ -183,8 +183,8 @@ class BayesianMixtureOfGaussians:
             resp = self.likelihood.responsibilities(obs)
 
         log_prob = []
-        with tqdm(total=maxiter, desc=f'MAP #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'MAP #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for i in range(maxiter):
                 # Maximization step
@@ -205,7 +205,7 @@ class BayesianMixtureOfGaussians:
 
     # Gibbs sampling
     def resample(self, obs, init_labels='prior',
-                 maxiter=1, progressbar=True, processid=0):
+                 maxiter=1, progress_bar=True, process_id=0):
 
         if init_labels == 'random':
             labels = npr.choice(self.size, size=(len(obs)))
@@ -214,8 +214,8 @@ class BayesianMixtureOfGaussians:
         elif init_labels == 'posterior':
             _, labels = self.resample_labels(obs)
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
                 self.resample_components(obs, labels)
@@ -260,7 +260,7 @@ class BayesianMixtureOfGaussians:
 
     def meanfield_coordinate_descent(self, obs, randomize=True,
                                      maxiter=250, tol=1e-8,
-                                     progressbar=True, processid=0):
+                                     progress_bar=True, process_id=0):
 
         if randomize:
             resp = npr.rand(self.size, len(obs))
@@ -269,8 +269,8 @@ class BayesianMixtureOfGaussians:
             resp = self.expected_responsibilities(obs)
 
         vlb = []
-        with tqdm(total=maxiter, desc=f'VI #{processid + 1}',
-                  position=processid, disable=not progressbar) as pbar:
+        with tqdm(total=maxiter, desc=f'VI #{process_id + 1}',
+                  position=process_id, disable=not progress_bar) as pbar:
 
             for i in range(maxiter):
                 self.meanfield_update_parameters(obs, resp)
@@ -299,12 +299,12 @@ class BayesianMixtureOfGaussians:
     # SVI
     def meanfield_stochastic_descent(self, obs, randomize=True,
                                      maxiter=500, stepsize=1e-2,
-                                     batchsize=128, progressbar=True,
+                                     batchsize=128, progress_bar=True,
                                      procces_id=0):
 
         vlb = []
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
-                  position=procces_id, disable=not progressbar) as pbar:
+                  position=procces_id, disable=not progress_bar) as pbar:
 
             scale = batchsize / float(len(obs))
             for i in range(maxiter):
