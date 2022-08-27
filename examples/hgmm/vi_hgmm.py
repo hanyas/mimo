@@ -110,7 +110,7 @@ obs = np.vstack(obs)
 # learn model
 from mimo.distributions import NormalWishart
 
-from mimo.distributions import TiedGaussiansWithKnownScaledPrecision
+from mimo.distributions import TiedGaussiansWithScaledPrecision
 from mimo.distributions import TiedGaussiansWithHierarchicalNormalWisharts
 
 from mimo.distributions import Dirichlet
@@ -121,51 +121,49 @@ from mimo.distributions import CategoricalWithStickBreaking
 from mimo.mixtures import BayesianMixtureOfGaussiansWithHierarchicalPrior
 
 
-upper_size = 8
-lower_size = 4
+cluster_size = 8
+mixture_size = 4
 dim = 2
 
-gating_prior = Dirichlet(dim=upper_size, alphas=0.1 * np.ones((upper_size, )))
-gating = CategoricalWithDirichlet(dim=upper_size, prior=gating_prior)
+gating_prior = Dirichlet(dim=cluster_size, alphas=0.1 * np.ones((cluster_size, )))
+gating = CategoricalWithDirichlet(dim=cluster_size, prior=gating_prior)
 
-# gating_prior = TruncatedStickBreaking(dim=upper_size, gammas=np.ones((upper_size, )),
-#                                       deltas=8. * np.ones((upper_size,)))
-# gating = CategoricalWithStickBreaking(dim=upper_size, prior=gating_prior)
+# gating_prior = TruncatedStickBreaking(dim=cluster_size, gammas=np.ones((cluster_size, )),
+#                                       deltas=4. * np.ones((cluster_size,)))
+# gating = CategoricalWithStickBreaking(dim=cluster_size, prior=gating_prior)
 
-clusters = []
-for _ in range(upper_size):
+components = []
+for _ in range(cluster_size):
     # lower gating
-    _local_gating_prior = Dirichlet(dim=lower_size, alphas=np.ones((lower_size,)))
-    _local_gating = CategoricalWithDirichlet(dim=lower_size, prior=_local_gating_prior)
+    _local_gating_prior = Dirichlet(dim=mixture_size, alphas=np.ones((mixture_size,)))
+    _local_gating = CategoricalWithDirichlet(dim=mixture_size, prior=_local_gating_prior)
 
-    # _local_gating_prior = TruncatedStickBreaking(dim=lower_size, gammas=np.ones((lower_size,)),
-    #                                              deltas=4. * np.ones((lower_size,)))
-    # _local_gating = CategoricalWithStickBreaking(dim=lower_size, prior=_local_gating_prior)
+    # _local_gating_prior = TruncatedStickBreaking(dim=mixture_size, gammas=np.ones((mixture_size,)),
+    #                                              deltas=2. * np.ones((mixture_size,)))
+    # _local_gating = CategoricalWithStickBreaking(dim=mixture_size, prior=_local_gating_prior)
 
     # lower components
-    _mu, _kappa = np.zeros((dim,)), 1e-2
-    _psi, _nu = np.eye(dim), dim + 1 + 1e-32
-
     _local_components_hyper_prior = NormalWishart(dim=dim,
-                                                  mu=_mu, kappa=_kappa,
-                                                  psi=_psi, nu=_nu)
+                                                  mu=np.zeros((dim,)), kappa=1e-2,
+                                                  psi=np.eye(dim), nu=dim + 1 + 1e-8)
 
-    _etas = np.ones((lower_size,))
-    _local_components_prior = TiedGaussiansWithKnownScaledPrecision(size=lower_size, dim=dim,
-                                                                    kappas=_etas)
+    _local_components_prior = TiedGaussiansWithScaledPrecision(size=mixture_size, dim=dim,
+                                                               kappas=np.ones((mixture_size,)))
 
-    _local_components = TiedGaussiansWithHierarchicalNormalWisharts(size=lower_size, dim=dim,
+    _local_components = TiedGaussiansWithHierarchicalNormalWisharts(size=mixture_size, dim=dim,
                                                                     hyper_prior=_local_components_hyper_prior,
                                                                     prior=_local_components_prior)
 
-    _mixture = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=_local_gating,
+    _mixture = BayesianMixtureOfGaussiansWithHierarchicalPrior(mixture_size, dim,
+                                                               gating=_local_gating,
                                                                components=_local_components)
-    clusters.append(_mixture)
+    components.append(_mixture)
 
 
 from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
 
-model = BayesianMixtureOfMixtureOfGaussians(gating=gating, clusters=clusters)
+model = BayesianMixtureOfMixtureOfGaussians(cluster_size, mixture_size, dim,
+                                            gating=gating, components=components)
 
 # model.resample(obs, maxiter=10, maxsubiter=500, maxsubsubiter=1)
 
@@ -177,3 +175,9 @@ model.meanfield_stochastic_descent(obs, maxiter=250, randomize=True,
                                    stepsize=5e-1, batchsize=128)
 
 model.plot(obs)
+
+# save tikz and pdf
+# import tikzplotlib
+#
+# tikzplotlib.save('hgmm' + '.tex')
+

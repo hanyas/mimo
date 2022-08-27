@@ -66,28 +66,30 @@ obs = np.vstack(obs)
 from mimo.mixtures.hgmm import MixtureOfMixtureOfGaussians
 from mimo.distributions import TiedGaussiansWithPrecision
 
-upper_size = 2
-lower_size = 2
+cluster_size = 2
+mixture_size = 2
 dim = 2
 
-gating = Categorical(dim=upper_size)
+gating = Categorical(dim=cluster_size)
 
-clusters = []
-for _ in range(upper_size):
-    _prob = npr.rand(lower_size)
+components = []
+for _ in range(cluster_size):
+    _prob = npr.rand(mixture_size)
     _prob /= _prob.sum()
-    _local_gating = Categorical(dim=lower_size, probs=_prob)
+    _local_gating = Categorical(dim=mixture_size, probs=_prob)
 
-    _mus = npr.randn(lower_size, dim)
-    _lmbdas = np.stack(lower_size * [5. * np.eye(dim)])
-    _local_components = TiedGaussiansWithPrecision(size=lower_size, dim=dim,
+    _mus = npr.randn(mixture_size, dim)
+    _lmbdas = np.stack(mixture_size * [5. * np.eye(dim)])
+    _local_components = TiedGaussiansWithPrecision(size=mixture_size, dim=dim,
                                                    mus=_mus, lmbdas=_lmbdas)
 
     _mixture = MixtureOfGaussians(gating=_local_gating,
                                   components=_local_components)
-    clusters.append(_mixture)
+    components.append(_mixture)
 
-model = MixtureOfMixtureOfGaussians(gating=gating, clusters=clusters)
+model = MixtureOfMixtureOfGaussians(cluster_size=cluster_size,
+                                    mixture_size=mixture_size, dim=dim,
+                                    gating=gating, components=components)
 
 ll = model.max_likelihood(obs, maxiter=2500, maxsubiter=5)
 print("ll monoton?", np.all(np.diff(ll) >= -1e-8))

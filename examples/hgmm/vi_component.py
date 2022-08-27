@@ -4,7 +4,7 @@ import numpy.random as npr
 from mimo.distributions import NormalWishart
 from mimo.distributions import StackedGaussiansWithPrecision
 
-from mimo.distributions import TiedGaussiansWithKnownScaledPrecision
+from mimo.distributions import TiedGaussiansWithScaledPrecision
 from mimo.distributions import TiedGaussiansWithHierarchicalNormalWisharts
 
 from mimo.distributions import Categorical
@@ -43,25 +43,20 @@ gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
 
 gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 
-mu = np.zeros((2, ))
-kappa = 1e-2
-psi = np.eye(2)
-nu = 3. + 1e-8
-
 components_hyper_prior = NormalWishart(dim=2,
-                                       mu=mu, kappa=kappa,
-                                       psi=psi, nu=nu)
+                                       mu=np.zeros((2, )), kappa= 1e-2,
+                                       psi=np.eye(2), nu=3. + 1e-8)
 
-
-etas = 1e-2 * np.ones((4,))
-components_prior = TiedGaussiansWithKnownScaledPrecision(size=4, dim=2,
-                                                         kappas=etas)
+components_prior = TiedGaussiansWithScaledPrecision(size=4, dim=2,
+                                                    kappas=1e-2 * np.ones((4,)))
 
 components = TiedGaussiansWithHierarchicalNormalWisharts(size=4, dim=2,
                                                          hyper_prior=components_hyper_prior,
                                                          prior=components_prior)
 
-model = BayesianMixtureOfGaussiansWithHierarchicalPrior(gating=gating, components=components)
+model = BayesianMixtureOfGaussiansWithHierarchicalPrior(size=4, dim=2,
+                                                        gating=gating,
+                                                        components=components)
 
 vlb = model.meanfield_coordinate_descent(obs, maxiter=1000)
 print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
