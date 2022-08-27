@@ -40,7 +40,7 @@ mus = npr.randn(4, 2)
 lmbdas_diags = np.ones((4, 2))
 
 components = TiedGaussiansWithDiagonalPrecision(size=4, dim=2,
-                                                   mus=mus, lmbdas_diags=lmbdas_diags)
+                                                mus=mus, lmbdas_diags=lmbdas_diags)
 
 model = MixtureOfGaussians(gating=gating, components=components)
 

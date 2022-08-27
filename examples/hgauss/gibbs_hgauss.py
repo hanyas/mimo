@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random as npr
 
 from mimo.distributions import GaussianWithCovariance
-from mimo.distributions import GaussianWithKnownScaledPrecision
+from mimo.distributions import GaussianWithScaledPrecision
 from mimo.distributions import NormalWishart
 from mimo.distributions import GaussianWithHierarchicalNormalWishart
 
@@ -14,7 +14,7 @@ dist = GaussianWithCovariance(dim=dim, mu=npr.randn(dim),
 data = dist.rvs(size=nb_samples)
 print("True mean" + "\n", dist.mu.T, "\n" + "True sigma" + "\n", dist.sigma)
 
-prior = GaussianWithKnownScaledPrecision(dim=dim, kappa=1.)
+prior = GaussianWithScaledPrecision(dim=dim, kappa=1.)
 hyper_prior = NormalWishart(dim=dim, mu=np.zeros((dim, )),
                             kappa=1e-2, psi=np.eye(dim), nu=dim + 1 + 1e-8)
 

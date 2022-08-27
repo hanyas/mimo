@@ -22,4 +22,4 @@ prior = NormalGamma(**hypparams)
 model = GaussianWithNormalGamma(dim=dim, prior=prior)
 model.resample(data)
 print("Gibbs mean"+"\n", model.likelihood.mu.T,
-        "\n"+"Gibbs sigma"+"\n", model.likelihood.sigma)
+      "\n"+"Gibbs sigma"+"\n", model.likelihood.sigma)
