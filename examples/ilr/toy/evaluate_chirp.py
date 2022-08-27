@@ -30,8 +30,8 @@ matplotlib.rcParams['font.family'] = 'serif'
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
-    parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
+    parser.add_argument('--data_path', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+    parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=1, type=int)
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=50, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
-    parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--early_stop', help='stopping criterion for VI', default=1e-2, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--nb_train', help='size of train dataset', default=1000, type=int)
@@ -108,7 +108,9 @@ if __name__ == "__main__":
         gating_prior = Dirichlet(nb_models, alphas)
         gating = CategoricalWithDirichlet(nb_models, gating_prior)
 
-    ilr = BayesianMixtureOfLinearGaussians(gating=gating, basis=basis, models=models)
+    ilr = BayesianMixtureOfLinearGaussians(size=args.nb_models,
+                                           input_dim=input_dim, output_dim=output_dim,
+                                           gating=gating, basis=basis, models=models)
 
     ilr.init_transform(input, output)
 
@@ -145,16 +147,16 @@ if __name__ == "__main__":
     # set working directory
     dataset = 'chirp'
     try:
-        os.chdir(args.evalpath + '/' + dataset)
+        os.chdir(args.eval_path + '/' + dataset)
     except FileNotFoundError:
-        os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
-        os.chdir(args.evalpath + '/' + dataset)
+        os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+        os.chdir(args.eval_path + '/' + dataset)
 
     # save tikz and pdf
-    import tikzplotlib
+    # import tikzplotlib
 
-    tikzplotlib.save(dataset + '_' + str(0) + '.tex')
-    plt.savefig(dataset + '_' + str(0) + '.pdf')
+    # tikzplotlib.save(dataset + '_' + str(0) + '.tex')
+    # plt.savefig(dataset + '_' + str(0) + '.pdf')
 
     split_size = int(nb_train / args.nb_splits)
 
@@ -179,9 +181,9 @@ if __name__ == "__main__":
         for _ in range(args.super_iters):
             vlb = ilr.meanfield_coordinate_descent(train_input, train_output,
                                                    randomize=False,
-                                                   tol=args.earlystop,
+                                                   tol=args.early_stop,
                                                    maxiter=args.meanfield_iters,
-                                                   progressbar=args.verbose)
+                                                   progress_bar=args.verbose)
             # print(vlb[-1])
 
             ilr.gating.prior = ilr.gating.posterior
@@ -208,40 +210,40 @@ if __name__ == "__main__":
 
         anim.append(fig)
 
-        # plt.show()
-        # plt.pause(1)
+        plt.show()
+        plt.pause(1)
 
-        # set working directory
-        dataset = 'chirp'
-        try:
-            os.chdir(args.evalpath + '/' + dataset)
-        except FileNotFoundError:
-            os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
-            os.chdir(args.evalpath + '/' + dataset)
-
-        # save tikz and pdf
-        import tikzplotlib
-
-        tikzplotlib.save(dataset + '_' + str(n + 1) + '.tex')
-        plt.savefig(dataset + '_' + str(n + 1) + '.pdf')
-
-    # append with extra frames
-    for _ in range(3):
-        anim.append(anim[-1])
-
-    from moviepy.editor import VideoClip
-    from moviepy.video.io.bindings import mplfig_to_npimage
-
-    fps = 8
-
-    def make_frame(t):
-        idx = int(t * fps)
-        return mplfig_to_npimage(anim[idx])
-
-    # set working directory
-    os.chdir(args.evalpath)
-    dataset = 'chirp'
-    path = os.path.join(str(dataset) + '/')
-
-    animation = VideoClip(make_frame, duration=4.0)
-    animation.write_gif(path + dataset + '.gif', fps=fps)
+    #     # set working directory
+    #     dataset = 'chirp'
+    #     try:
+    #         os.chdir(args.eval_path + '/' + dataset)
+    #     except FileNotFoundError:
+    #         os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    #         os.chdir(args.eval_path + '/' + dataset)
+    #
+    #     # save tikz and pdf
+    #     import tikzplotlib
+    #
+    #     tikzplotlib.save(dataset + '_' + str(n + 1) + '.tex')
+    #     plt.savefig(dataset + '_' + str(n + 1) + '.pdf')
+    #
+    # # append with extra frames
+    # for _ in range(3):
+    #     anim.append(anim[-1])
+    #
+    # from moviepy.editor import VideoClip
+    # from moviepy.video.io.bindings import mplfig_to_npimage
+    #
+    # fps = 8
+    #
+    # def make_frame(t):
+    #     idx = int(t * fps)
+    #     return mplfig_to_npimage(anim[idx])
+    #
+    # # set working directory
+    # os.chdir(args.eval_path)
+    # dataset = 'chirp'
+    # path = os.path.join(str(dataset) + '/')
+    #
+    # animation = VideoClip(make_frame, duration=4.0)
+    # animation.write_gif(path + dataset + '.gif', fps=fps)

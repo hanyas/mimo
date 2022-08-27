@@ -27,8 +27,8 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
-    parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
+    parser.add_argument('--data_path', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+    parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=5, type=float)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=65, type=int)
     parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
-    parser.add_argument('--earlystop', help='stopping criterion for VI', default=0., type=float)
+    parser.add_argument('--early_stop', help='stopping criterion for VI', default=0., type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
@@ -104,7 +104,9 @@ if __name__ == "__main__":
         gating_prior = Dirichlet(nb_models, alphas)
         gating = CategoricalWithDirichlet(nb_models, gating_prior)
 
-    ilr = BayesianMixtureOfLinearGaussians(gating=gating, basis=basis, models=models)
+    ilr = BayesianMixtureOfLinearGaussians(size=nb_models,
+                                           input_dim=input_dim, output_dim=output_dim,
+                                           gating=gating, basis=basis, models=models)
 
     # ilr.init_transform(input, output)
 
@@ -112,7 +114,7 @@ if __name__ == "__main__":
     ilr.resample(input, output,
                  init_labels='random',
                  maxiter=args.gibbs_iters,
-                 progressbar=args.verbose)
+                 progress_bar=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
@@ -127,8 +129,8 @@ if __name__ == "__main__":
             ilr.meanfield_coordinate_descent(input, output,
                                              randomize=False,
                                              maxiter=args.meanfield_iters,
-                                             tol=args.earlystop,
-                                             progressbar=args.verbose)
+                                             tol=args.early_stop,
+                                             progress_bar=args.verbose)
 
         # ilr.gating.prior = ilr.gating.posterior
         ilr.basis.prior = ilr.basis.posterior
@@ -163,10 +165,10 @@ if __name__ == "__main__":
     # # set working directory
     # dataset = 'inverse'
     # try:
-    #     os.chdir(args.evalpath + '/' + dataset)
+    #     os.chdir(args.eval_path + '/' + dataset)
     # except FileNotFoundError:
-    #     os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
-    #     os.chdir(args.evalpath + '/' + dataset)
+    #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    #     os.chdir(args.eval_path + '/' + dataset)
     #
     # # save tikz and pdf
     # import tikzplotlib

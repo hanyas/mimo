@@ -27,8 +27,8 @@ import matplotlib.pyplot as plt
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
-    parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
+    parser.add_argument('--data_path', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+    parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
-    parser.add_argument('--earlystop', help='stopping criterion for VI', default=0., type=float)
+    parser.add_argument('--early_stop', help='stopping criterion for VI', default=0., type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
@@ -56,12 +56,12 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
 
     # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
-    data = np.loadtxt(args.datapath + '/cmb.csv', delimiter=",", skiprows=1)
+    data = np.loadtxt(args.data_path + '/cmb.csv', delimiter=",", skiprows=1)
 
     # shuffle data
     from sklearn.utils import shuffle
 
-    data = shuffle(data)
+    # data = shuffle(data)
 
     # training data
     nb_train = 2000
@@ -112,15 +112,17 @@ if __name__ == "__main__":
         gating_prior = Dirichlet(nb_models, alphas)
         gating = CategoricalWithDirichlet(nb_models, gating_prior)
 
-    ilr = BayesianMixtureOfLinearGaussians(gating=gating, basis=basis, models=models)
+    ilr = BayesianMixtureOfLinearGaussians(size=nb_models,
+                                           input_dim=input_dim, output_dim=output_dim,
+                                           gating=gating, basis=basis, models=models)
 
-    ilr.init_transform(input, output)
+    # ilr.init_transform(input, output)
 
     # Gibbs sampling
     ilr.resample(input, output,
                  init_labels='random',
                  maxiter=args.gibbs_iters,
-                 progressbar=args.verbose)
+                 progress_bar=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
@@ -135,8 +137,8 @@ if __name__ == "__main__":
             ilr.meanfield_coordinate_descent(input, output,
                                              randomize=False,
                                              maxiter=args.meanfield_iters,
-                                             tol=args.earlystop,
-                                             progressbar=args.verbose)
+                                             tol=args.early_stop,
+                                             progress_bar=args.verbose)
 
         ilr.gating.prior = ilr.gating.posterior
         ilr.basis.prior = ilr.basis.posterior
@@ -145,28 +147,42 @@ if __name__ == "__main__":
     # predict on training
     mu, var, std = ilr.meanfield_prediction(input, prediction=args.prediction)
 
-    fig, axes = plt.subplots(2, 1)
-
-    # # plot prediction
-    sorter = np.argsort(input[:, 0], axis=0).flatten()
-    sorted_input, sorted_output = input[sorter, 0], output[sorter, 0]
-    sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
-
-    axes[0].scatter(sorted_input, sorted_output, s=0.75, color='k')
-    axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    for c in [1., 2., 3.]:
-        axes[0].fill_between(sorted_input,
-                             sorted_mu - c * sorted_std,
-                             sorted_mu + c * sorted_std,
-                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
-
-    axes[0].set_ylabel('y')
-
-    # plot gaussian activations
-    axes[1].set_xlabel('x')
-    axes[1].set_ylabel('p(x)')
-
-    activations = ilr.meanfield_predictive_activation(sorted_input)
-    axes[1].plot(sorted_input, activations.T)
-
-    plt.show()
+    # fig, axes = plt.subplots(2, 1)
+    #
+    # # # plot prediction
+    # sorter = np.argsort(input[:, 0], axis=0).flatten()
+    # sorted_input, sorted_output = input[sorter, 0], output[sorter, 0]
+    # sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
+    #
+    # axes[0].scatter(sorted_input, sorted_output, s=0.75, color='k')
+    # axes[0].plot(sorted_input, sorted_mu, color='crimson')
+    # for c in [1., 2., 3.]:
+    #     axes[0].fill_between(sorted_input,
+    #                          sorted_mu - c * sorted_std,
+    #                          sorted_mu + c * sorted_std,
+    #                          edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+    #
+    # axes[0].set_ylabel('y')
+    #
+    # # plot gaussian activations
+    # axes[1].set_xlabel('x')
+    # axes[1].set_ylabel('p(x)')
+    #
+    # activations = ilr.meanfield_predictive_activation(sorted_input)
+    # axes[1].plot(sorted_input, activations.T)
+    #
+    # # # set working directory
+    # # dataset = 'cmb'
+    # # try:
+    # #     os.chdir(args.eval_path + '/' + dataset)
+    # # except FileNotFoundError:
+    # #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    # #     os.chdir(args.eval_path + '/' + dataset)
+    # #
+    # # # save tikz and pdf
+    # # import tikzplotlib
+    # #
+    # # tikzplotlib.save(dataset + '.tex')
+    # # plt.savefig(dataset + '.pdf')
+    #
+    # plt.show()

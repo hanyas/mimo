@@ -92,7 +92,7 @@ def create_job(kwargs):
     ilr.resample(input, output,
                  init_labels='random',
                  maxiter=args.gibbs_iters,
-                 progressbar=args.verbose)
+                 progress_bar=args.verbose)
 
     for _ in range(args.super_iters):
         if args.stochastic:
@@ -107,8 +107,8 @@ def create_job(kwargs):
             ilr.meanfield_coordinate_descent(input, output,
                                              randomize=False,
                                              maxiter=args.meanfield_iters,
-                                             tol=args.earlystop,
-                                             progressbar=args.verbose)
+                                             tol=args.early_stop,
+                                             progress_bar=args.verbose)
 
         ilr.gating.prior = ilr.gating.posterior
         ilr.basis.prior = ilr.basis.posterior
@@ -135,8 +135,8 @@ def parallel_ilr_inference(nb_jobs=50, **kwargs):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
-    parser.add_argument('--datapath', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--evalpath', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
+    parser.add_argument('--data_path', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
+    parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=24, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
     parser.add_argument('--alpha', help='concentration parameter', default=100, type=float)
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
     parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
-    parser.add_argument('--earlystop', help='stopping criterion for VI', default=1e-4, type=float)
+    parser.add_argument('--early_stop', help='stopping criterion for VI', default=1e-4, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=False)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
@@ -234,10 +234,10 @@ if __name__ == "__main__":
     # # set working directory
     # dataset = 'sinc'
     # try:
-    #     os.chdir(args.evalpath + '/' + dataset)
+    #     os.chdir(args.eval_path + '/' + dataset)
     # except FileNotFoundError:
-    #     os.makedirs(args.evalpath + '/' + dataset, exist_ok=True)
-    #     os.chdir(args.evalpath + '/' + dataset)
+    #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    #     os.chdir(args.eval_path + '/' + dataset)
     #
     # # save figs
     # import tikzplotlib
