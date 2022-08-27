@@ -887,59 +887,18 @@ class TiedGaussiansWithDiagonalPrecision(StackedGaussiansWithDiagonalPrecision, 
         self.lmbdas_diags = np.array(self.size * [lmbda_diag])
 
 
-class GaussianWithKnownPrecision(GaussianWithPrecision):
-
-    def __init__(self, dim, mu=None, lmbda=None):
-
-        super(GaussianWithKnownPrecision, self).__init__(dim, mu, lmbda)
-
-    def statistics(self, data, fold=True):
-        if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(axis=1)
-            data = data[idx]
-
-            if fold:
-                c0 = 'nd->d'
-                n = data.shape[0]
-            else:
-                c0 = 'nd->nd'
-                n = np.ones((data.shape[0], ))
-
-            x = np.einsum(c0, data, optimize=True)
-
-            return Stats([x, n])
-        else:
-            func = partial(self.statistics, fold=fold)
-            stats = list(map(func, data))
-            return reduce(add, stats) if fold else stats
-
-    def weighted_statistics(self, data, weights):
-        if isinstance(data, np.ndarray):
-            idx = ~np.isnan(data).any(axis=1)
-            data, weights = data[idx], weights[idx]
-
-            c0 = 'n,nd->d'
-            x = np.einsum(c0, weights, data, optimize=True)
-            n = np.sum(weights)
-
-            return Stats([x, n])
-        else:
-            stats = list(map(self.weighted_statistics, data, weights))
-            return reduce(add, stats)
-
-
-class GaussianWithKnownScaledPrecision(_GaussianBase, ABC):
+class GaussianWithScaledPrecision(_GaussianBase, ABC):
     # A prior over mean of a Gaussian likelihood
     # Likelihood shares precision with prior
     # up to a scaling factor \kappa
 
-    def __init__(self, dim, kappa, lmbda=None, mu=None):
+    def __init__(self, dim, kappa, mu=None, lmbda=None):
 
-        super(GaussianWithKnownScaledPrecision, self).__init__(dim, mu)
+        super(GaussianWithScaledPrecision, self).__init__(dim, mu)
 
         self.kappa = kappa
         self._lmbda = lmbda
-        # omega = kappa * lmbda
+
         self._omega_chol = None
         self._omega_chol_inv = None
 
@@ -1076,20 +1035,20 @@ class GaussianWithKnownScaledPrecision(_GaussianBase, ABC):
         raise NotImplementedError
 
 
-class TiedGaussiansWithKnownScaledPrecision:
+class TiedGaussiansWithScaledPrecision:
     # A prior over mean of a Gaussian likelihood
     # Likelihood shares precision with prior
     # up to a scaling factor \kappa
 
-    def __init__(self, size, dim, kappas, lmbdas=None, mus=None):
+    def __init__(self, size, dim, kappas, mus=None, lmbdas=None):
         self.size = size
         self.dim = dim
 
         kappas = [None] * self.size if kappas is None else kappas
         lmbdas = [None] * self.size if lmbdas is None else lmbdas
         mus = [None] * self.size if mus is None else mus
-        self.dists = [GaussianWithKnownScaledPrecision(dim, kappas[k],
-                                                       mus[k], lmbdas[k])
+        self.dists = [GaussianWithScaledPrecision(dim, kappas[k],
+                                                  mus[k], lmbdas[k])
                       for k in range(self.size)]
 
     @property

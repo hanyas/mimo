@@ -49,7 +49,7 @@ class NormalWishart:
 
     def std_to_nat(self, params):
         # stats = [mu.T @ lmbda,
-        #          -0.5 * lmbda @ (mu @ mu.T),
+        #          -0.5 * mu.T @ lmbda @ mu,
         #          -0.5 * lmbda,
         #          0.5 * logdet(lmbda)]
         #
@@ -105,17 +105,17 @@ class NormalWishart:
 
     def expected_statistics(self):
         # stats = [mu.T @ lmbda,
-        #          -0.5 * lmbda @ (mu @ mu.T),
+        #          -0.5 * mu.T @ lmbda @ mu,
         #          -0.5 * lmbda,
         #          0.5 * logdet(lmbda)]
 
-        E_mu_lmbda = self.wishart.nu * self.wishart.psi @ self.gaussian.mu
-        E_mu_lmbda_muT = - 0.5 * (self.dim / self.kappa + self.gaussian.mu.dot(E_mu_lmbda))
+        E_lmbda_mu = self.wishart.nu * self.wishart.psi @ self.gaussian.mu
+        E_muT_lmbda_mu = - 0.5 * (self.dim / self.kappa + self.gaussian.mu.dot(E_lmbda_mu))
         E_lmbda = - 0.5 * (self.wishart.nu * self.wishart.psi)
         E_logdet_lmbda = 0.5 * (np.sum(digamma((self.wishart.nu - np.arange(self.dim)) / 2.))
                                 + self.dim * np.log(2.) + 2. * np.sum(np.log(np.diag(self.wishart.psi_chol))))
 
-        return E_mu_lmbda, E_mu_lmbda_muT, E_lmbda, E_logdet_lmbda
+        return E_lmbda_mu, E_muT_lmbda_mu, E_lmbda, E_logdet_lmbda
 
     def entropy(self):
         nat_param, stats = self.nat_param, self.expected_statistics()
@@ -313,7 +313,7 @@ class NormalGamma:
     @staticmethod
     def std_to_nat(params):
         # stats = [mu * lmbda_diag,
-        #          -0.5 * lmbda_diag * mu * mu,
+        #          -0.5 * mu * lmbda_diag * mu,
         #          0.5 * log(lmbda_diag),
         #          -0.5 * lmbda_diag]
         #
@@ -370,16 +370,16 @@ class NormalGamma:
 
     def expected_statistics(self):
         # stats = [mu * lmbda_diag,
-        #          -0.5 * lmbda_diag * mu * mu,
+        #          -0.5 * mu * lmbda_diag * mu,
         #          0.5 * log(lmbda_diag),
         #          -0.5 * lmbda_diag]
 
-        E_mu_lmbdas = self.gamma.alphas / self.gamma.betas * self.gaussian.mu
-        E_lmbdas_mu_mu = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_mu_lmbdas)
+        E_lmbdas_mu = self.gamma.alphas / self.gamma.betas * self.gaussian.mu
+        E_lmbdas_mu_mu = - 0.5 * (1. / self.kappas + self.gaussian.mu * E_lmbdas_mu)
         E_log_lmbdas = 0.5 * (digamma(self.gamma.alphas) - np.log(self.gamma.betas))
         E_lmbdas = - 0.5 * (self.gamma.alphas / self.gamma.betas)
 
-        return E_mu_lmbdas, E_lmbdas_mu_mu, E_log_lmbdas, E_lmbdas
+        return E_lmbdas_mu, E_lmbdas_mu_mu, E_log_lmbdas, E_lmbdas
 
     def entropy(self):
         nat_param, stats = self.nat_param, self.expected_statistics()
@@ -838,7 +838,7 @@ class MatrixNormalGamma:
     @staticmethod
     def std_to_nat(params):
         # stats = [A.T * V_diag,
-        #          -0.5 * A.T @ A,
+        #          -0.5 * A.T @ V_diag @ A,
         #          0.5 * log(V_diag),
         #          -0.5 * V_diag]
         #
@@ -897,7 +897,7 @@ class MatrixNormalGamma:
 
     def expected_statistics(self):
         # stats = [A.T * V_diag,
-        #          -0.5 * A.T @ A,
+        #          -0.5 * A.T @ V_diag @ A,
         #          0.5 * log(V_diag),
         #          -0.5 * V_diag]
 
