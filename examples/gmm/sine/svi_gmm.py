@@ -58,7 +58,7 @@ allmodels = []
 for superitr in range(5):
     model.resample(data, maxiter=25)
     vlb = model.meanfield_stochastic_descent(obs=data, maxiter=500,
-                                             stepsize=1e-1, batchsize=256)
+                                             step_size=1e-1, batch_size=256)
 
     allvlbs.append(vlb)
     allmodels.append(copy.deepcopy(model))

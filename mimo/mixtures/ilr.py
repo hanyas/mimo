@@ -243,8 +243,8 @@ class BayesianMixtureOfLinearGaussians:
 
     # SVI
     def meanfield_stochastic_descent(self, x, y, randomize=True,
-                                     maxiter=500, stepsize=1e-3,
-                                     batchsize=128, progress_bar=True,
+                                     maxiter=500, step_size=1e-3,
+                                     batch_size=128, progress_bar=True,
                                      procces_id=0):
 
         if self.scale:
@@ -257,9 +257,9 @@ class BayesianMixtureOfLinearGaussians:
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
                   position=procces_id, disable=not progress_bar) as pbar:
 
-            scale = batchsize / float(len(xx))
+            scale = batch_size / float(len(xx))
             for i in range(maxiter):
-                for batch in batches(batchsize, len(xx)):
+                for batch in batches(batch_size, len(xx)):
                     if i == 0 and randomize is True:
                         resp = npr.rand(self.size, len(xx[batch, :]))
                         resp /= np.sum(resp, axis=0)
@@ -267,7 +267,7 @@ class BayesianMixtureOfLinearGaussians:
                         resp = self.expected_responsibilities(xx[batch, :], yy[batch, :])
 
                     self.meanfield_sgdstep_parameters(xx[batch, :], yy[batch, :],
-                                                      resp, scale, stepsize)
+                                                      resp, scale, step_size)
 
                 resp = self.expected_responsibilities(xx, yy)
                 vlb.append(self.variational_lowerbound(xx, yy, resp))
@@ -276,19 +276,19 @@ class BayesianMixtureOfLinearGaussians:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, x, y, resp, scale, stepsize):
-        self.meanfield_sgdstep_basis(x, resp, scale, stepsize)
-        self.meanfield_sgdstep_models(x, y, resp, scale, stepsize)
-        self.meanfield_sgdstep_gating(resp, scale, stepsize)
+    def meanfield_sgdstep_parameters(self, x, y, resp, scale, step_size):
+        self.meanfield_sgdstep_basis(x, resp, scale, step_size)
+        self.meanfield_sgdstep_models(x, y, resp, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_gating(self, resp, scale, stepsize):
-        self.gating.meanfield_sgdstep(None, resp, scale, stepsize)
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
 
-    def meanfield_sgdstep_basis(self, x, resp, scale, stepsize):
-        self.basis.meanfield_sgdstep(x, resp, scale, stepsize)
+    def meanfield_sgdstep_basis(self, x, resp, scale, step_size):
+        self.basis.meanfield_sgdstep(x, resp, scale, step_size)
 
-    def meanfield_sgdstep_models(self, x, y, resp, scale, stepsize):
-        self.models.meanfield_sgdstep(x, y, resp, scale, stepsize)
+    def meanfield_sgdstep_models(self, x, y, resp, scale, step_size):
+        self.models.meanfield_sgdstep(x, y, resp, scale, step_size)
 
     def variational_lowerbound_data(self, x, y, resp):
         vlb = 0.

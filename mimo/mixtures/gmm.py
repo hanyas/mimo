@@ -298,17 +298,17 @@ class BayesianMixtureOfGaussians:
 
     # SVI
     def meanfield_stochastic_descent(self, obs, randomize=True,
-                                     maxiter=500, stepsize=1e-2,
-                                     batchsize=128, progress_bar=True,
+                                     maxiter=500, step_size=1e-2,
+                                     batch_size=128, progress_bar=True,
                                      procces_id=0):
 
         vlb = []
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
                   position=procces_id, disable=not progress_bar) as pbar:
 
-            scale = batchsize / float(len(obs))
+            scale = batch_size / float(len(obs))
             for i in range(maxiter):
-                for batch in batches(batchsize, len(obs)):
+                for batch in batches(batch_size, len(obs)):
                     if i == 0 and randomize is True:
                         resp = npr.rand(self.size, len(obs[batch, :]))
                         resp /= np.sum(resp, axis=0)
@@ -316,7 +316,7 @@ class BayesianMixtureOfGaussians:
                         resp = self.expected_responsibilities(obs[batch, :])
 
                     self.meanfield_sgdstep_parameters(obs[batch, :], resp,
-                                                      scale, stepsize)
+                                                      scale, step_size)
 
                 resp = self.expected_responsibilities(obs)
                 vlb.append(self.variational_lowerbound(obs, resp))
@@ -325,15 +325,15 @@ class BayesianMixtureOfGaussians:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp, scale, stepsize):
-        self.meanfield_sgdstep_components(obs, resp, scale, stepsize)
-        self.meanfield_sgdstep_gating(resp, scale, stepsize)
+    def meanfield_sgdstep_parameters(self, obs, resp, scale, step_size):
+        self.meanfield_sgdstep_components(obs, resp, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_components(self, obs, resp, scale, stepsize):
-        self.components.meanfield_sgdstep(obs, resp, scale, stepsize)
+    def meanfield_sgdstep_components(self, obs, resp, scale, step_size):
+        self.components.meanfield_sgdstep(obs, resp, scale, step_size)
 
-    def meanfield_sgdstep_gating(self, resp, scale, stepsize):
-        self.gating.meanfield_sgdstep(None, resp, scale, stepsize)
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
 
     def variational_lowerbound_obs(self, obs, resp):
         return np.sum(resp * self.components.expected_log_likelihood(obs))

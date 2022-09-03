@@ -6,10 +6,10 @@ from itertools import islice
 import random
 
 
-def batches(batchsize, datasize):
-    idx_all = random.sample(range(datasize), batchsize)
+def batches(batch_size, data_size):
+    idx_all = random.sample(range(data_size), batch_size)
     idx_iter = iter(idx_all)
-    yield from iter(lambda: list(islice(idx_iter, batchsize)), [])
+    yield from iter(lambda: list(islice(idx_iter, batch_size)), [])
 
 
 def transform(mu, trans=None):
@@ -89,7 +89,7 @@ def centerdata(data, scaling):
     return data
 
 
-def getdatasize(data):
+def getdata_size(data):
     if isinstance(data, np.ma.masked_array):
         return data.shape[0] - data.mask.reshape((data.shape[0], -1))[:, 0].sum()
     elif isinstance(data, np.ndarray):
@@ -97,7 +97,7 @@ def getdatasize(data):
             return 0
         return data[gi(data)].shape[0]
     elif isinstance(data, list):
-        return sum(getdatasize(d) for d in data)
+        return sum(getdata_size(d) for d in data)
     else:
         # handle unboxed case for convenience
         assert isinstance(data, int) or isinstance(data, float)

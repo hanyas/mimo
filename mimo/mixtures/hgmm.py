@@ -227,7 +227,7 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
     # SVI
     def meanfield_stochastic_descent(self, obs, randomize=True,
                                      weights=None, maxiter=250,
-                                     maxsubiter=5, scale=1, stepsize=1e-2,
+                                     maxsubiter=5, scale=1, step_size=1e-2,
                                      progress_bar=True, procces_id=0):
 
         if randomize is True:
@@ -244,22 +244,22 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
                 resp = resp if weights is None else resp * weights
 
                 self.meanfield_sgdstep_parameters(obs, resp, maxsubiter,
-                                                  scale, stepsize)
+                                                  scale, step_size)
                 resp = self.expected_responsibilities(obs)
 
                 pbar.update(1)
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp, maxsubiter, scale, stepsize):
-        self.meanfield_sgdstep_components(obs, resp, maxsubiter, scale, stepsize)
-        self.meanfield_sgdstep_gating(resp, scale, stepsize)
+    def meanfield_sgdstep_parameters(self, obs, resp, maxsubiter, scale, step_size):
+        self.meanfield_sgdstep_components(obs, resp, maxsubiter, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_components(self, obs, resp, maxsubiter, scale, stepsize):
-        self.components.meanfield_sgdstep(obs, resp, maxsubiter, scale, stepsize)
+    def meanfield_sgdstep_components(self, obs, resp, maxsubiter, scale, step_size):
+        self.components.meanfield_sgdstep(obs, resp, maxsubiter, scale, step_size)
 
-    def meanfield_sgdstep_gating(self, resp, scale, stepsize):
-        self.gating.meanfield_sgdstep(None, resp, scale, stepsize)
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
 
     def variational_lowerbound_obs(self, obs, resp):
         return np.sum(resp * self.components.expected_log_likelihood(obs))
@@ -434,17 +434,17 @@ class BayesianMixtureOfMixtureOfGaussians:
     # SVI
     def meanfield_stochastic_descent(self, obs, randomize=True,
                                      maxiter=250, maxsubiter=5, maxsubsubiter=5,
-                                     stepsize=1e-2, batchsize=128, progress_bar=True,
+                                     step_size=1e-2, batch_size=128, progress_bar=True,
                                      procces_id=0):
 
         vlb = []
         with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
                   position=procces_id, disable=not progress_bar) as pbar:
 
-            scale = batchsize / float(len(obs))
+            scale = batch_size / float(len(obs))
             for i in range(maxiter):
                 randomize = randomize if i == 0 else False
-                for batch in batches(batchsize, len(obs)):
+                for batch in batches(batch_size, len(obs)):
                     if randomize is True:
                         resp = npr.rand(self.cluster_size, len(obs[batch, :]))
                         resp /= np.sum(resp, axis=0)
@@ -453,7 +453,7 @@ class BayesianMixtureOfMixtureOfGaussians:
 
                     self.meanfield_sgdstep_parameters(obs[batch, :], resp,
                                                       maxsubiter, maxsubsubiter,
-                                                      randomize, scale, stepsize)
+                                                      randomize, scale, step_size)
 
                 pbar.update(1)
 
@@ -461,15 +461,15 @@ class BayesianMixtureOfMixtureOfGaussians:
 
     def meanfield_sgdstep_parameters(self, obs, resp,
                                      maxsubiter, maxsubsubiter,
-                                     randomize, scale, stepsize):
+                                     randomize, scale, step_size):
         self.meanfield_sgdstep_components(obs, resp,
                                           maxsubiter, maxsubsubiter,
-                                          randomize, scale, stepsize)
-        self.meanfield_sgdstep_gating(resp, scale, stepsize)
+                                          randomize, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
 
     def meanfield_sgdstep_components(self, obs, resp,
                                      maxsubiter, maxsubsubiter,
-                                     randomize, scale, stepsize):
+                                     randomize, scale, step_size):
 
         for m in range(self.cluster_size):
             self.components[m].meanfield_stochastic_descent(obs=obs,
@@ -477,11 +477,11 @@ class BayesianMixtureOfMixtureOfGaussians:
                                                             weights=resp[m, :],
                                                             maxiter=maxsubiter,
                                                             maxsubiter=maxsubsubiter,
-                                                            scale=scale, stepsize=stepsize,
+                                                            scale=scale, step_size=step_size,
                                                             progress_bar=False)
 
-    def meanfield_sgdstep_gating(self, resp, scale, stepsize):
-        self.gating.meanfield_sgdstep(None, resp, scale, stepsize)
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
 
     def variational_lowerbound_labels(self, resp):
         raise NotImplementedError
