@@ -43,8 +43,8 @@ if __name__ == "__main__":
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
     parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=5e-1, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--svi_step_size', help='SVI step size', default=5e-1, type=float)
+    parser.add_argument('--svi_batch_size', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
     parser.add_argument('--early_stop', help='stopping criterion for VI', default=0., type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -130,8 +130,8 @@ if __name__ == "__main__":
             ilr.meanfield_stochastic_descent(input, output,
                                              randomize=False,
                                              maxiter=args.svi_iters,
-                                             stepsize=args.svi_stepsize,
-                                             batchsize=args.svi_batchsize)
+                                             step_size=args.svi_step_size,
+                                             batch_size=args.svi_batch_size)
         if args.deterministic:
             # Meanfield VI
             ilr.meanfield_coordinate_descent(input, output,
@@ -147,42 +147,42 @@ if __name__ == "__main__":
     # predict on training
     mu, var, std = ilr.meanfield_prediction(input, prediction=args.prediction)
 
-    # fig, axes = plt.subplots(2, 1)
+    fig, axes = plt.subplots(2, 1)
+
+    # # plot prediction
+    sorter = np.argsort(input[:, 0], axis=0).flatten()
+    sorted_input, sorted_output = input[sorter, 0], output[sorter, 0]
+    sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
+
+    axes[0].scatter(sorted_input, sorted_output, s=0.75, color='k')
+    axes[0].plot(sorted_input, sorted_mu, color='crimson')
+    for c in [1., 2., 3.]:
+        axes[0].fill_between(sorted_input,
+                             sorted_mu - c * sorted_std,
+                             sorted_mu + c * sorted_std,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
+
+    axes[0].set_ylabel('y')
+
+    # plot gaussian activations
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
+
+    activations = ilr.meanfield_predictive_activation(sorted_input)
+    axes[1].plot(sorted_input, activations.T)
+
+    # # set working directory
+    # dataset = 'cmb'
+    # try:
+    #     os.chdir(args.eval_path + '/' + dataset)
+    # except FileNotFoundError:
+    #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    #     os.chdir(args.eval_path + '/' + dataset)
     #
-    # # # plot prediction
-    # sorter = np.argsort(input[:, 0], axis=0).flatten()
-    # sorted_input, sorted_output = input[sorter, 0], output[sorter, 0]
-    # sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
+    # # save tikz and pdf
+    # import tikzplotlib
     #
-    # axes[0].scatter(sorted_input, sorted_output, s=0.75, color='k')
-    # axes[0].plot(sorted_input, sorted_mu, color='crimson')
-    # for c in [1., 2., 3.]:
-    #     axes[0].fill_between(sorted_input,
-    #                          sorted_mu - c * sorted_std,
-    #                          sorted_mu + c * sorted_std,
-    #                          edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
-    #
-    # axes[0].set_ylabel('y')
-    #
-    # # plot gaussian activations
-    # axes[1].set_xlabel('x')
-    # axes[1].set_ylabel('p(x)')
-    #
-    # activations = ilr.meanfield_predictive_activation(sorted_input)
-    # axes[1].plot(sorted_input, activations.T)
-    #
-    # # # set working directory
-    # # dataset = 'cmb'
-    # # try:
-    # #     os.chdir(args.eval_path + '/' + dataset)
-    # # except FileNotFoundError:
-    # #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
-    # #     os.chdir(args.eval_path + '/' + dataset)
-    # #
-    # # # save tikz and pdf
-    # # import tikzplotlib
-    # #
-    # # tikzplotlib.save(dataset + '.tex')
-    # # plt.savefig(dataset + '.pdf')
-    #
-    # plt.show()
+    # tikzplotlib.save(dataset + '.tex')
+    # plt.savefig(dataset + '.pdf')
+
+    plt.show()

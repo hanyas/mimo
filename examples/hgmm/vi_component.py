@@ -44,7 +44,7 @@ gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
 gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 
 components_hyper_prior = NormalWishart(dim=2,
-                                       mu=np.zeros((2, )), kappa= 1e-2,
+                                       mu=np.zeros((2, )), kappa=1e-2,
                                        psi=np.eye(2), nu=3. + 1e-8)
 
 components_prior = TiedGaussiansWithScaledPrecision(size=4, dim=2,
@@ -58,7 +58,7 @@ model = BayesianMixtureOfGaussiansWithHierarchicalPrior(size=4, dim=2,
                                                         gating=gating,
                                                         components=components)
 
-vlb = model.meanfield_coordinate_descent(obs, maxiter=1000)
+vlb = model.meanfield_coordinate_descent(obs, maxiter=100, maxsubiter=10, tol=1e-12)
 print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 model.plot(obs)
