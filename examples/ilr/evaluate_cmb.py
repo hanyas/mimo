@@ -14,8 +14,9 @@ from mimo.distributions import StackedGaussiansWithNormalWisharts
 from mimo.distributions import StackedLinearGaussiansWithMatrixNormalWisharts
 from mimo.distributions import TiedLinearGaussiansWithMatrixNormalWisharts
 
-from mimo.distributions import TruncatedStickBreaking
 from mimo.distributions import Dirichlet
+from mimo.distributions import TruncatedStickBreaking
+
 from mimo.distributions import CategoricalWithDirichlet
 from mimo.distributions import CategoricalWithStickBreaking
 
@@ -31,58 +32,41 @@ if __name__ == "__main__":
     parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
     parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
     parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--alpha', help='concentration parameter', default=10, type=float)
-    parser.add_argument('--nb_models', help='max number of models', default=100, type=int)
+    parser.add_argument('--alpha', help='concentration parameter', default=25, type=float)
+    parser.add_argument('--nb_models', help='max number of models', default=50, type=int)
     parser.add_argument('--affine', help='affine functions', action='store_true', default=True)
     parser.add_argument('--no_affine', help='non-affine functions', dest='affine', action='store_false')
     parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=2, type=int)
-    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=250, type=int)
+    parser.add_argument('--gibbs_iters', help='Gibbs iterations', default=0, type=int)
     parser.add_argument('--stochastic', help='use stochastic VI', action='store_true', default=True)
     parser.add_argument('--no_stochastic', help='do not use stochastic VI', dest='stochastic', action='store_false')
     parser.add_argument('--deterministic', help='use deterministic VI', action='store_true', default=False)
     parser.add_argument('--no_deterministic', help='do not use deterministic VI', dest='deterministic', action='store_false')
     parser.add_argument('--meanfield_iters', help='max VI iterations', default=250, type=int)
-    parser.add_argument('--svi_iters', help='SVI iterations', default=250, type=int)
-    parser.add_argument('--svi_stepsize', help='SVI step size', default=25e-2, type=float)
-    parser.add_argument('--svi_batchsize', help='SVI batch size', default=256, type=int)
+    parser.add_argument('--svi_iters', help='SVI iterations', default=500, type=int)
+    parser.add_argument('--svi_step_size', help='SVI step size', default=5e-1, type=float)
+    parser.add_argument('--svi_batch_size', help='SVI batch size', default=256, type=int)
     parser.add_argument('--prediction', help='prediction w/ mode or average', default='average')
-    parser.add_argument('--early_stop', help='stopping criterion for VI', default=1e-2, type=float)
+    parser.add_argument('--early_stop', help='stopping criterion for VI', default=0., type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
     parser.add_argument('--mute', help='show no output', dest='verbose', action='store_false')
     parser.add_argument('--seed', help='choose seed', default=1337, type=int)
 
     args = parser.parse_args()
 
-    npr.seed(args.seed)
+    np.random.seed(args.seed)
 
-    # def cross_2d(x, y):
-    #     return np.maximum(np.exp(-10.0 * x * x), np.exp(-50.0 * y * y),
-    #                       1.25 * np.exp(-5.0 * (x * x + y * y)))
+    # load Cosmic Microwave Background (CMB) training_data from Hannah (2011)
+    data = np.loadtxt('./cmb.csv', delimiter=",", skiprows=1)
 
-    # x = npr.uniform(-1., 1., size=(nb_samples, 1))
-    # y = npr.uniform(-1., 1., size=(nb_samples, 1))
+    # shuffle data
+    from sklearn.utils import shuffle
 
-    def sine_sqrt(x, y):
-        return np.sin(np.sqrt(x ** 2 + y ** 2))
-
-    X = np.arange(-6., 6., 0.12)
-    Y = np.arange(-6., 6., 0.12)
-    X, Y = np.meshgrid(X, Y)
-
-    Z = np.zeros((100, 100))
-    for i in range(100):
-        for j in range(100):
-            Z[i, j] = sine_sqrt(np.array([X[i, j]]), np.array([Y[i, j]]))
-
-    import matplotlib.pyplot as plt
-    ax = plt.axes(projection='3d')
-    ax.plot_surface(X, Y, Z, rstride=1, cstride=1,
-                    cmap='plasma', edgecolor='none')
-    plt.show()
+    # data = shuffle(data)
 
     # training data
-    input = np.vstack([X.ravel(), Y.ravel()]).T
-    output = np.ravel(Z)[:, None] + 0.01 * npr.randn(100 * 100, 1)
+    nb_train = 2000
+    input, output = data[:nb_train, :1], data[:nb_train, 1:]
 
     # model defintion
     nb_models = args.nb_models
@@ -95,7 +79,7 @@ if __name__ == "__main__":
     # initialize Normal
     mus = np.zeros((nb_models, input_dim))
     kappas = 1e-2 * np.ones((nb_models,))
-    psis = np.stack(nb_models * [1e1 * np.eye(input_dim)])
+    psis = np.stack(nb_models * [1e2 * np.eye(input_dim)])
     nus = (input_dim + 1) * np.ones((nb_models,)) + 1e-16
 
     basis_prior = StackedNormalWisharts(size=nb_models, dim=input_dim,
@@ -108,15 +92,15 @@ if __name__ == "__main__":
 
     # initialize Matrix-Normal
     Ms = np.zeros((nb_models, row_dim, column_dim))
-    Ks = np.stack(nb_models * [1e-2 * np.eye(column_dim)])
-    psis = np.stack(nb_models * [1e1 * np.eye(output_dim)])
+    Ks = np.stack(nb_models * [1e-1 * np.eye(column_dim)])
+    psis = np.stack(nb_models * [1e0 * np.eye(output_dim)])
     nus = (output_dim + 1) * np.ones((nb_models,)) + 1e-16
 
-    models_prior = TiedMatrixNormalWisharts(nb_models, column_dim, row_dim,
-                                            Ms=Ms, Ks=Ks, psis=psis, nus=nus)
+    models_prior = StackedMatrixNormalWisharts(nb_models, column_dim, row_dim,
+                                               Ms=Ms, Ks=Ks, psis=psis, nus=nus)
 
-    models = TiedLinearGaussiansWithMatrixNormalWisharts(nb_models, column_dim, row_dim,
-                                                         models_prior, affine=args.affine)
+    models = StackedLinearGaussiansWithMatrixNormalWisharts(nb_models, column_dim, row_dim,
+                                                            models_prior, affine=args.affine)
 
     # define gating
     if args.prior == 'stick-breaking':
@@ -133,7 +117,7 @@ if __name__ == "__main__":
                                            input_dim=input_dim, output_dim=output_dim,
                                            gating=gating, basis=basis, models=models)
 
-    ilr.init_transform(input, output)
+    # ilr.init_transform(input, output)
 
     # Gibbs sampling
     ilr.resample(input, output,
@@ -147,8 +131,8 @@ if __name__ == "__main__":
             ilr.meanfield_stochastic_descent(input, output,
                                              randomize=False,
                                              maxiter=args.svi_iters,
-                                             stepsize=args.svi_stepsize,
-                                             batchsize=args.svi_batchsize)
+                                             step_size=args.svi_step_size,
+                                             batch_size=args.svi_batch_size)
         if args.deterministic:
             # Meanfield VI
             ilr.meanfield_coordinate_descent(input, output,
@@ -157,34 +141,49 @@ if __name__ == "__main__":
                                              tol=args.early_stop,
                                              progress_bar=args.verbose)
 
-        # ilr.gating.prior = ilr.gating.posterior
+        ilr.gating.prior = ilr.gating.posterior
         ilr.basis.prior = ilr.basis.posterior
         ilr.models.prior = ilr.models.posterior
 
     # predict on training
     mu, var, std = ilr.meanfield_prediction(input, prediction=args.prediction)
 
-    # plot prediction
-    plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.plot_trisurf(input[:, 0], input[:, 1], mu[:, 0], cmap='plasma')
-    plt.show()
+    fig, axes = plt.subplots(2, 1)
 
-    plt.figure()
-    ax = plt.gca()
-    mus, precs = ilr.basis.posterior.mean()
+    # # plot prediction
+    sorter = np.argsort(input[:, 0], axis=0).flatten()
+    sorted_input, sorted_output = input[sorter, 0], output[sorter, 0]
+    sorted_mu, sorted_std = mu[sorter, 0], std[sorter, 0]
 
-    for k in range(ilr.size):
-        if ilr.gating.posterior.mean()[k] > 1e-2:
-            t = np.hstack([np.arange(0, 2 * np.pi, 0.01), 0])
-            circle = np.vstack([np.sin(t), np.cos(t)])
-            ellipse = np.dot(np.linalg.cholesky(np.linalg.inv(precs[k])), circle)
+    axes[0].scatter(sorted_input, sorted_output, s=0.75, color='k')
+    axes[0].plot(sorted_input, sorted_mu, color='crimson')
+    for c in [1., 2., 3.]:
+        axes[0].fill_between(sorted_input,
+                             sorted_mu - c * sorted_std,
+                             sorted_mu + c * sorted_std,
+                             edgecolor=(0, 0, 1, 0.1), facecolor=(0, 0, 1, 0.1))
 
-            point = ax.scatter(mus[k, 0], mus[k, 1], marker='D', s=4)
-            line, = ax.plot(ellipse[0, :] + mus[k, 0], ellipse[1, :] + mus[k, 1],
-                            linestyle='-', linewidth=2)
+    axes[0].set_ylabel('y')
 
-    ax.set_xlim(-1.0, 1.0)
-    ax.set_ylim(-1.0, 1.0)
+    # plot gaussian activations
+    axes[1].set_xlabel('x')
+    axes[1].set_ylabel('p(x)')
+
+    activations = ilr.meanfield_predictive_activation(sorted_input)
+    axes[1].plot(sorted_input, activations.T)
+
+    # # set working directory
+    # dataset = 'cmb'
+    # try:
+    #     os.chdir(args.eval_path + '/' + dataset)
+    # except FileNotFoundError:
+    #     os.makedirs(args.eval_path + '/' + dataset, exist_ok=True)
+    #     os.chdir(args.eval_path + '/' + dataset)
+    #
+    # # save tikz and pdf
+    # import tikzplotlib
+    #
+    # tikzplotlib.save(dataset + '.tex')
+    # plt.savefig(dataset + '.pdf')
 
     plt.show()
