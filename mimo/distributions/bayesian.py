@@ -528,12 +528,10 @@ class GaussianWithHierarchicalNormalWishart:
         for _ in range(nb_iter):
             tau, lmbda = self.hyper_posterior.rvs()
 
-            self.prior.mu = tau
-            self.prior.lmbda = lmbda
-
             # sampling posterior
             x, n, xxT, n = self.likelihood.statistics(data)
-            self.posterior.nat_param = self.prior.nat_param + Stats([x, n])
+            self.posterior.kappa = self.prior.kappa + n
+            self.posterior.mu = (self.prior.kappa * self.hyper_prior.gaussian.mu + x) / (self.prior.kappa + n)
             self.posterior.lmbda = lmbda
 
             mu = self.posterior.rvs()
@@ -544,7 +542,8 @@ class GaussianWithHierarchicalNormalWishart:
             psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
                                 + self.hyper_prior.kappa * self.prior.kappa / (self.hyper_prior.kappa + self.prior.kappa)
                                 * np.einsum('d,l->dl', self.hyper_prior.gaussian.mu - mu, self.hyper_prior.gaussian.mu - mu)
-                                + xxT - np.einsum('d,l->dl', mu, x) - np.einsum('d,l->dl', x, mu) + n * np.einsum('d,l->dl', mu, mu))
+                                + xxT - np.einsum('d,l->dl', mu, x) - np.einsum('d,l->dl', x, mu)
+                                + n * np.einsum('d,l->dl', mu, mu))
             nu = self.hyper_prior.wishart.nu + n + 1
 
             self.hyper_posterior.params = rho, kappa, psi, nu
@@ -557,36 +556,28 @@ class GaussianWithHierarchicalNormalWishart:
         vlb = []
         for i in range(nb_iter):
             # variational e-step
-            tau, lmbda = self.hyper_posterior.mean()
-
-            self.prior.mu = tau
-            self.prior.lmbda = lmbda
-
             x, n, xxT, n = self.likelihood.statistics(data)
-            self.posterior.nat_param = self.prior.nat_param + Stats([x, n])
-            self.posterior.lmbda = lmbda
-
-            mu = self.posterior.mean()
-            sigma = np.linalg.inv(self.posterior.omega)
+            self.posterior.kappa = self.prior.kappa + n
+            self.posterior.mu = (self.prior.kappa * self.hyper_posterior.gaussian.mu + x) / (self.prior.kappa + n)
+            self.posterior.lmbda = self.hyper_posterior.wishart.mean()
 
             # variational m-step
-            rho = (self.prior.kappa * mu + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu)\
-                 / (self.prior.kappa + self.hyper_prior.kappa)
+            rho = (self.prior.kappa * self.posterior.mu + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu)\
+                  / (self.prior.kappa + self.hyper_prior.kappa)
             kappa = self.prior.kappa + self.hyper_prior.kappa
             psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
-                                # + (self.prior.kappa + n) * sigma
                                 + self.hyper_prior.kappa * self.prior.kappa / (self.hyper_prior.kappa + self.prior.kappa)
-                                * np.einsum('d,l->dl', self.hyper_prior.gaussian.mu - mu,
-                                            self.hyper_prior.gaussian.mu - mu)
-                                + xxT - np.einsum('d,l->dl', mu, x) - np.einsum('d,l->dl', x, mu)
-                                + n * np.einsum('d,l->dl', mu, mu))
+                                * np.einsum('d,l->dl', self.hyper_prior.gaussian.mu - self.posterior.mu,
+                                            self.hyper_prior.gaussian.mu - self.posterior.mu)
+                                + xxT - np.einsum('d,l->dl', self.posterior.mu, x) - np.einsum('d,l->dl', x, self.posterior.mu)
+                                + n * np.einsum('d,l->dl', self.posterior.mu, self.posterior.mu))
             nu = self.hyper_prior.wishart.nu + n + 1
 
             self.hyper_posterior.params = rho, kappa, psi, nu
 
             # vlb.append(self.variational_lowerbound(data))
 
-        _, lmbda = self.hyper_posterior.rvs()
+        _, lmbda = self.hyper_posterior.mean()
         mu = self.posterior.rvs()
         self.likelihood.params = mu, lmbda
 
@@ -596,6 +587,8 @@ class GaussianWithHierarchicalNormalWishart:
         raise NotImplementedError
 
     def variational_lowerbound(self, x):
+        # hyp_post_entropy = self.hyper_posterior.wishart.entropy()
+        # hyp_post_cross_entropy = self.hyper_posterior.wishart.cross_entropy(self.hyper_prior)
         raise NotImplementedError
 
 
@@ -670,32 +663,22 @@ class TiedGaussiansWithHierarchicalNormalWisharts:
 
         for _ in range(nb_iter):
             # variational e-step
-            tau, lmbda = self.hyper_posterior.mean()
-
-            self.prior.mus = np.stack(self.size * [tau])
-            self.prior.lmbdas = np.stack(self.size * [lmbda])
-
             xk, nk, xxTk, nk = self.likelihood.weighted_statistics(data, weights)
-            self.posterior.nat_param = self.prior.nat_param + Stats([xk, nk])
-            self.posterior.lmbdas = np.stack(self.size * [lmbda])
-
-            mus = self.posterior.mean()
-            sigmas = np.linalg.inv(self.posterior.omegas)
+            self.posterior.kappas = self.prior.kappas + nk
+            self.posterior.mus = (np.einsum('k,d->kd', self.prior.kappas, self.hyper_posterior.gaussian.mu) + xk) / (np.expand_dims(self.prior.kappas + nk, axis=1))
 
             # variational m-step
-            rho = np.sum(np.einsum('k,kd->kd', self.prior.kappas, mus)
+            rho = np.sum(np.einsum('k,kd->kd', self.prior.kappas, self.posterior.mus)
                          + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu, axis=0) / np.sum(self.prior.kappas + self.hyper_prior.kappa)
             kappa = np.sum(self.prior.kappas + self.hyper_prior.kappa) / self.size
             psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
-                                # + np.sum(np.einsum('k,kdl->kdl', self.prior.kappas, sigmas), axis=0) / self.size
-                                # + np.sum(np.einsum('k,kdl->kdl', nk, sigmas), axis=0) / self.size
                                 + np.sum(np.expand_dims(self.hyper_prior.kappa * self.prior.kappas, axis=(1, 2))
-                                         * np.einsum('kd,kl->kdl', np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus,
-                                                     np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus) /
+                                         * np.einsum('kd,kl->kdl', np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - self.posterior.mus,
+                                                     np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - self.posterior.mus) /
                                          (np.expand_dims(self.hyper_prior.kappa + self.prior.kappas, axis=(1, 2))), axis=0) / self.size
-                                + np.sum(xxTk, axis=0) / self.size - np.einsum('kd,kl->dl', mus, xk) / self.size
-                                - np.einsum('kd,kl->dl', xk, mus) / self.size
-                                + np.einsum('k,kd,kl->dl', nk, mus, mus) / self.size)
+                                + np.sum(xxTk, axis=0) / self.size - np.einsum('kd,kl->dl', self.posterior.mus, xk) / self.size
+                                - np.einsum('kd,kl->dl', xk, self.posterior.mus) / self.size
+                                + np.einsum('k,kd,kl->dl', nk, self.posterior.mus, self.posterior.mus) / self.size)
             nu = np.sum(self.hyper_prior.wishart.nu + nk + 1) / self.size
 
             self.hyper_posterior.params = rho, kappa, psi, nu
