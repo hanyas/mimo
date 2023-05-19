@@ -1,48 +1,60 @@
 import numpy as np
 import numpy.random as npr
 
-from scipy import stats
-
-from matplotlib import pyplot as plt
+from mimo.distributions import TiedGaussiansWithPrecision
+from mimo.distributions import TiedGaussiansWithNormalWisharts
+from mimo.distributions import TiedNormalWisharts
 
 from mimo.distributions import Categorical
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
-from mimo.distributions import TiedGaussiansWithPrecision
-from mimo.distributions import TiedNormalWisharts
-from mimo.distributions import TiedGaussiansWithNormalWishart
 
-from mimo.mixtures import MixtureOfTiedGaussians
-from mimo.mixtures import BayesianMixtureOfTiedGaussians
+from mimo.mixtures import MixtureOfGaussians
+from mimo.mixtures import BayesianMixtureOfGaussians
 
-npr.seed(1337)
+from matplotlib import pyplot as plt
 
-gating = Categorical(K=2)
 
-lmbda = stats.wishart(3, np.eye(2)).rvs()
-ensemble = TiedGaussiansWithPrecision(mus=[np.array([1., 1.]),
-                                           np.array([-1., -1.])],
-                                      lmbda=lmbda)
+# npr.seed(1337)
 
-gmm = MixtureOfTiedGaussians(gating=gating, ensemble=ensemble)
+# generate data
+gating = Categorical(dim=4)
 
-obs = [gmm.rvs(100)[0] for _ in range(5)]
+mus = np.stack([np.array([-3., 3.]),
+                np.array([3., -3.]),
+                np.array([5., 5.]),
+                np.array([-5., -5.])])
+
+lmbdas = np.array(4 * [np.eye(2)])
+
+components = TiedGaussiansWithPrecision(size=4, dim=2,
+                                        mus=mus, lmbdas=lmbdas)
+
+gmm = MixtureOfGaussians(gating=gating, components=components)
+
+obs, labels = gmm.rvs(500)
 gmm.plot(obs)
 
-gating_hypparams = dict(K=2, alphas=np.ones((2, )))
-gating_prior = Dirichlet(**gating_hypparams)
+# learn model
+gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
 
-ensemble_hypparams = dict(mus=[np.zeros((2, )) for _ in range(2)],
-                          kappas=[1. for _ in range(2)],
-                          psi=np.eye(2), nu=3)
-ensemble_prior = TiedNormalWisharts(**ensemble_hypparams)
+gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 
-model = BayesianMixtureOfTiedGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                       ensemble=TiedGaussiansWithNormalWishart(ensemble_prior))
+mus = np.zeros((4, 2))
+kappas = 1e-2 * np.ones((4,))
+psis = np.array(4 * [np.eye(2)])
+nus = 3. * np.ones((4,)) + 1e-8
 
-model.add_data(obs)
+components_prior = TiedNormalWisharts(size=4, dim=2,
+                                      mus=mus, kappas=kappas,
+                                      psis=psis, nus=nus)
 
-model.resample(maxiter=1000)
+components = TiedGaussiansWithNormalWisharts(size=4, dim=2,
+                                             prior=components_prior)
+
+model = BayesianMixtureOfGaussians(gating=gating, components=components)
+
+model.resample(obs, maxiter=1000)
 
 plt.figure()
 model.plot(obs)

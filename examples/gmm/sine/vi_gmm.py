@@ -1,20 +1,18 @@
-import copy
-import operator
-
 import numpy as np
 import numpy.random as npr
 
-from matplotlib import pyplot as plt
+from mimo.distributions import StackedNormalWisharts
+from mimo.distributions import StackedGaussiansWithNormalWisharts
 
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
-from mimo.distributions import NormalWishart
-from mimo.distributions import GaussianWithNormalWishart
 
 from mimo.mixtures import BayesianMixtureOfGaussians
 
+from matplotlib import pyplot as plt
 
-npr.seed(1337)
+
+# npr.seed(1337)
 
 nb_samples = 2500
 
@@ -32,39 +30,26 @@ plt.title('data')
 
 nb_models = 25
 
-gating_hypparams = dict(K=nb_models, alphas=np.ones((nb_models, )))
-gating_prior = Dirichlet(**gating_hypparams)
+gating_prior = Dirichlet(dim=nb_models, alphas=2. * np.ones((nb_models, )))
 
-components_hypparams = dict(mu=np.zeros((2, )), kappa=0.01,
-                            psi=np.eye(2), nu=3)
-components_prior = NormalWishart(**components_hypparams)
+gating = CategoricalWithDirichlet(dim=nb_models, prior=gating_prior)
 
-gmm = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                 components=[GaussianWithNormalWishart(components_prior)
-                                             for _ in range(nb_models)])
+mus = np.zeros((nb_models, 2))
+kappas = 0.01 * np.ones((nb_models,))
+psis = np.stack(nb_models * [np.eye(2)])
+nus = 3. * np.ones((nb_models,)) + 1e-8
 
-gmm.add_data(data, labels_from_prior=True)
+components_prior = StackedNormalWisharts(size=nb_models, dim=2,
+                                         mus=mus, kappas=kappas,
+                                         psis=psis, nus=nus)
 
-allscores = []
-allmodels = []
-for superitr in range(5):
-    # Gibbs sampling to wander around the posterior
-    gmm.resample(maxiter=25)
-    # mean field to lock onto a mode
-    scores = gmm.meanfield_coordinate_descent(maxiter=100)
+components = StackedGaussiansWithNormalWisharts(size=nb_models, dim=2,
+                                                prior=components_prior)
 
-    allscores.append(scores)
-    allmodels.append(copy.deepcopy(gmm))
+model = BayesianMixtureOfGaussians(gating=gating, components=components)
+
+vlb = model.meanfield_coordinate_descent(obs=data, maxiter=5000, tol=0.)
+print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 plt.figure()
-plt.title('model vlb scores vs iteration')
-for scores in allscores:
-    plt.plot(scores)
-
-models_and_scores = sorted([(m, s[-1]) for m, s in zip(allmodels, allscores)],
-                           key=operator.itemgetter(1), reverse=True)
-
-plt.figure()
-plt.title('best model')
-models_and_scores[0][0].plot()
-plt.show()
+model.plot(data)

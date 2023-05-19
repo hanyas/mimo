@@ -1,3 +1,4 @@
 from .gmm import *
-from .tgmm import *
+from .hgmm import *
 from .ilr import *
+from .hilr import *

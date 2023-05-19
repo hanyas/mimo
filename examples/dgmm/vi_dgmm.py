@@ -1,48 +1,64 @@
 import numpy as np
 import numpy.random as npr
 
-from matplotlib import pyplot as plt
+from mimo.distributions import StackedGaussiansWithPrecision
+from mimo.distributions import StackedGaussiansWithNormalGammas
+from mimo.distributions import StackedNormalGammas
 
 from mimo.distributions import Categorical
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
-from mimo.distributions import GaussianWithCovariance
-from mimo.distributions import NormalGamma
-from mimo.distributions import GaussianWithNormalGamma
 
 from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussians
 
+from matplotlib import pyplot as plt
 
-npr.seed(1337)
 
-gating = Categorical(K=2)
+# npr.seed(1337)
 
-components = [GaussianWithCovariance(mu=np.array([1., 1.]), sigma=0.25 * np.eye(2)),
-              GaussianWithCovariance(mu=np.array([-1., -1.]), sigma=0.5 * np.eye(2))]
+# generate data
+gating = Categorical(dim=4)
+
+mus = np.stack([np.array([-3., 3.]),
+                np.array([3., -3.]),
+                np.array([5., 5.]),
+                np.array([-5., -5.])])
+
+lmbdas = np.stack([4. * np.eye(2),
+                   3. * np.eye(2),
+                   2. * np.eye(2),
+                   1. * np.eye(2)])
+
+components = StackedGaussiansWithPrecision(size=4, dim=2,
+                                           mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
-obs, z = gmm.rvs(500)
+obs, labels = gmm.rvs(500)
 gmm.plot(obs)
 
-gating_hypparams = dict(K=2, alphas=np.ones((2, )))
-gating_prior = Dirichlet(**gating_hypparams)
+# learn model
+gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
 
-components_hypparams = dict(mu=np.zeros((2, )),
-                            kappas=1e-2 * np.ones((2, )),
-                            alphas=1. * np.ones((2, )),
-                            betas=1. / (2. * 1e4) * np.ones((2, )))
-components_prior = NormalGamma(**components_hypparams)
+gating = CategoricalWithDirichlet(dim=4, prior=gating_prior)
 
-model = BayesianMixtureOfGaussians(gating=CategoricalWithDirichlet(gating_prior),
-                                   components=[GaussianWithNormalGamma(components_prior)
-                                               for _ in range(2)])
+mus = np.zeros((4, 2))
+kappas = 1e-2 * np.ones((4, 2))
+alphas = (3. + 1e-8) / 2. * np.ones((4, 2))
+betas = 1. / (2. * np.ones((4, 2)))
 
-model.add_data(obs)
+components_prior = StackedNormalGammas(size=4, dim=2,
+                                       mus=mus, kappas=kappas,
+                                       alphas=alphas, betas=betas)
 
-model.resample()
-model.meanfield_coordinate_descent(maxiter=2500)
+components = StackedGaussiansWithNormalGammas(size=4, dim=2,
+                                              prior=components_prior)
+
+model = BayesianMixtureOfGaussians(gating=gating, components=components)
+
+vlb = model.meanfield_coordinate_descent(obs, maxiter=1000, tol=0.)
+print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 plt.figure()
 model.plot(obs)

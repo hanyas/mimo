@@ -6,30 +6,34 @@ from mimo.distributions import MatrixNormalWishart
 from mimo.distributions import LinearGaussianWithMatrixNormalWishart
 
 
-npr.seed(1337)
+# npr.seed(1337)
 
-dcol = 50
-drow = 1
+column_dim = 50
+row_dim = 1
 
-A = 1. * npr.randn(drow, dcol)
+A = 1. * npr.randn(row_dim, column_dim)
 
-nb_samples = 200
-nb_datasets = 10
+nb_samples = 2500
 
-dist = LinearGaussianWithPrecision(A=A, lmbda=100 * np.eye(drow), affine=False)
-x = [npr.randn(nb_samples, dcol) for _ in range(nb_datasets)]
-y = [dist.rvs(_x) for _x in x]
-print("True transf."+"\n", dist.A, "\n"+"True sigma"+"\n", dist.sigma)
+dist = LinearGaussianWithPrecision(column_dim, row_dim,
+                                   A=A, lmbda=1. * np.eye(row_dim),
+                                   affine=True)
+x = npr.randn(nb_samples, column_dim - 1)
+y = dist.rvs(x)
 
-affine = False
-nb_params = dcol + 1 if affine else dcol
+print("True transf."+"\n", dist.A,
+      "\n"+"True precision"+"\n", dist.lmbda)
 
-hypparams = dict(M=np.zeros((drow, nb_params)),
-                 K=1e-2 * np.eye(nb_params),
-                 psi=np.eye(drow),
-                 nu=drow + 1)
+hypparams = dict(column_dim=column_dim,
+                 row_dim=row_dim,
+                 M=np.zeros((row_dim, column_dim)),
+                 K=1e-2 * np.eye(column_dim),
+                 psi=np.eye(row_dim),
+                 nu=row_dim + 1)
 prior = MatrixNormalWishart(**hypparams)
 
-model = LinearGaussianWithMatrixNormalWishart(prior, affine=False)
-model.resample(y=y, x=x)
-print("Gibbs transf."+"\n", model.likelihood.A, "\n"+"Gibbs covariance"+"\n", model.likelihood.sigma)
+model = LinearGaussianWithMatrixNormalWishart(column_dim, row_dim,
+                                              prior, affine=True)
+model.resample(x=x, y=y)
+print("Gibbs transf."+"\n", model.likelihood.A,
+      "\n"+"Gibbs precision"+"\n", model.likelihood.lmbda)

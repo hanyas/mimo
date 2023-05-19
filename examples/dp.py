@@ -7,7 +7,7 @@ from scipy import stats
 from mimo.distributions import TruncatedStickBreaking
 
 alpha = 10
-K = 100
+K = 1000
 
 sb = TruncatedStickBreaking(K, np.ones(K), np.ones(K) * alpha)
 

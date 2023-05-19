@@ -2,17 +2,17 @@ import numpy as np
 import numpy.random as npr
 
 from scipy.special import gammaln, digamma
-
-from mimo.abstraction import Distribution
-from mimo.abstraction import Statistics as Stats
+from mimo.utils.abstraction import Statistics as Stats
 
 
-class Gamma(Distribution):
+class Gamma:
     # In comparison to a Wishart distribution
     # alpha = nu / 2.
     # beta = 1. / (2. * psi)
 
-    def __init__(self, alphas, betas):
+    def __init__(self, dim, alphas, betas):
+        self.dim = dim
+
         self.alphas = alphas  # shape
         self.betas = betas  # rate
 
@@ -25,12 +25,24 @@ class Gamma(Distribution):
         self.alphas, self.betas = values
 
     @property
-    def dim(self):
-        return len(self.alphas)
+    def nat_param(self):
+        return self.std_to_nat(self.params)
 
-    def rvs(self, size=1):
-        # numpy uses a different parameterization
-        return npr.gamma(self.alphas, 1. / self.betas)
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        alphas = params[0] - 1
+        betas = - params[1]
+        return Stats([alphas, betas])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        alphas = natparam[0] + 1
+        betas = - natparam[1]
+        return alphas, betas
 
     def mean(self):
         return self.alphas / self.betas
@@ -39,10 +51,9 @@ class Gamma(Distribution):
         assert np.all(self.alphas >= 1.)
         return (self.alphas - 1.) / self.betas
 
-    def log_likelihood(self, x):
-        # not vectorized
-        log_lik = np.sum((self.alphas - 1.) * np.log(x) - self.betas * x)
-        return - self.log_partition() + self.log_base() + log_lik
+    def rvs(self, size=1):
+        # numpy uses a different parameterization
+        return npr.gamma(self.alphas, 1. / self.betas)
 
     def statistics(self, data):
         if isinstance(data, np.ndarray):
@@ -51,7 +62,7 @@ class Gamma(Distribution):
 
             logx = np.log(data)
             x = data
-            n = np.ones((self.data.shape[0], ))
+            n = np.ones((data.shape[0], ))
 
             return Stats([logx, n, x, n])
         else:
@@ -78,28 +89,13 @@ class Gamma(Distribution):
     def log_base(self):
         return np.log(self.base)
 
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        alphas = params[0] - 1
-        betas = - params[1]
-        return Stats([alphas, betas])
-
-    @staticmethod
-    def nat_to_std(natparam):
-        alphas = natparam[0] + 1
-        betas = - natparam[1]
-        return alphas, betas
-
     def log_partition(self):
         return np.sum(gammaln(self.alphas) - self.alphas * np.log(self.betas))
+
+    def log_likelihood(self, x):
+        # not vectorized
+        log_lik = np.sum((self.alphas - 1.) * np.log(x) - self.betas * x)
+        return - self.log_partition() + self.log_base() + log_lik
 
     def expected_statistics(self):
         E_log_x = digamma(self.alphas) - np.log(self.betas)
@@ -117,9 +113,11 @@ class Gamma(Distribution):
                - (nat_param[0].dot(stats[0]) + np.dot(nat_param[1], stats[1]))
 
 
-class InverseGamma(Distribution):
+class InverseGamma:
 
-    def __init__(self, alphas, betas):
+    def __init__(self, dim, alphas, betas):
+        self.dim = dim
+
         self.alphas = alphas  # shape
         self.betas = betas  # rate
 
@@ -132,12 +130,24 @@ class InverseGamma(Distribution):
         self.alphas, self.betas = values
 
     @property
-    def dim(self):
-        return len(self.alphas)
+    def nat_param(self):
+        return self.std_to_nat(self.params)
 
-    def rvs(self, size=1):
-        # numpy uses a different parameterization
-        return 1. / npr.gamma(self.alphas, 1. / self.betas)
+    @nat_param.setter
+    def nat_param(self, natparam):
+        self.params = self.nat_to_std(natparam)
+
+    @staticmethod
+    def std_to_nat(params):
+        alphas = - params[0] - 1
+        betas = - params[1]
+        return Stats([alphas, betas])
+
+    @staticmethod
+    def nat_to_std(natparam):
+        alphas = - natparam[0] - 1
+        betas = - natparam[1]
+        return alphas, betas
 
     def mean(self):
         assert np.all(self.alphas >= 1.)
@@ -146,10 +156,9 @@ class InverseGamma(Distribution):
     def mode(self):
         return self.betas / (self.alphas + 1.)
 
-    def log_likelihood(self, x):
-        # not vectorized
-        log_lik = np.sum((- self.alphas - 1.) * np.log(x) - self.betas / x)
-        return - self.log_partition() + self.log_base() + log_lik
+    def rvs(self, size=1):
+        # numpy uses a different parameterization
+        return 1. / npr.gamma(self.alphas, 1. / self.betas)
 
     def statistics(self, data):
         if isinstance(data, np.ndarray):
@@ -185,28 +194,13 @@ class InverseGamma(Distribution):
     def log_base(self):
         return np.log(self.base)
 
-    @property
-    def nat_param(self):
-        return self.std_to_nat(self.params)
-
-    @nat_param.setter
-    def nat_param(self, natparam):
-        self.params = self.nat_to_std(natparam)
-
-    @staticmethod
-    def std_to_nat(params):
-        alphas = - params[0] - 1
-        betas = - params[1]
-        return Stats([alphas, betas])
-
-    @staticmethod
-    def nat_to_std(natparam):
-        alphas = - natparam[0] - 1
-        betas = - natparam[1]
-        return alphas, betas
-
     def log_partition(self):
         return np.sum(gammaln(self.alphas) - self.alphas * np.log(self.betas))
+
+    def log_likelihood(self, x):
+        # not vectorized
+        log_lik = np.sum((- self.alphas - 1.) * np.log(x) - self.betas / x)
+        return - self.log_partition() + self.log_base() + log_lik
 
     def expected_statistics(self):
         E_log_x = np.log(self.betas) - digamma(self.alphas)
