@@ -21,9 +21,6 @@ from mimo.distributions import TiedAffineLinearGaussiansWithMatrixNormalWisharts
 from mimo.distributions import Dirichlet
 from mimo.distributions import CategoricalWithDirichlet
 
-from mimo.distributions import TruncatedStickBreaking
-from mimo.distributions import CategoricalWithStickBreaking
-
 from mimo.mixtures import BayesianMixtureOfLinearGaussiansWithTiedActivation
 
 import matplotlib.pyplot as plt
@@ -31,16 +28,11 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Evaluate ilr with a Stick-breaking prior')
-    parser.add_argument('--data_path', help='path to dataset', default=os.path.abspath(mimo.__file__ + '/../../datasets'))
-    parser.add_argument('--eval_path', help='path to evaluation', default=os.path.abspath(mimo.__file__ + '/../../evaluation/toy'))
-    parser.add_argument('--nb_seeds', help='number of seeds', default=1, type=int)
-    parser.add_argument('--prior', help='prior type', default='stick-breaking')
-    parser.add_argument('--cluster_alpha', help='cluster concentration', default=1., type=float)
-    parser.add_argument('--mixture_alpha', help='mixture concentration', default=1., type=float)
-    parser.add_argument('--cluster_size', help='max number of models', default=2, type=int)
-    parser.add_argument('--mixture_size', help='max number of models', default=4, type=int)
-    parser.add_argument('--super_iters', help='interleaving Gibbs/VI iterations', default=1, type=int)
+    parser = argparse.ArgumentParser(description='Evaluate hilr with a Dirichlet prior')
+    parser.add_argument('--cluster_alpha', help='cluster concentration', default=2.0, type=float)
+    parser.add_argument('--mixture_alpha', help='mixture concentration', default=4.0, type=float)
+    parser.add_argument('--cluster_size', help='max number of models', default=4, type=int)
+    parser.add_argument('--mixture_size', help='max number of models', default=8, type=int)
     parser.add_argument('--prediction', help='prediction to mode or average', default='mode')
     parser.add_argument('--early_stop', help='stopping criterion for VI', default=1e-12, type=float)
     parser.add_argument('--verbose', help='show learning progress', action='store_true', default=True)
@@ -49,20 +41,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # np.random.seed(args.seed)
+    np.random.seed(args.seed)
 
     # create data
     nb_train = 650
 
     from scipy import signal
-    import numpy as np
-    import matplotlib.pyplot as plt
 
     input = np.linspace(-4., 4., nb_train).reshape(nb_train, 1)
-    noise = 0.1 * npr.randn(nb_train).reshape(nb_train, 1)
-    output = 2. * signal.sawtooth(2. * np.pi * 0.5 * input, 0.5) + noise
-    plt.scatter(input, output, s=0.75, color='k')
-    plt.show()
+    noise = 0.3 * npr.randn(nb_train).reshape(nb_train, 1)
+    output = 1. * signal.sawtooth(2. * np.pi * 0.5 * input, 0.5) + noise
+    # plt.scatter(input, output, s=0.75, color='k')
+    # plt.show()
 
     # model defintion
     cluster_size = args.cluster_size
@@ -74,23 +64,15 @@ if __name__ == "__main__":
     row_dim = output_dim
     column_dim = input_dim
 
-    # define gating
+    # # define gating
     gating_prior = Dirichlet(dim=cluster_size, alphas=args.cluster_alpha * np.ones((cluster_size,)))
     gating = CategoricalWithDirichlet(dim=cluster_size, prior=gating_prior)
-
-    # gating_prior = TruncatedStickBreaking(dim=cluster_size, gammas=np.ones((cluster_size, )),
-    #                                       deltas=args.cluster_alpha * np.ones((cluster_size,)))
-    # gating = CategoricalWithStickBreaking(dim=cluster_size, prior=gating_prior)
 
     components = []
     for _ in range(cluster_size):
         # lower gating
         _local_gating_prior = Dirichlet(dim=mixture_size, alphas=args.mixture_alpha * np.ones((mixture_size,)))
         _local_gating = CategoricalWithDirichlet(dim=mixture_size, prior=_local_gating_prior)
-
-        # _local_gating_prior = TruncatedStickBreaking(dim=mixture_size, gammas=np.ones((mixture_size,)),
-        #                                              deltas=args.mixture_alpha * np.ones((mixture_size,)))
-        # _local_gating = CategoricalWithStickBreaking(dim=mixture_size, prior=_local_gating_prior)
 
         # lower components
         _local_basis_hyper_prior = NormalWishart(dim=input_dim,
@@ -132,32 +114,21 @@ if __name__ == "__main__":
                                                      input_dim, output_dim,
                                                      gating=gating, components=components)
 
-    hilr.init_transform(input, output)
+    # hilr.init_transform(input, output)
 
-    # Gibbs sampling
     hilr.resample(input, output,
-                  maxiter=500,
-                  maxsubiter=5,
-                  maxsubsubiter=5,
+                  maxiter=25,
+                  maxsubiter=10,
+                  maxsubsubiter=10,
                   progress_bar=args.verbose)
 
-    for _ in range(args.super_iters):
-        # Meanfield VI
-        hilr.meanfield_coordinate_descent(input, output,
-                                          randomize=False,
-                                          maxiter=25,
-                                          maxsubiter=10,
-                                          maxsubsubiter=5,
-                                          tol=args.early_stop,
-                                          progress_bar=args.verbose)
-
-        # hilr.gating.prior = hilr.gating.posterior
-        # for m in range(args.cluster_size):
-        #     hilr.components[m].gating.prior = hilr.components[m].gating.posterior
-        #     hilr.components[m].basis.hyper_prior = hilr.components[m].basis.hyper_posterior
-        #     hilr.components[m].models.slope_prior = hilr.components[m].models.slope_posterior
-        #     hilr.components[m].models.offset_prior = hilr.components[m].models.offset_posterior
-        #     hilr.components[m].models.precision_prior = hilr.components[m].models.precision_posterior
+    hilr.meanfield_coordinate_descent(input, output,
+                                      randomize=False,
+                                      maxiter=50,
+                                      maxsubiter=10,
+                                      maxsubsubiter=10,
+                                      tol=args.early_stop,
+                                      progress_bar=args.verbose)
 
     # predict
     mu, var, std = hilr.meanfield_prediction(input, prediction=args.prediction)
@@ -186,9 +157,5 @@ if __name__ == "__main__":
     activations = hilr.meanfield_predictive_activation(sorted_input)
     activations = activations.sum(axis=1)
     plt.plot(sorted_input, activations.T)
-
-    # # save tikz
-    # import tikzplotlib
-    # tikzplotlib.save('triangle' + '.tex')
 
     plt.show()

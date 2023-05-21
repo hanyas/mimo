@@ -15,7 +15,7 @@ from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussiansWithHierarchicalPrior
 
 
-# npr.seed(1337)
+npr.seed(1337)
 
 # generate data
 gating = Categorical(dim=4)
@@ -36,7 +36,7 @@ components = StackedGaussiansWithPrecision(size=4, dim=2,
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
 obs, labels = gmm.rvs(500)
-gmm.plot(obs)
+# gmm.plot(obs)
 
 # learn model
 gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
@@ -58,6 +58,6 @@ model = BayesianMixtureOfGaussiansWithHierarchicalPrior(size=4, dim=2,
                                                         gating=gating,
                                                         components=components)
 
-model.resample(obs, maxiter=1000, maxsubiter=1)
+model.resample(obs, maxiter=1000, maxsubiter=10)
 
 model.plot(obs)

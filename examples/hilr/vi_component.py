@@ -19,7 +19,7 @@ from mimo.mixtures import BayesianMixtureOfLinearGaussiansWithTiedActivation
 import matplotlib.pyplot as plt
 
 
-# np.random.seed(1337)
+np.random.seed(1337)
 
 # create data
 nb_train = 999
@@ -78,7 +78,7 @@ mixture = BayesianMixtureOfLinearGaussiansWithTiedActivation(size=3, input_dim=1
                                                              output_dim=1, gating=gating,
                                                              basis=basis, models=models)
 
-mixture.resample(x, y, maxiter=5, maxsubiter=5)
+mixture.resample(x, y, maxiter=25, maxsubiter=25)
 
 vlb = mixture.meanfield_coordinate_descent(x, y, randomize=True,
                                            maxiter=1000, maxsubiter=25, tol=1e-12)

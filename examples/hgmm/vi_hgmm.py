@@ -8,25 +8,23 @@ from mimo.mixtures import MixtureOfGaussians
 
 import matplotlib.pyplot as plt
 
-# npr.seed(1337)
+npr.seed(1337)
 
 obs = []
 
 # generate data
-gating = Categorical(dim=4)
+gating = Categorical(dim=2)
 
 mus = np.stack([np.array([-10, -10.]),
-                np.array([10., 10.]),
-                np.array([25., 25.]),
-                np.array([-25., -25.])])
+                np.array([10., 10.])])
 
 sigma = np.array([[3., 2.],
                   [2., 3.]])
 
 lmbda = np.linalg.inv(sigma)
-lmbdas = np.array(4 * [lmbda])
+lmbdas = np.array(2 * [lmbda])
 
-components = TiedGaussiansWithPrecision(size=4, dim=2,
+components = TiedGaussiansWithPrecision(size=2, dim=2,
                                         mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
@@ -37,20 +35,18 @@ obs.append(_obs)
 plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='blue')
 
 #
-gating = Categorical(dim=4)
+gating = Categorical(dim=2)
 
 mus = np.stack([np.array([10, -10.]),
-                np.array([-10., 10.]),
-                np.array([25., -25.]),
-                np.array([-25., 25.])])
+                np.array([-10., 10.])])
 
 sigma = np.array([[3., -2.],
                   [-2., 3.]])
 
 lmbda = np.linalg.inv(sigma)
-lmbdas = np.array(4 * [lmbda])
+lmbdas = np.array(2 * [lmbda])
 
-components = TiedGaussiansWithPrecision(size=4, dim=2,
+components = TiedGaussiansWithPrecision(size=2, dim=2,
                                         mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
@@ -61,20 +57,18 @@ obs.append(_obs)
 plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='red')
 
 #
-gating = Categorical(dim=4)
+gating = Categorical(dim=2)
 
 mus = np.stack([np.array([-10., 0.]),
-                np.array([10., 0.]),
-                np.array([-25., 0.]),
-                np.array([25., 0.])])
+                np.array([10., 0.])])
 
 sigma = np.array([[5., 0.],
                   [0., 1.]])
 
 lmbda = np.linalg.inv(sigma)
-lmbdas = np.array(4 * [lmbda])
+lmbdas = np.array(2 * [lmbda])
 
-components = TiedGaussiansWithPrecision(size=4, dim=2,
+components = TiedGaussiansWithPrecision(size=2, dim=2,
                                         mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
@@ -85,20 +79,18 @@ obs.append(_obs)
 plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='green')
 
 
-gating = Categorical(dim=4)
+gating = Categorical(dim=2)
 
 mus = np.stack([np.array([0., -10.]),
-                np.array([0., 10.]),
-                np.array([0., 25.]),
-                np.array([0., -25.])])
+                np.array([0., 10.])])
 
 sigma = np.array([[1., 0.],
                   [0., 5.]])
 
 lmbda = np.linalg.inv(sigma)
-lmbdas = np.array(4 * [lmbda])
+lmbdas = np.array(2 * [lmbda])
 
-components = TiedGaussiansWithPrecision(size=4, dim=2,
+components = TiedGaussiansWithPrecision(size=2, dim=2,
                                         mus=mus, lmbdas=lmbdas)
 
 gmm = MixtureOfGaussians(gating=gating, components=components)
@@ -108,10 +100,9 @@ obs.append(_obs)
 
 plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='magenta')
 
-plt.xlim((-35., 35.))
-plt.ylim((-35., 35.))
+plt.xlim((-15., 15.))
+plt.ylim((-15., 15.))
 plt.show()
-
 
 obs = np.vstack(obs)
 
@@ -130,7 +121,7 @@ from mimo.mixtures import BayesianMixtureOfGaussiansWithHierarchicalPrior
 
 
 cluster_size = 4
-mixture_size = 4
+mixture_size = 2
 dim = 2
 
 # gating_prior = Dirichlet(dim=cluster_size, alphas=np.ones((cluster_size, )))
@@ -173,20 +164,13 @@ from mimo.mixtures import BayesianMixtureOfMixtureOfGaussians
 model = BayesianMixtureOfMixtureOfGaussians(cluster_size, mixture_size, dim,
                                             gating=gating, components=components)
 
-
-model.resample(obs, init_labels="random", maxiter=5000, maxsubiter=1, maxsubsubiter=1)
+model.resample(obs, maxiter=25, maxsubiter=10, maxsubsubiter=5)
 
 # model.meanfield_coordinate_descent(obs, maxiter=500, randomize=True,
-#                                    maxsubiter=500, maxsubsubiter=1)
+#                                    maxsubiter=100, maxsubsubiter=25)
 
-# model.meanfield_stochastic_descent(obs, maxiter=500, randomize=True,
-#                                    maxsubiter=50, maxsubsubiter=5,
-#                                    step_size=5e-1, batch_size=128)
+model.meanfield_stochastic_descent(obs, maxiter=500, randomize=True,
+                                   maxsubiter=5, maxsubsubiter=5,
+                                   step_size=1e-2, batch_size=64)
 
 model.plot(obs)
-
-# save tikz and pdf
-# import tikzplotlib
-#
-# tikzplotlib.save('hgmm' + '.tex')
-

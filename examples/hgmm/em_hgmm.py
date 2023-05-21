@@ -8,7 +8,7 @@ from mimo.mixtures import MixtureOfGaussians
 
 import matplotlib.pyplot as plt
 
-# npr.seed(1337)
+npr.seed(1337)
 
 obs = []
 
@@ -32,7 +32,7 @@ gmm = MixtureOfGaussians(gating=gating, components=components)
 _obs, _ = gmm.rvs(500)
 obs.append(_obs)
 
-plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='blue')
+# plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='blue')
 
 #
 gating = Categorical(dim=2)
@@ -54,11 +54,11 @@ gmm = MixtureOfGaussians(gating=gating, components=components)
 _obs, _ = gmm.rvs(500)
 obs.append(_obs)
 
-plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='red')
-
-plt.xlim((-15., 15.))
-plt.ylim((-15., 15.))
-plt.show()
+# plt.scatter(_obs[:, 0], _obs[:, 1], marker='+', color='red')
+#
+# plt.xlim((-15., 15.))
+# plt.ylim((-15., 15.))
+# plt.show()
 
 
 obs = np.vstack(obs)

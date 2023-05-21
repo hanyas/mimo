@@ -19,7 +19,7 @@ from mimo.mixtures import BayesianMixtureOfLinearGaussiansWithTiedActivation
 import matplotlib.pyplot as plt
 
 
-# np.random.seed(1337)
+np.random.seed(1337)
 
 # create data
 nb_train = 999
@@ -78,7 +78,7 @@ mixture = BayesianMixtureOfLinearGaussiansWithTiedActivation(size=3, input_dim=1
                                                              output_dim=1, gating=gating,
                                                              basis=basis, models=models)
 
-mixture.resample(x, y, maxiter=250, maxsubiter=25)
+mixture.resample(x, y, maxiter=100, maxsubiter=25)
 
 print("Gibbs transf."+"\n", mixture.models.likelihood.As,
       "\n"+"Gibbs offset"+"\n", mixture.models.likelihood.cs,

@@ -15,15 +15,15 @@ from mimo.mixtures import MixtureOfGaussians
 from mimo.mixtures import BayesianMixtureOfGaussiansWithHierarchicalPrior
 
 
-# npr.seed(1337)
+npr.seed(1337)
 
 # generate data
 gating = Categorical(dim=4)
 
-mus = np.stack([np.array([-3., 3.]),
-                np.array([3., -3.]),
-                np.array([5., 5.]),
-                np.array([-5., -5.])])
+mus = np.stack([np.array([3., -3.]),
+                np.array([-3., 3.]),
+                np.array([-5., -5.]),
+                np.array([5., 5.])])
 
 lmbdas = np.stack([1. * np.eye(2),
                    1. * np.eye(2),
@@ -36,7 +36,7 @@ components = StackedGaussiansWithPrecision(size=4, dim=2,
 gmm = MixtureOfGaussians(gating=gating, components=components)
 
 obs, labels = gmm.rvs(500)
-gmm.plot(obs)
+# gmm.plot(obs)
 
 # learn model
 gating_prior = Dirichlet(dim=4, alphas=np.ones((4, )))
@@ -58,7 +58,8 @@ model = BayesianMixtureOfGaussiansWithHierarchicalPrior(size=4, dim=2,
                                                         gating=gating,
                                                         components=components)
 
-vlb = model.meanfield_coordinate_descent(obs, maxiter=100, maxsubiter=10, tol=1e-12)
-print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
+# vlb = model.meanfield_coordinate_descent(obs, maxiter=100, maxsubiter=10, tol=1e-12)
+vlb = model.meanfield_stochastic_descent(obs, maxiter=1000, maxsubiter=25)
+# print("vlb monoton?", np.all(np.diff(vlb) >= -1e-8))
 
 model.plot(obs)
