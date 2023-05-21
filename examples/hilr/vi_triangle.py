@@ -49,8 +49,8 @@ if __name__ == "__main__":
     from scipy import signal
 
     input = np.linspace(-4., 4., nb_train).reshape(nb_train, 1)
-    noise = 0.3 * npr.randn(nb_train).reshape(nb_train, 1)
-    output = 1. * signal.sawtooth(2. * np.pi * 0.5 * input, 0.5) + noise
+    noise = 0.1 * npr.randn(nb_train).reshape(nb_train, 1)
+    output = 2. * signal.sawtooth(2. * np.pi * 0.5 * input, 0.5) + noise
     # plt.scatter(input, output, s=0.75, color='k')
     # plt.show()
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
                                                  psi=np.eye(input_dim), nu=input_dim + 1 + 1e-8)
 
         _local_basis_prior = TiedGaussiansWithScaledPrecision(size=mixture_size, dim=input_dim,
-                                                              kappas=np.ones((mixture_size,)))
+                                                              kappas=1e-2 * np.ones((mixture_size,)))
 
         _local_basis = TiedGaussiansWithHierarchicalNormalWisharts(size=mixture_size, dim=input_dim,
                                                                    hyper_prior=_local_basis_hyper_prior,
@@ -117,16 +117,16 @@ if __name__ == "__main__":
     # hilr.init_transform(input, output)
 
     hilr.resample(input, output,
-                  maxiter=25,
+                  maxiter=10,
                   maxsubiter=10,
-                  maxsubsubiter=10,
+                  maxsubsubiter=5,
                   progress_bar=args.verbose)
 
     hilr.meanfield_coordinate_descent(input, output,
                                       randomize=False,
-                                      maxiter=50,
+                                      maxiter=10,
                                       maxsubiter=10,
-                                      maxsubsubiter=10,
+                                      maxsubsubiter=5,
                                       tol=args.early_stop,
                                       progress_bar=args.verbose)
 

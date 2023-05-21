@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # np.random.seed(args.seed)
+    np.random.seed(args.seed)
 
     # create data
     nb_train = 160
