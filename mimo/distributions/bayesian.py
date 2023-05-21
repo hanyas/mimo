@@ -710,8 +710,6 @@ class TiedGaussiansWithHierarchicalNormalWisharts:
                          + self.hyper_prior.kappa * self.hyper_prior.gaussian.mu, axis=0) / np.sum(self.prior.kappas + self.hyper_prior.kappa)
             kappa = np.sum(self.prior.kappas + self.hyper_prior.kappa) / self.size
             psi = np.linalg.inv(np.linalg.inv(self.hyper_prior.wishart.psi)
-                                # + np.sum(np.einsum('k,kdl->kdl', self.prior.kappas, sigmas), axis=0) / self.size
-                                # + np.sum(np.einsum('k,kdl->kdl', nk, sigmas), axis=0) / self.size
                                 + np.sum(np.expand_dims(self.hyper_prior.kappa * self.prior.kappas, axis=(1, 2))
                                          * np.einsum('kd,kl->kdl', np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus,
                                                      np.expand_dims(self.hyper_prior.gaussian.mu, axis=0) - mus) /
@@ -1350,13 +1348,11 @@ class TiedAffineLinearGaussiansWithMatrixNormalWisharts:
 
             psi = np.linalg.inv(np.linalg.inv(psi0)
                                 + M0 @ K @ M0.T
-                                # + np.sum(np.einsum('k,kdl->kdl', self.offset_prior.kappas, sigmas), axis=0) / self.size
-                                # + np.sum(np.einsum('k,kdl->kdl', nk, sigmas), axis=0) / self.size
                                 + np.sum(np.einsum('kn,knd,knl->kdl', weights, np.expand_dims(y, axis=0) - np.expand_dims(cs, axis=1),
-                                                   np.expand_dims(y, axis=0) - np.expand_dims(cs, axis=1)), axis=0) / self.size
+                                                                               np.expand_dims(y, axis=0) - np.expand_dims(cs, axis=1)), axis=0) / self.size
                                 + np.sum(np.einsum('k,kd,kl->kdl', self.offset_prior.kappas,
-                                                   cs - self.offset_prior.mus,
-                                                   cs - self.offset_prior.mus), axis=0) / self.size
+                                                                   cs - self.offset_prior.mus,
+                                                                   cs - self.offset_prior.mus), axis=0) / self.size
                                 - np.sum(np.einsum('kdl,klm,khm->kdh', np.expand_dims(M0 @ K0, axis=0) + yxTk - cxTk,
                                                    np.linalg.inv(np.expand_dims(K0, axis=0) + xxTk),
                                                    np.expand_dims(M0 @ K0, axis=0) + yxTk - cxTk), axis=0) / self.size)
@@ -1385,6 +1381,9 @@ class TiedAffineLinearGaussiansWithMatrixNormalWisharts:
         self.likelihood.As = np.stack(self.size * [A])
         self.likelihood.lmbdas = np.stack(self.size * [lmbda])
         self.likelihood.cs = cs
+
+    def meanfield_sgdstep(self, x, y, weights, nb_iter, scale, step_size):
+        raise NotImplementedError
 
     def expected_log_likelihood(self, x, y):
         import scipy as sc

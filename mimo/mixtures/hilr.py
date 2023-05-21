@@ -217,6 +217,47 @@ class BayesianMixtureOfLinearGaussiansWithTiedActivation:
     def meanfield_update_models(self, x, y, resp, maxsubiter):
         self.models.meanfield_update(x, y, resp, maxsubiter)
 
+    # SVI
+    def meanfield_stochastic_descent(self, x, y, randomize=True,
+                                     weights=None, maxiter=250,
+                                     maxsubiter=5, scale=1, step_size=1e-2,
+                                     progress_bar=True, procces_id=0):
+
+        if randomize is True:
+            resp = npr.rand(self.size, len(x))
+            resp /= np.sum(resp, axis=0)
+        else:
+            resp = self.expected_responsibilities(x, y)
+
+        vlb = []
+        with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
+                  position=procces_id, disable=not progress_bar) as pbar:
+
+            for i in range(maxiter):
+                resp = resp if weights is None else resp * weights
+
+                self.meanfield_sgdstep_parameters(x, y, resp, maxsubiter,
+                                                  scale, step_size)
+                resp = self.expected_responsibilities(x, y)
+
+                pbar.update(1)
+
+        return vlb
+
+    def meanfield_sgdstep_parameters(self, x, y, resp, maxsubiter, scale, step_size):
+        self.meanfield_sgdstep_basis(x, resp, maxsubiter, scale, step_size)
+        self.meanfield_sgdstep_models(x, y, resp, maxsubiter, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
+
+    def meanfield_sgdstep_basis(self, x, resp, maxsubiter, scale, step_size):
+        self.basis.meanfield_sgdstep(x, resp, maxsubiter, scale, step_size)
+
+    def meanfield_sgdstep_models(self, x, y, resp, maxsubiter, scale, step_size):
+        self.models.meanfield_sgdstep(x, y, resp, maxsubiter, scale, step_size)
+
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
+
     def variational_lowerbound_data(self, x, y, resp):
         vlb = 0.
         vlb += np.sum(resp * self.basis.expected_log_likelihood(x))
@@ -364,6 +405,7 @@ class BayesianMixtureOfMixtureOfLinearGaussians:
         resp = np.exp(log_lik - logsumexp(log_lik, axis=0, keepdims=True))
         return resp
 
+    # Mean field
     def meanfield_coordinate_descent(self, x, y, randomize=True,
                                      maxiter=250, maxsubiter=5, maxsubsubiter=5,
                                      tol=1e-16, progress_bar=True, process_id=0):
@@ -413,6 +455,64 @@ class BayesianMixtureOfMixtureOfLinearGaussians:
                                                             maxiter=maxsubiter,
                                                             maxsubiter=maxsubsubiter,
                                                             progress_bar=False)
+
+    # SVI
+    def meanfield_stochastic_descent(self, x, y, randomize=True,
+                                     maxiter=250, maxsubiter=5, maxsubsubiter=5,
+                                     step_size=1e-2, batch_size=128, progress_bar=True,
+                                     procces_id=0):
+
+        if self.scale:
+            xx = self.input_transform.transform(x)
+            yy = self.output_transform.transform(y)
+        else:
+            xx, yy = x, y
+
+        vlb = []
+        with tqdm(total=maxiter, desc=f'SVI #{procces_id + 1}',
+                  position=procces_id, disable=not progress_bar) as pbar:
+
+            scale = batch_size / float(len(xx))
+            for i in range(maxiter):
+                randomize = randomize if i == 0 else False
+                for batch in batches(batch_size, len(xx)):
+                    if randomize is True:
+                        resp = npr.rand(self.cluster_size, len(xx[batch, :]))
+                        resp /= np.sum(resp, axis=0)
+                    else:
+                        resp = self.expected_responsibilities(xx[batch, :], yy[batch, :])
+
+                    self.meanfield_sgdstep_parameters(xx[batch, :], yy[batch, :], resp,
+                                                      maxsubiter, maxsubsubiter,
+                                                      randomize, scale, step_size)
+
+                pbar.update(1)
+
+        return vlb
+
+    def meanfield_sgdstep_parameters(self, x, y, resp,
+                                     maxsubiter, maxsubsubiter,
+                                     randomize, scale, step_size):
+        self.meanfield_sgdstep_components(x, y, resp,
+                                          maxsubiter, maxsubsubiter,
+                                          randomize, scale, step_size)
+        self.meanfield_sgdstep_gating(resp, scale, step_size)
+
+    def meanfield_sgdstep_components(self, x, y, resp,
+                                     maxsubiter, maxsubsubiter,
+                                     randomize, scale, step_size):
+
+        for m in range(self.cluster_size):
+            self.components[m].meanfield_stochastic_descent(x, y,
+                                                            randomize=randomize,
+                                                            weights=resp[m, :],
+                                                            maxiter=maxsubiter,
+                                                            maxsubiter=maxsubsubiter,
+                                                            scale=scale, step_size=step_size,
+                                                            progress_bar=False)
+
+    def meanfield_sgdstep_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
 
     def variational_lowerbound_labels(self, resp):
         raise NotImplementedError
