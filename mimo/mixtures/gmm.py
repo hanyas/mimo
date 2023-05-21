@@ -315,7 +315,7 @@ class BayesianMixtureOfGaussians:
                     else:
                         resp = self.expected_responsibilities(obs[batch, :])
 
-                    self.meanfield_sgdstep_parameters(obs[batch, :], resp,
+                    self.meanfield_sgd_parameters(obs[batch, :], resp,
                                                       scale, step_size)
 
                 resp = self.expected_responsibilities(obs)
@@ -325,15 +325,15 @@ class BayesianMixtureOfGaussians:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp, scale, step_size):
-        self.meanfield_sgdstep_components(obs, resp, scale, step_size)
-        self.meanfield_sgdstep_gating(resp, scale, step_size)
+    def meanfield_sgd_parameters(self, obs, resp, scale, step_size):
+        self.meanfield_sgd_components(obs, resp, scale, step_size)
+        self.meanfield_sgd_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_components(self, obs, resp, scale, step_size):
-        self.components.meanfield_sgdstep(obs, resp, scale, step_size)
+    def meanfield_sgd_components(self, obs, resp, scale, step_size):
+        self.components.meanfield_sgd(obs, resp, scale, step_size)
 
-    def meanfield_sgdstep_gating(self, resp, scale, step_size):
-        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
+    def meanfield_sgd_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgd(None, resp, scale, step_size)
 
     def variational_lowerbound_obs(self, obs, resp):
         return np.sum(resp * self.components.expected_log_likelihood(obs))

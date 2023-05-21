@@ -243,7 +243,7 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
             for i in range(maxiter):
                 resp = resp if weights is None else resp * weights
 
-                self.meanfield_sgdstep_parameters(obs, resp, maxsubiter,
+                self.meanfield_sgd_parameters(obs, resp, maxsubiter,
                                                   scale, step_size)
                 resp = self.expected_responsibilities(obs)
 
@@ -251,15 +251,15 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp, maxsubiter, scale, step_size):
-        self.meanfield_sgdstep_components(obs, resp, maxsubiter, scale, step_size)
-        self.meanfield_sgdstep_gating(resp, scale, step_size)
+    def meanfield_sgd_parameters(self, obs, resp, maxsubiter, scale, step_size):
+        self.meanfield_sgd_components(obs, resp, maxsubiter, scale, step_size)
+        self.meanfield_sgd_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_components(self, obs, resp, maxsubiter, scale, step_size):
-        self.components.meanfield_sgdstep(obs, resp, maxsubiter, scale, step_size)
+    def meanfield_sgd_components(self, obs, resp, maxsubiter, scale, step_size):
+        self.components.meanfield_sgd(obs, resp, maxsubiter, scale, step_size)
 
-    def meanfield_sgdstep_gating(self, resp, scale, step_size):
-        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
+    def meanfield_sgd_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgd(None, resp, scale, step_size)
 
     def variational_lowerbound_obs(self, obs, resp):
         return np.sum(resp * self.components.expected_log_likelihood(obs))
@@ -450,7 +450,7 @@ class BayesianMixtureOfMixtureOfGaussians:
                     else:
                         resp = self.expected_responsibilities(obs[batch, :])
 
-                    self.meanfield_sgdstep_parameters(obs[batch, :], resp,
+                    self.meanfield_sgd_parameters(obs[batch, :], resp,
                                                       maxsubiter, maxsubsubiter,
                                                       randomize, scale, step_size)
 
@@ -458,15 +458,15 @@ class BayesianMixtureOfMixtureOfGaussians:
 
         return vlb
 
-    def meanfield_sgdstep_parameters(self, obs, resp,
+    def meanfield_sgd_parameters(self, obs, resp,
                                      maxsubiter, maxsubsubiter,
                                      randomize, scale, step_size):
-        self.meanfield_sgdstep_components(obs, resp,
+        self.meanfield_sgd_components(obs, resp,
                                           maxsubiter, maxsubsubiter,
                                           randomize, scale, step_size)
-        self.meanfield_sgdstep_gating(resp, scale, step_size)
+        self.meanfield_sgd_gating(resp, scale, step_size)
 
-    def meanfield_sgdstep_components(self, obs, resp,
+    def meanfield_sgd_components(self, obs, resp,
                                      maxsubiter, maxsubsubiter,
                                      randomize, scale, step_size):
 
@@ -479,8 +479,8 @@ class BayesianMixtureOfMixtureOfGaussians:
                                                             scale=scale, step_size=step_size,
                                                             progress_bar=False)
 
-    def meanfield_sgdstep_gating(self, resp, scale, step_size):
-        self.gating.meanfield_sgdstep(None, resp, scale, step_size)
+    def meanfield_sgd_gating(self, resp, scale, step_size):
+        self.gating.meanfield_sgd(None, resp, scale, step_size)
 
     def variational_lowerbound_labels(self, resp):
         raise NotImplementedError

@@ -82,7 +82,7 @@ class CategoricalWithDirichlet:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, scale, step_size):
+    def meanfield_sgd(self, data, weights, scale, step_size):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - step_size) * self.posterior.nat_param\
@@ -158,7 +158,7 @@ class CategoricalWithStickBreaking:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, scale, step_size):
+    def meanfield_sgd(self, data, weights, scale, step_size):
         counts = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         acc_counts = np.hstack((np.cumsum(counts[::-1])[-2::-1], 0))
@@ -229,7 +229,7 @@ class GaussianWithNormalWishart:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, scale, step_size):
+    def meanfield_sgd(self, data, weights, scale, step_size):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - step_size) * self.posterior.nat_param\
@@ -390,7 +390,7 @@ class GaussianWithNormalGamma:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, data, weights, scale, step_size):
+    def meanfield_sgd(self, data, weights, scale, step_size):
         stats = self.likelihood.statistics(data) if weights is None\
             else self.likelihood.weighted_statistics(data, weights)
         self.posterior.nat_param = (1. - step_size) * self.posterior.nat_param\
@@ -688,7 +688,7 @@ class TiedGaussiansWithHierarchicalNormalWisharts:
         self.likelihood.mus = mus
         self.likelihood.lmbdas = np.stack(self.size * [lmbda])
 
-    def meanfield_sgdstep(self, data, weights, nb_iter, scale, step_size):
+    def meanfield_sgd(self, data, weights, nb_iter, scale, step_size):
 
         for _ in range(nb_iter):
             # variational e-step
@@ -843,7 +843,7 @@ class LinearGaussianWithMatrixNormalWishart:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, x, y, weights, scale, step_size):
+    def meanfield_sgd(self, x, y, weights, scale, step_size):
         stats = self.likelihood.statistics(x, y) if weights is None\
             else self.likelihood.weighted_statistics(x, y, weights)
         self.posterior.nat_param = (1. - step_size) * self.posterior.nat_param\
@@ -1050,7 +1050,7 @@ class LinearGaussianWithMatrixNormalGamma:
 
         self.likelihood.params = self.posterior.rvs()
 
-    def meanfield_sgdstep(self, x, y, weights, scale, step_size):
+    def meanfield_sgd(self, x, y, weights, scale, step_size):
         stats = self.likelihood.statistics(x, y) if weights is None\
             else self.likelihood.weighted_statistics(x, y, weights)
         self.posterior.nat_param = (1. - step_size) * self.posterior.nat_param\
@@ -1382,7 +1382,7 @@ class TiedAffineLinearGaussiansWithMatrixNormalWisharts:
         self.likelihood.lmbdas = np.stack(self.size * [lmbda])
         self.likelihood.cs = cs
 
-    def meanfield_sgdstep(self, x, y, weights, nb_iter, scale, step_size):
+    def meanfield_sgd(self, x, y, weights, nb_iter, scale, step_size):
         raise NotImplementedError
 
     def expected_log_likelihood(self, x, y):
