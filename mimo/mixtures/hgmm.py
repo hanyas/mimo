@@ -137,7 +137,7 @@ class BayesianMixtureOfGaussiansWithHierarchicalPrior:
     def resample(self, obs, maxiter=250, maxsubiter=5,
                  progress_bar=True, process_id=0):
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+        with tqdm(total=maxiter, desc=f'Init #{process_id + 1}',
                   position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
@@ -334,12 +334,11 @@ class BayesianMixtureOfMixtureOfGaussians:
         elif init_labels == 'posterior':
             _, labels = self.resample_labels(obs)
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+        with tqdm(total=maxiter, desc=f'Init #{process_id + 1}',
                   position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
-                self.resample_components(obs, labels,
-                                         maxsubiter, maxsubsubiter)
+                self.resample_components(obs, labels, maxsubiter, maxsubsubiter)
                 self.resample_gating(labels)
                 _, labels = self.resample_labels(obs)
 

@@ -121,7 +121,7 @@ class BayesianMixtureOfLinearGaussiansWithTiedActivation:
     def resample(self, x, y, maxiter=250, maxsubiter=5,
                  progress_bar=True, process_id=0):
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+        with tqdm(total=maxiter, desc=f'Init #{process_id + 1}',
                   position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
@@ -319,12 +319,11 @@ class BayesianMixtureOfMixtureOfLinearGaussians:
         elif init_labels == 'prior':
             z = self.gating.likelihood.rvs(len(xx))
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+        with tqdm(total=maxiter, desc=f'Init #{process_id + 1}',
                   position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
-                self.resample_components(xx, yy, z,
-                                         maxsubiter, maxsubsubiter)
+                self.resample_components(xx, yy, z, maxsubiter, maxsubsubiter)
                 self.resample_gating(z)
                 _, z = self.resample_labels(xx, yy)
 

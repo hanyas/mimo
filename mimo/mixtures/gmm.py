@@ -214,7 +214,7 @@ class BayesianMixtureOfGaussians:
         elif init_labels == 'posterior':
             _, labels = self.resample_labels(obs)
 
-        with tqdm(total=maxiter, desc=f'Gibbs #{process_id + 1}',
+        with tqdm(total=maxiter, desc=f'Init #{process_id + 1}',
                   position=process_id, disable=not progress_bar) as pbar:
 
             for _ in range(maxiter):
