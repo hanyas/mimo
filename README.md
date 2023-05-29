@@ -8,7 +8,7 @@ This project extends: https://github.com/mattjj/pybasicbayes
 
 ## Installation
  
- Easiest way is to create a conda environment using the provided yml file
+ Easiest way is to create a conda environment
     
     conda create -n NAME python=3.9
     
